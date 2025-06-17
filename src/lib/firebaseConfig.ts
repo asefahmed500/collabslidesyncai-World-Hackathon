@@ -10,38 +10,59 @@ import { getFirestore } from "firebase/firestore";
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
 
 const firebaseApiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY;
+const firebaseAuthDomain = process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN;
+const firebaseProjectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+const firebaseStorageBucket = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
+const firebaseMessagingSenderId = process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID;
+const firebaseAppId = process.env.NEXT_PUBLIC_FIREBASE_APP_ID;
 
-if (!firebaseApiKey || firebaseApiKey === "YOUR_API_KEY" || firebaseApiKey.trim() === "") {
-  const message = "CRITICAL FIREBASE CONFIGURATION ERROR: Firebase API Key is missing, is a placeholder ('YOUR_API_KEY'), or is empty. " +
-                  "Please set NEXT_PUBLIC_FIREBASE_API_KEY in your .env file with your actual Firebase project's API key. " +
-                  "The application will not function correctly until this is resolved. " +
-                  "You can find this key in your Firebase project settings under 'Web apps'.";
-  console.error(message);
-  // For critical errors like this, you might throw an error in a production app,
-  // or ensure a user-friendly message is displayed prominently.
-  // For Firebase Studio, a detailed console error helps in debugging.
-}
+// Helper function to check individual config values
+const checkFirebaseConfigValue = (value: string | undefined, envVarName: string, humanName: string, examplePlaceholder?: string) => {
+  const placeholder = examplePlaceholder || `YOUR_${humanName.toUpperCase().replace(/ /g, '_')}`;
+  if (!value || value === placeholder || value.trim() === "") {
+    const message = `CRITICAL FIREBASE CONFIGURATION ERROR: Firebase config value for ${envVarName} (${humanName}) is missing, is a placeholder ('${placeholder}'), or is empty. ` +
+                    `Please set this in your .env file with your actual Firebase project's value. ` +
+                    "The application will not function correctly until this is resolved. " +
+                    "You can find these values in your Firebase project settings under 'Web apps'.";
+    console.error(message);
+    throw new Error(message); // Throw error to stop execution
+  }
+  return value; // Return validated value
+};
 
+// Validate essential Firebase configuration values
+const checkedFirebaseApiKey = checkFirebaseConfigValue(firebaseApiKey, 'NEXT_PUBLIC_FIREBASE_API_KEY', 'API Key', 'YOUR_API_KEY');
+const checkedFirebaseAuthDomain = checkFirebaseConfigValue(firebaseAuthDomain, 'NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN', 'Auth Domain');
+const checkedFirebaseProjectId = checkFirebaseConfigValue(firebaseProjectId, 'NEXT_PUBLIC_FIREBASE_PROJECT_ID', 'Project ID');
+// Note: storageBucket, messagingSenderId, and appId are also important but might not always cause an immediate "invalid-api-key" error with getAuth().
+// If further issues arise, these should also be checked with the same rigor.
 
 const firebaseConfig: FirebaseOptions = {
-  apiKey: firebaseApiKey,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+  apiKey: checkedFirebaseApiKey,
+  authDomain: checkedFirebaseAuthDomain,
+  projectId: checkedFirebaseProjectId,
+  storageBucket: firebaseStorageBucket, // Use the original (potentially undefined) value after checks
+  messagingSenderId: firebaseMessagingSenderId, // Use the original
+  appId: firebaseAppId, // Use the original
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID, // Optional
 };
 
 // Initialize Firebase
 let app;
-if (!getApps().length) {
-  app = initializeApp(firebaseConfig);
-} else {
-  app = getApp();
+// This try-catch is more for if initializeApp itself fails for reasons other than bad keys (e.g., network, duplicate init)
+try {
+  if (!getApps().length) {
+    app = initializeApp(firebaseConfig);
+  } else {
+    app = getApp();
+  }
+} catch (error: any) {
+  console.error("Firebase app initialization failed during initializeApp call:", error);
+  throw new Error(`Firebase app initialization failed directly. Original error: ${error.message}. Ensure your Firebase project is set up correctly and accessible, and that all Firebase config values in .env are correct.`);
 }
 
-const auth = getAuth(app);
+const auth = getAuth(app); // If config values like API key are wrong (but not placeholders caught above), this is where it typically errors out.
 const db = getFirestore(app);
 
 export { app, auth, db };
+
