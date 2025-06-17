@@ -1,3 +1,4 @@
+
 "use client";
 
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -7,48 +8,51 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import type { SlideElement, Slide, SlideComment } from '@/types';
-import { Text, Image as ImageIcon, Shapes, Palette, AlignLeft, AlignCenter, AlignRight, Bold, Italic, Underline, MessageSquare, Send, UserCircle } from 'lucide-react';
+import { Text, Image as ImageIcon, Shapes, MessageSquare, Send, UserCircle } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { Textarea } from '../ui/textarea';
+// Removed: Palette, AlignLeft, AlignCenter, AlignRight, Bold, Italic, Underline as they are not fully implemented.
 
 interface PropertiesPanelProps {
   selectedElement: SlideElement | null;
-  currentSlide: Slide | null;
-  onUpdateElement: (updatedElement: Partial<SlideElement>) => void; // For mock updates
+  currentSlide: Slide | null; // Keep currentSlide to access comments
+  onUpdateElement: (updatedElement: Partial<SlideElement>) => void;
   onAddComment: (text: string) => void;
   onResolveComment: (commentId: string) => void;
 }
 
 export function PropertiesPanel({
   selectedElement,
-  currentSlide,
+  currentSlide, // Passed for comments
   onUpdateElement,
   onAddComment,
   onResolveComment,
 }: PropertiesPanelProps) {
-  const [elementProps, setElementProps] = useState<Partial<SlideElement>>({});
+  // Local state for element properties to allow editing before "applying"
+  // For simplicity, we'll directly call onUpdateElement on change.
+  // A more robust solution might use a local state and an "Apply" button or debounce.
+  // const [elementProps, setElementProps] = useState<Partial<SlideElement>>({});
+
   const [newComment, setNewComment] = useState("");
 
-  useEffect(() => {
-    if (selectedElement) {
-      setElementProps({ ...selectedElement });
-    } else {
-      setElementProps({});
-    }
-  }, [selectedElement]);
+  // No longer need useEffect for elementProps if directly updating
+  // useEffect(() => {
+  //   if (selectedElement) {
+  //     setElementProps({ ...selectedElement });
+  //   } else {
+  //     setElementProps({});
+  //   }
+  // }, [selectedElement]);
 
   const handleInputChange = (prop: keyof SlideElement, value: any) => {
-    const updated = { ...elementProps, [prop]: value };
-    setElementProps(updated);
-    // In a real app, debounce this or have an "Apply" button
-    onUpdateElement({ id: selectedElement?.id, [prop]: value });
+    if (!selectedElement) return;
+    onUpdateElement({ id: selectedElement.id, [prop]: value });
   };
 
   const handleStyleChange = (styleProp: keyof SlideElement['style'], value: any) => {
-    const updatedStyle = { ...elementProps.style, [styleProp]: value };
-    const updated = { ...elementProps, style: updatedStyle };
-    setElementProps(updated);
-    onUpdateElement({ id: selectedElement?.id, style: updatedStyle });
+    if (!selectedElement) return;
+    const updatedStyle = { ...(selectedElement.style || {}), [styleProp]: value };
+    onUpdateElement({ id: selectedElement.id, style: updatedStyle });
   };
   
   const handleCommentSubmit = (e: React.FormEvent) => {
@@ -62,6 +66,11 @@ export function PropertiesPanel({
 
   const renderElementProperties = () => {
     if (!selectedElement) return <p className="text-muted-foreground text-sm p-4">Select an element to edit its properties.</p>;
+
+    // Use selectedElement directly for values, as updates are propagated up.
+    const currentProps = selectedElement; 
+    const currentStyle = selectedElement.style || {};
+
 
     return (
       <div className="space-y-4 p-4">
@@ -82,7 +91,7 @@ export function PropertiesPanel({
                     <Label htmlFor="content">Text Content</Label>
                     <Textarea
                       id="content"
-                      value={elementProps.content || ''}
+                      value={currentProps.content || ''}
                       onChange={(e) => handleInputChange('content', e.target.value)}
                       className="mt-1"
                       rows={3}
@@ -90,7 +99,7 @@ export function PropertiesPanel({
                   </div>
                   <div>
                     <Label htmlFor="fontFamily">Font Family</Label>
-                    <Select value={elementProps.style?.fontFamily || 'PT Sans'} onValueChange={(val) => handleStyleChange('fontFamily', val)}>
+                    <Select value={currentStyle.fontFamily || 'PT Sans'} onValueChange={(val) => handleStyleChange('fontFamily', val)}>
                       <SelectTrigger id="fontFamily" className="mt-1">
                         <SelectValue placeholder="Select font" />
                       </SelectTrigger>
@@ -107,36 +116,21 @@ export function PropertiesPanel({
                     <Input
                       id="fontSize"
                       type="number"
-                      value={parseInt(elementProps.style?.fontSize || '16')}
+                      value={parseInt(currentStyle.fontSize || '16')}
                       onChange={(e) => handleStyleChange('fontSize', `${e.target.value}px`)}
                       className="mt-1"
                     />
                   </div>
-                  <div>
-                    <Label>Text Style</Label>
-                    <div className="flex space-x-1 mt-1">
-                        <Button variant="outline" size="icon"><Bold className="w-4 h-4"/></Button>
-                        <Button variant="outline" size="icon"><Italic className="w-4 h-4"/></Button>
-                        <Button variant="outline" size="icon"><Underline className="w-4 h-4"/></Button>
-                    </div>
-                  </div>
-                  <div>
-                    <Label>Alignment</Label>
-                     <div className="flex space-x-1 mt-1">
-                        <Button variant="outline" size="icon"><AlignLeft className="w-4 h-4"/></Button>
-                        <Button variant="outline" size="icon"><AlignCenter className="w-4 h-4"/></Button>
-                        <Button variant="outline" size="icon"><AlignRight className="w-4 h-4"/></Button>
-                    </div>
-                  </div>
+                  {/* Text Style and Alignment buttons removed for brevity, can be re-added */}
                 </>
               )}
                {(selectedElement.type === 'shape' || selectedElement.type === 'text') && (
                 <div>
-                  <Label htmlFor="color">Color</Label>
+                  <Label htmlFor="color">Text Color</Label>
                   <Input
                     id="color"
                     type="color"
-                    value={elementProps.style?.color || '#000000'}
+                    value={currentStyle.color || '#000000'}
                     onChange={(e) => handleStyleChange('color', e.target.value)}
                     className="mt-1 h-10 p-1"
                   />
@@ -148,7 +142,7 @@ export function PropertiesPanel({
                   <Input
                     id="backgroundColor"
                     type="color"
-                    value={elementProps.style?.backgroundColor || '#ffffff'}
+                    value={currentStyle.backgroundColor || '#ffffff'}
                     onChange={(e) => handleStyleChange('backgroundColor', e.target.value)}
                     className="mt-1 h-10 p-1"
                   />
@@ -159,9 +153,10 @@ export function PropertiesPanel({
                   <Label htmlFor="imageUrl">Image URL</Label>
                   <Input
                     id="imageUrl"
-                    value={elementProps.content || ''}
+                    value={currentProps.content || ''}
                     onChange={(e) => handleInputChange('content', e.target.value)}
                     className="mt-1"
+                    placeholder="https://example.com/image.png"
                   />
                 </div>
               )}
@@ -173,23 +168,23 @@ export function PropertiesPanel({
             <AccordionContent className="space-y-3 pt-2 grid grid-cols-2 gap-3">
               <div>
                 <Label htmlFor="posX">Position X (px)</Label>
-                <Input id="posX" type="number" value={elementProps.position?.x || 0} onChange={(e) => handleInputChange('position', { ...elementProps.position, x: parseInt(e.target.value) })} className="mt-1" />
+                <Input id="posX" type="number" value={currentProps.position?.x || 0} onChange={(e) => handleInputChange('position', { ...currentProps.position, x: parseInt(e.target.value) })} className="mt-1" />
               </div>
               <div>
                 <Label htmlFor="posY">Position Y (px)</Label>
-                <Input id="posY" type="number" value={elementProps.position?.y || 0} onChange={(e) => handleInputChange('position', { ...elementProps.position, y: parseInt(e.target.value) })} className="mt-1" />
+                <Input id="posY" type="number" value={currentProps.position?.y || 0} onChange={(e) => handleInputChange('position', { ...currentProps.position, y: parseInt(e.target.value) })} className="mt-1" />
               </div>
               <div>
                 <Label htmlFor="width">Width (px)</Label>
-                <Input id="width" type="number" value={elementProps.size?.width || 100} onChange={(e) => handleInputChange('size', { ...elementProps.size, width: parseInt(e.target.value) })} className="mt-1" />
+                <Input id="width" type="number" value={currentProps.size?.width || 100} onChange={(e) => handleInputChange('size', { ...currentProps.size, width: parseInt(e.target.value) })} className="mt-1" />
               </div>
               <div>
                 <Label htmlFor="height">Height (px)</Label>
-                <Input id="height" type="number" value={elementProps.size?.height || 100} onChange={(e) => handleInputChange('size', { ...elementProps.size, height: parseInt(e.target.value) })} className="mt-1" />
+                <Input id="height" type="number" value={currentProps.size?.height || 100} onChange={(e) => handleInputChange('size', { ...currentProps.size, height: parseInt(e.target.value) })} className="mt-1" />
               </div>
                <div>
                 <Label htmlFor="zIndex">Stack Order (z-index)</Label>
-                <Input id="zIndex" type="number" value={elementProps.zIndex || 0} onChange={(e) => handleInputChange('zIndex', parseInt(e.target.value))} className="mt-1" />
+                <Input id="zIndex" type="number" value={currentProps.zIndex || 0} onChange={(e) => handleInputChange('zIndex', parseInt(e.target.value))} className="mt-1" />
               </div>
             </AccordionContent>
           </AccordionItem>
@@ -199,25 +194,32 @@ export function PropertiesPanel({
   };
   
   const renderSlideComments = () => {
-    if (!currentSlide) return null;
+    if (!currentSlide) return null; // Ensure currentSlide is available
+    const comments = currentSlide.comments || [];
+
     return (
       <div className="p-4 border-t">
         <h3 className="font-semibold text-lg mb-3 flex items-center">
-          <MessageSquare className="mr-2 h-5 w-5" /> Comments
+          <MessageSquare className="mr-2 h-5 w-5" /> Comments ({comments.filter(c => !c.resolved).length} active)
         </h3>
         <ScrollArea className="h-[200px] mb-3 pr-2">
-          {currentSlide.comments.length === 0 && <p className="text-sm text-muted-foreground">No comments on this slide yet.</p>}
+          {comments.length === 0 && <p className="text-sm text-muted-foreground">No comments on this slide yet.</p>}
           <ul className="space-y-3">
-            {currentSlide.comments.map(comment => (
-              <li key={comment.id} className="text-sm p-2 bg-muted/50 rounded-md">
+            {comments.map(comment => (
+              <li key={comment.id} className={`text-sm p-2 rounded-md ${comment.resolved ? 'bg-muted/30 opacity-70' : 'bg-muted/50'}`}>
                 <div className="flex items-center mb-1">
-                  <UserCircle className="w-5 h-5 mr-2 text-muted-foreground" />
+                   <Avatar className="w-5 h-5 mr-2">
+                      <AvatarImage src={comment.userAvatarUrl} alt={comment.userName} data-ai-hint="profile avatar small" />
+                      <AvatarFallback className="text-xs">{comment.userName?.charAt(0)}</AvatarFallback>
+                    </Avatar>
                   <span className="font-semibold">{comment.userName}</span>
-                  <span className="text-xs text-muted-foreground ml-auto">{new Date(comment.createdAt).toLocaleTimeString()}</span>
+                  <span className="text-xs text-muted-foreground ml-auto">
+                    {comment.createdAt ? new Date(comment.createdAt as Date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit'}) : ''}
+                  </span>
                 </div>
-                <p className="ml-7">{comment.text}</p>
+                <p className={`ml-7 ${comment.resolved ? 'line-through' : ''}`}>{comment.text}</p>
                 {!comment.resolved && (
-                  <Button variant="link" size="sm" className="ml-7 p-0 h-auto" onClick={() => onResolveComment(comment.id)}>Resolve</Button>
+                  <Button variant="link" size="sm" className="ml-7 p-0 h-auto text-primary hover:text-primary/80" onClick={() => onResolveComment(comment.id)}>Resolve</Button>
                 )}
               </li>
             ))}

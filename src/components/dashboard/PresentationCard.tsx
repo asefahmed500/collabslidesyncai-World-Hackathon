@@ -1,3 +1,4 @@
+
 import Link from 'next/link';
 import Image from 'next/image';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,6 +13,15 @@ interface PresentationCardProps {
 }
 
 export function PresentationCard({ presentation }: PresentationCardProps) {
+  const collaboratorCount = presentation.collaborators?.length || 0;
+  // Fallback for lastUpdatedAt if it's a Firestore Timestamp object before conversion
+  const lastUpdatedDate = presentation.lastUpdatedAt instanceof Date 
+    ? presentation.lastUpdatedAt 
+    : (presentation.lastUpdatedAt as any)?.toDate 
+    ? (presentation.lastUpdatedAt as any).toDate() 
+    : new Date();
+
+
   return (
     <Card className="flex flex-col h-full hover:shadow-lg transition-shadow duration-200">
       <CardHeader className="p-0">
@@ -37,12 +47,12 @@ export function PresentationCard({ presentation }: PresentationCardProps) {
         </CardDescription>
         <div className="flex items-center text-xs text-muted-foreground mb-3">
           <Clock className="w-3 h-3 mr-1.5" />
-          Last updated: {formatDistanceToNow(new Date(presentation.lastUpdatedAt), { addSuffix: true })}
+          Last updated: {formatDistanceToNow(lastUpdatedDate, { addSuffix: true })}
         </div>
-        {presentation.collaborators && presentation.collaborators.length > 0 && (
+        {collaboratorCount > 0 && (
           <div className="flex items-center text-xs text-muted-foreground">
             <Users className="w-3 h-3 mr-1.5" />
-            {presentation.collaborators.length} collaborator{presentation.collaborators.length > 1 ? 's' : ''}
+            {collaboratorCount} collaborator{collaboratorCount > 1 ? 's' : ''}
           </div>
         )}
       </CardContent>

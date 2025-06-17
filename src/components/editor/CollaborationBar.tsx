@@ -1,23 +1,34 @@
+
 "use client";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { User } from '@/types';
+import { User as UserIcon } from 'lucide-react';
 
 interface CollaborationBarProps {
-  collaborators: User[];
-  currentUser: User; // To indicate self
+  collaborators?: User[]; // Made optional as it might not always be fully populated
+  currentUser: User | null; 
 }
 
 export function CollaborationBar({ collaborators, currentUser }: CollaborationBarProps) {
-  if (!collaborators || collaborators.length === 0) {
+  if (!currentUser && (!collaborators || collaborators.length === 0)) {
     return null;
   }
 
   // Display max 5 avatars, then a +N indicator
   const maxAvatars = 5;
-  const displayedCollaborators = collaborators.slice(0, maxAvatars);
-  const remainingCount = collaborators.length - maxAvatars;
+  let displayedCollaborators: User[] = [];
+  let remainingCount = 0;
+
+  if (collaborators && collaborators.length > 0) {
+     displayedCollaborators = collaborators.slice(0, maxAvatars);
+     remainingCount = collaborators.length - maxAvatars;
+  } else if (currentUser) {
+    // If no collaborators list but current user exists, show current user
+    displayedCollaborators = [currentUser];
+  }
+
 
   return (
     <TooltipProvider delayDuration={100}>
@@ -26,13 +37,13 @@ export function CollaborationBar({ collaborators, currentUser }: CollaborationBa
           {displayedCollaborators.map((user) => (
             <Tooltip key={user.id}>
               <TooltipTrigger asChild>
-                <Avatar className={`h-8 w-8 border-2 ${user.id === currentUser.id ? 'border-primary' : 'border-card'}`}>
-                  <AvatarImage src={user.profilePictureUrl} alt={user.name} data-ai-hint="profile avatar" />
-                  <AvatarFallback>{user.name.charAt(0).toUpperCase()}</AvatarFallback>
+                <Avatar className={`h-8 w-8 border-2 ${currentUser && user.id === currentUser.id ? 'border-primary' : 'border-card'}`}>
+                  <AvatarImage src={user.profilePictureUrl || undefined} alt={user.name || 'User'} data-ai-hint="profile avatar" />
+                  <AvatarFallback>{user.name ? user.name.charAt(0).toUpperCase() : <UserIcon className="h-4 w-4" />}</AvatarFallback>
                 </Avatar>
               </TooltipTrigger>
               <TooltipContent>
-                <p>{user.name} {user.id === currentUser.id ? '(You)' : ''}</p>
+                <p>{user.name || user.email} {currentUser && user.id === currentUser.id ? '(You)' : ''}</p>
               </TooltipContent>
             </Tooltip>
           ))}

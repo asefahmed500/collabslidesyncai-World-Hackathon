@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState } from 'react';
@@ -8,13 +9,14 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Lightbulb, Palette, Sparkles, Wand2 } from 'lucide-react';
 import { suggestDesignLayout, SuggestDesignLayoutInput, SuggestDesignLayoutOutput } from '@/ai/flows/design-assistant';
 import { getSmartSuggestions, SmartSuggestionsInput, SmartSuggestionsOutput } from '@/ai/flows/smart-suggestions';
-import type { Slide, Presentation as PresentationType } from '@/types'; // Renamed to avoid conflict
+import type { Slide, Presentation as PresentationType } from '@/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/useAuth'; // To get team branding potentially
 
 interface AIAssistantPanelProps {
   currentSlide: Slide | null;
-  currentPresentation: PresentationType | null; // Renamed to avoid conflict with HTML element
+  currentPresentation: PresentationType | null;
 }
 
 export function AIAssistantPanel({ currentSlide, currentPresentation }: AIAssistantPanelProps) {
@@ -23,6 +25,7 @@ export function AIAssistantPanel({ currentSlide, currentPresentation }: AIAssist
   const [isLoadingDesign, setIsLoadingDesign] = useState(false);
   const [isLoadingTips, setIsLoadingTips] = useState(false);
   const { toast } = useToast();
+  const { currentUser } = useAuth(); // Potentially use for team branding info later
 
   const handleSuggestDesign = async () => {
     if (!currentSlide) {
@@ -33,11 +36,15 @@ export function AIAssistantPanel({ currentSlide, currentPresentation }: AIAssist
     setDesignSuggestions(null);
     try {
       const slideContent = currentSlide.elements.map(el => el.type === 'text' ? el.content : `[${el.type}]`).join('\n');
+      
+      // TODO: Fetch team branding dynamically if available via currentUser or presentation.teamId
+      const teamBrandColors = "#3F51B5,#9C27B0,#E8EAF6"; // Placeholder
+      const teamBrandFonts = "Space Grotesk,PT Sans"; // Placeholder
+
       const input: SuggestDesignLayoutInput = {
         slideContent: slideContent || "Empty slide",
-        // Mock team branding for now
-        teamBrandColors: "#3F51B5,#9C27B0,#E8EAF6",
-        teamBrandFonts: "Space Grotesk,PT Sans",
+        teamBrandColors: teamBrandColors,
+        teamBrandFonts: teamBrandFonts,
       };
       const result = await suggestDesignLayout(input);
       setDesignSuggestions(result);
@@ -57,15 +64,16 @@ export function AIAssistantPanel({ currentSlide, currentPresentation }: AIAssist
     setIsLoadingTips(true);
     setSmartTips(null);
     try {
-      // Create a string representation of the presentation content
       const presentationContent = currentPresentation.slides.map((s, idx) => 
         `Slide ${idx + 1}:\n${s.elements.map(el => el.type === 'text' ? el.content : `[${el.type}]`).join('\n')}`
       ).join('\n\n');
 
+      // TODO: Fetch team branding dynamically
+      const teamBrandGuidelines = `Colors: #3F51B5, #9C27B0. Fonts: Space Grotesk, PT Sans. Tone: Professional and engaging.`; // Placeholder
+
       const input: SmartSuggestionsInput = {
         presentationContent: presentationContent || "Empty presentation",
-        // Optional team branding
-        teamBrandGuidelines: `Colors: #3F51B5, #9C27B0. Fonts: Space Grotesk, PT Sans. Tone: Professional and engaging.`
+        teamBrandGuidelines: teamBrandGuidelines
       };
       const result = await getSmartSuggestions(input);
       setSmartTips(result);
@@ -129,7 +137,7 @@ export function AIAssistantPanel({ currentSlide, currentPresentation }: AIAssist
                 </Card>
               </div>
             )}
-            {!isLoadingDesign && !designSuggestions && <p className="text-sm text-muted-foreground text-center pt-4">Click button to get design suggestions.</p>}
+            {!isLoadingDesign && !designSuggestions && <p className="text-sm text-muted-foreground text-center pt-4">Click button to get design suggestions for the current slide.</p>}
           </ScrollArea>
         </TabsContent>
 
@@ -150,7 +158,7 @@ export function AIAssistantPanel({ currentSlide, currentPresentation }: AIAssist
                 ))}
               </div>
             )}
-            {!isLoadingTips && !smartTips && <p className="text-sm text-muted-foreground text-center pt-4">Click button to get smart suggestions for the whole presentation.</p>}
+            {!isLoadingTips && !smartTips && <p className="text-sm text-muted-foreground text-center pt-4">Click button to get smart suggestions for the entire presentation.</p>}
           </ScrollArea>
         </TabsContent>
       </Tabs>

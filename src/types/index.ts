@@ -1,11 +1,15 @@
+
+import type { Timestamp } from 'firebase/firestore';
+
 export interface User {
   id: string;
-  name: string;
-  email: string;
-  profilePictureUrl?: string;
+  name?: string | null; // Firebase displayName can be null
+  email?: string | null; // Firebase email can be null
+  profilePictureUrl?: string | null;
   teamId?: string;
   role: 'owner' | 'admin' | 'editor' | 'viewer' | 'guest';
-  lastActive: Date;
+  lastActive: Date | Timestamp; // Firestore uses Timestamp
+  createdAt?: Date | Timestamp; // For user creation date
   settings: {
     darkMode: boolean;
     aiFeatures: boolean;
@@ -28,7 +32,7 @@ export interface Team {
     colors: string[]; // hex codes
     fonts: string[]; // font names
   };
-  createdAt: Date;
+  createdAt: Date | Timestamp;
 }
 
 export type SlideElementType = 'text' | 'image' | 'shape' | 'chart';
@@ -56,7 +60,7 @@ export interface SlideComment {
   userName: string;
   userAvatarUrl?: string;
   text: string;
-  createdAt: Date;
+  createdAt: Date | Timestamp;
   resolved: boolean;
 }
 
@@ -67,8 +71,8 @@ export interface Slide {
   elements: SlideElement[];
   speakerNotes?: string;
   comments: SlideComment[];
-  aiSuggestions?: string[]; // Raw suggestions yet to be applied
-  thumbnailUrl?: string; // Add this for consistency with proposal
+  aiSuggestions?: string[]; 
+  thumbnailUrl?: string; 
   backgroundColor?: string;
 }
 
@@ -77,7 +81,7 @@ export interface Presentation {
   title: string;
   description?: string;
   creatorId: string;
-  teamId: string;
+  teamId?: string; // Optional for now
   access: {
     [userId: string]: 'owner' | 'editor' | 'viewer';
   };
@@ -89,7 +93,8 @@ export interface Presentation {
   };
   thumbnailUrl?: string;
   version: number;
-  lastUpdatedAt: Date;
-  slides: Slide[]; // Keep slides data with presentation for simplicity in mock
-  collaborators?: User[]; // For presence indicators
+  createdAt?: Date | Timestamp;
+  lastUpdatedAt: Date | Timestamp;
+  slides: Slide[];
+  collaborators?: User[]; // Simplified for now
 }

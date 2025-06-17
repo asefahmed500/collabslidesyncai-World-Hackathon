@@ -1,10 +1,14 @@
+
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
 import Link from "next/link";
-import { useRouter } from "next/navigation"; // Corrected import for App Router
+import { useRouter } from "next/navigation";
+import { useFormStatus } from "react-dom";
+import React, { useEffect } from "react";
+
 
 import { Button } from "@/components/ui/button";
 import {
@@ -18,7 +22,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Zap, UserPlus, Mail, KeyRound, User } from "lucide-react";
+import { Zap, UserPlus, Mail, KeyRound, User as UserIcon } from "lucide-react";
+import { signUpWithEmail, AuthResponse } from "@/app/(auth)/actions";
+
 
 const formSchema = z.object({
   name: z.string().min(2, { message: "Name must be at least 2 characters." }),
@@ -30,9 +36,23 @@ const formSchema = z.object({
   path: ["confirmPassword"],
 });
 
+function SubmitButton() {
+  const { pending } = useFormStatus();
+  return (
+    <Button type="submit" className="w-full" disabled={pending}>
+      {pending ? "Creating Account..." : <><UserPlus className="mr-2 h-4 w-4" /> Create Account</>}
+    </Button>
+  );
+}
+
 export function SignupForm() {
   const router = useRouter();
   const { toast } = useToast();
+
+  const [formState, formAction] = React.useFormState<AuthResponse, FormData>(signUpWithEmail, {
+    success: false,
+    message: "",
+  });
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -44,18 +64,26 @@ export function SignupForm() {
     },
   });
 
-  function onSubmit(values: z.infer<typeof formSchema>) {
-    // Mock signup logic
-    console.log("Signup attempt:", values);
-    toast({
-      title: "Signup Successful (Mock)",
-      description: "Please check your email for verification. Redirecting to login...",
-    });
-    // Simulate API call
-    setTimeout(() => {
-      router.push("/login");
-    }, 1500);
-  }
+  useEffect(() => {
+    if (formState.message) {
+      if (formState.success) {
+        toast({
+          title: "Signup Successful",
+          description: "Redirecting to login...",
+        });
+        setTimeout(() => {
+          router.push("/login");
+        }, 1500);
+      } else {
+        toast({
+          title: "Signup Failed",
+          description: formState.message,
+          variant: "destructive",
+        });
+      }
+    }
+  }, [formState, toast, router]);
+
 
   return (
     <Card className="w-full max-w-md shadow-xl">
@@ -66,7 +94,7 @@ export function SignupForm() {
       </CardHeader>
       <CardContent>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+          <form action={formAction} onSubmit={form.handleSubmit(() => form.control._form PředSubmit(formAction))} className="space-y-6">
             <FormField
               control={form.control}
               name="name"
@@ -74,7 +102,7 @@ export function SignupForm() {
                 <FormItem>
                   <FormLabel>Full Name</FormLabel>
                    <div className="relative">
-                    <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <FormControl>
                       <Input placeholder="Your Name" {...field} className="pl-10" />
                     </FormControl>
@@ -131,9 +159,10 @@ export function SignupForm() {
                 </FormItem>
               )}
             />
-            <Button type="submit" className="w-full">
-              <UserPlus className="mr-2 h-4 w-4" /> Create Account
-            </Button>
+            <SubmitButton />
+            {formState?.message && !formState.success && (
+              <p className="text-sm font-medium text-destructive">{formState.message}</p>
+            )}
           </form>
         </Form>
       </CardContent>

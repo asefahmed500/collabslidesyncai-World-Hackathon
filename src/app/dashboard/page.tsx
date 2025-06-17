@@ -1,35 +1,101 @@
+
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { SiteHeader } from '@/components/shared/SiteHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PresentationCard } from '@/components/dashboard/PresentationCard';
-import { mockPresentations, mockUser } from '@/lib/mock-data';
-import type { Presentation } from '@/types';
-import { PlusCircle, Search, Filter, List, Grid, Users, Activity } from 'lucide-react';
+import type { Presentation, User as AppUser } from '@/types';
+import { PlusCircle, Search, Filter, List, Grid, Users, Activity, Loader2 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import Image from 'next/image';
+import { useAuth } from '@/hooks/useAuth';
+import { getPresentationsForUser, createPresentation as apiCreatePresentation } from '@/lib/firestoreService';
+import { useToast } from '@/hooks/use-toast';
 
 export default function DashboardPage() {
+  const { currentUser, loading: authLoading } = useAuth();
+  const router = useRouter();
+  const { toast } = useToast();
+
+  const [presentations, setPresentations] = useState<Presentation[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filter, setFilter] = useState('all'); // e.g., 'all', 'mine', 'shared'
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid'); // 'grid' or 'list'
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
-  // Filter presentations based on search term and filter
-  const filteredPresentations = mockPresentations.filter(p => {
+  useEffect(() => {
+    if (!authLoading && !currentUser) {
+      router.push('/login');
+    }
+  }, [currentUser, authLoading, router]);
+
+  useEffect(() => {
+    if (currentUser) {
+      setIsLoading(true);
+      getPresentationsForUser(currentUser.id)
+        .then(data => {
+          setPresentations(data);
+          setIsLoading(false);
+        })
+        .catch(error => {
+          console.error("Error fetching presentations:", error);
+          toast({ title: "Error", description: "Could not fetch presentations.", variant: "destructive" });
+          setIsLoading(false);
+        });
+    }
+  }, [currentUser, toast]);
+
+  const handleCreateNewPresentation = async () => {
+    if (!currentUser) {
+      toast({ title: "Error", description: "You must be logged in to create a presentation.", variant: "destructive" });
+      return;
+    }
+    try {
+      // Basic title for new presentation, user can change it in editor
+      const newPresentationId = await apiCreatePresentation(currentUser.id, "Untitled Presentation");
+      toast({ title: "Presentation Created", description: "Redirecting to editor..." });
+      router.push(`/editor/${newPresentationId}`);
+    } catch (error) {
+      console.error("Error creating presentation:", error);
+      toast({ title: "Error", description: "Could not create presentation.", variant: "destructive" });
+    }
+  };
+
+  const filteredPresentations = presentations.filter(p => {
     const matchesSearch = p.title.toLowerCase().includes(searchTerm.toLowerCase());
+    if (!currentUser) return matchesSearch; // Should not happen if auth guard is effective
+    
     const matchesFilter = filter === 'all' || 
-                         (filter === 'mine' && p.creatorId === mockUser.id) ||
-                         (filter === 'shared' && p.creatorId !== mockUser.id && p.access[mockUser.id]);
+                         (filter === 'mine' && p.creatorId === currentUser.id) ||
+                         (filter === 'shared' && p.creatorId !== currentUser.id && p.access && p.access[currentUser.id]);
     return matchesSearch && matchesFilter;
   });
   
-  const recentPresentations = [...mockPresentations]
+  const recentPresentations = [...presentations]
     .sort((a,b) => new Date(b.lastUpdatedAt).getTime() - new Date(a.lastUpdatedAt).getTime())
     .slice(0,3);
+
+  if (authLoading || (isLoading && !presentations.length)) {
+    return (
+      <div className="flex flex-col min-h-screen">
+        <SiteHeader />
+        <main className="flex-grow container mx-auto p-4 sm:p-6 lg:p-8 flex items-center justify-center">
+          <Loader2 className="h-12 w-12 animate-spin text-primary" />
+        </main>
+      </div>
+    );
+  }
+  
+  if (!currentUser && !authLoading) {
+     return null; // Or a redirect component, router.push handles it but this prevents flash
+  }
+
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -37,7 +103,7 @@ export default function DashboardPage() {
       <main className="flex-grow container mx-auto p-4 sm:p-6 lg:p-8">
         <div className="mb-8">
           <h1 className="font-headline text-4xl font-bold text-primary">Your Dashboard</h1>
-          <p className="text-muted-foreground">Welcome back, {mockUser.name}! Manage your presentations here.</p>
+          <p className="text-muted-foreground">Welcome back, {currentUser?.name}! Manage your presentations here.</p>
         </div>
 
         <div className="mb-6 flex flex-col sm:flex-row items-center justify-between gap-4">
@@ -66,16 +132,15 @@ export default function DashboardPage() {
             <Button variant="outline" size="icon" onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')} aria-label="Toggle view mode">
               {viewMode === 'grid' ? <List className="h-4 w-4" /> : <Grid className="h-4 w-4" />}
             </Button>
-            <Button>
+            <Button onClick={handleCreateNewPresentation}>
               <PlusCircle className="mr-2 h-4 w-4" /> Create New
             </Button>
           </div>
         </div>
         
-        {/* Recent Presentations Section */}
         <section className="mb-8">
           <h2 className="font-headline text-2xl font-semibold mb-4">Recent Presentations</h2>
-          {recentPresentations.length > 0 ? (
+          {isLoading ? <Loader2 className="h-8 w-8 animate-spin text-primary" /> : recentPresentations.length > 0 ? (
              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {recentPresentations.map(p => <PresentationCard key={p.id} presentation={p} />)}
             </div>
@@ -84,16 +149,14 @@ export default function DashboardPage() {
           )}
         </section>
 
-        {/* All Presentations Section */}
         <section>
           <h2 className="font-headline text-2xl font-semibold mb-4">All Presentations</h2>
-          {filteredPresentations.length > 0 ? (
+          {isLoading ? <Loader2 className="h-8 w-8 animate-spin text-primary" /> : filteredPresentations.length > 0 ? (
             <div className={`grid gap-6 ${viewMode === 'grid' ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4' : 'grid-cols-1'}`}>
               {filteredPresentations.map((presentation: Presentation) => (
                 viewMode === 'grid' ? (
                   <PresentationCard key={presentation.id} presentation={presentation} />
                 ) : (
-                  // List view item (simplified)
                   <Card key={presentation.id} className="hover:shadow-md transition-shadow">
                     <CardContent className="p-4 flex items-center justify-between">
                       <div className="flex items-center gap-4">
@@ -104,7 +167,7 @@ export default function DashboardPage() {
                         </div>
                       </div>
                       <Button variant="outline" size="sm" asChild>
-                        <a href={`/editor/${presentation.id}`}>Open</a>
+                        <Link href={`/editor/${presentation.id}`}>Open</Link>
                       </Button>
                     </CardContent>
                   </Card>
@@ -122,7 +185,6 @@ export default function DashboardPage() {
           )}
         </section>
         
-        {/* Placeholder for Team Activity Feed */}
         <section className="mt-12">
            <Card>
             <CardHeader>
@@ -132,19 +194,7 @@ export default function DashboardPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <ScrollArea className="h-[200px]">
-                <ul className="space-y-3">
-                  {[...Array(5)].map((_, i) => (
-                    <li key={i} className="flex items-center text-sm">
-                      <Image src={`https://placehold.co/32x32.png?text=U${i+1}`} alt="User" width={32} height={32} className="rounded-full mr-3" data-ai-hint="profile avatar"/>
-                      <div>
-                        <strong>User {i+1}</strong> edited "Presentation Title {i % 2 + 1}"
-                        <span className="text-xs text-muted-foreground ml-2">{i+1}m ago</span>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </ScrollArea>
+               <p className="text-muted-foreground">Team activity feed coming soon.</p>
             </CardContent>
           </Card>
         </section>
