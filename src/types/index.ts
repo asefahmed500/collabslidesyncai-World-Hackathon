@@ -5,8 +5,8 @@ export interface User {
   name?: string | null;
   email?: string | null;
   profilePictureUrl?: string | null;
-  teamId?: string; // ID of the primary team they created or were last active in contextually
-  role: 'owner' | 'admin' | 'editor' | 'viewer' | 'guest'; // Role within their primary/contextual team
+  teamId?: string; 
+  role: 'owner' | 'admin' | 'editor' | 'viewer' | 'guest'; 
   lastActive: Date | Timestamp;
   createdAt?: Date | Timestamp;
   settings: {
@@ -14,7 +14,7 @@ export interface User {
     aiFeatures: boolean;
     notifications: boolean;
   };
-  isAppAdmin?: boolean; // New flag for application-level admin
+  isAppAdmin?: boolean; 
 }
 
 export type TeamRole = 'owner' | 'admin' | 'editor' | 'viewer';
@@ -22,23 +22,23 @@ export type TeamRole = 'owner' | 'admin' | 'editor' | 'viewer';
 export interface TeamMember {
   role: TeamRole;
   joinedAt: Timestamp;
-  addedBy: string; // User ID of who added this member
-  name?: string; // Denormalized for easier display
-  email?: string; // Denormalized
-  profilePictureUrl?: string; // Denormalized
+  addedBy: string; 
+  name?: string; 
+  email?: string; 
+  profilePictureUrl?: string; 
 }
 
 export interface Team {
   id: string;
   name: string;
-  ownerId: string; // Original creator, owner role is managed in 'members'
+  ownerId: string; 
   members: {
     [userId: string]: TeamMember;
   };
   branding: {
     logoUrl?: string;
-    primaryColor?: string; // e.g., hex code
-    secondaryColor?: string; // e.g., hex code
+    primaryColor?: string; 
+    secondaryColor?: string; 
     fontPrimary?: string;
     fontSecondary?: string;
   };
@@ -51,6 +51,7 @@ export interface Team {
 }
 
 export type SlideElementType = 'text' | 'image' | 'shape' | 'chart';
+export type PresentationAccessRole = 'owner' | 'editor' | 'viewer';
 
 export interface SlideElement {
   id: string;
@@ -108,12 +109,12 @@ export interface Presentation {
   creatorId: string;
   teamId?: string;
   access: {
-    [userId: string]: 'owner' | 'editor' | 'viewer';
+    [userId: string]: PresentationAccessRole;
   };
   settings: {
     isPublic: boolean;
     passwordProtected: boolean;
-    password?: string;
+    password?: string; 
     commentsAllowed: boolean;
   };
   thumbnailUrl?: string;
@@ -130,22 +131,53 @@ export type TeamActivityType =
   | 'member_removed'
   | 'member_role_changed'
   | 'team_profile_updated'
-  | 'presentation_created' // Example of other relevant activity
-  | 'presentation_deleted'; // Example
+  | 'presentation_created' 
+  | 'presentation_deleted'; 
 
 export interface TeamActivity {
   id: string;
   teamId: string;
-  actorId: string; // User who performed the action
-  actorName?: string; // Denormalized
+  actorId: string; 
+  actorName?: string; 
   actionType: TeamActivityType;
   targetType?: 'user' | 'presentation' | 'team_profile';
-  targetId?: string; // e.g., userId of affected member, presentationId
-  targetName?: string; // e.g., name of affected member or presentation
+  targetId?: string; 
+  targetName?: string; 
   details?: {
     oldRole?: TeamRole;
     newRole?: TeamRole;
-    changedFields?: string[]; // For profile updates
+    changedFields?: string[]; 
+    [key: string]: any;
+  };
+  createdAt: Timestamp;
+}
+
+export type PresentationActivityType =
+  | 'presentation_viewed'
+  | 'sharing_settings_updated' // Generic for isPublic, passwordProtected changes
+  | 'password_set'
+  | 'password_removed'
+  | 'collaborator_added'
+  | 'collaborator_removed'
+  | 'collaborator_role_changed';
+
+export interface PresentationActivity {
+  id: string;
+  presentationId: string;
+  actorId: string; // User ID of who performed action, or 'system' or 'guest_session_id'
+  actorName?: string; // Denormalized name, or "Guest"
+  actionType: PresentationActivityType;
+  targetUserId?: string; // For collaborator related actions: the user being added/removed/role_changed
+  targetUserName?: string; // Denormalized name of target user
+  details?: {
+    oldRole?: PresentationAccessRole;
+    newRole?: PresentationAccessRole;
+    changedSetting?: keyof Presentation['settings']; // e.g. 'isPublic', 'passwordProtected'
+    oldValue?: any;
+    newValue?: any;
+    ipAddress?: string; // Consider privacy implications
+    userAgent?: string; // Consider privacy implications
+    accessMethod?: 'direct' | 'public_link' | 'team_access';
     [key: string]: any;
   };
   createdAt: Timestamp;

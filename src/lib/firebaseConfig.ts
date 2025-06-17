@@ -1,3 +1,4 @@
+
 // Import the functions you need from the SDKs you need
 import { initializeApp, getApps, getApp, type FirebaseOptions } from "firebase/app";
 import { getAuth } from "firebase/auth";
@@ -25,7 +26,9 @@ const checkFirebaseConfigValue = (value: string | undefined, envVarName: string,
                     "The application will not function correctly until this is resolved. " +
                     "You can find these values in your Firebase project settings under 'Web apps'.";
     console.error(message);
-    throw new Error(message); // Throw error to stop execution
+    // Throwing an error here will stop the Next.js build/dev process if the keys are not set,
+    // making it very clear that this needs to be fixed.
+    throw new Error(message);
   }
   return value; // Return validated value
 };
@@ -60,6 +63,8 @@ try {
   }
 } catch (error: any) {
   console.error("Firebase app initialization failed during initializeApp call:", error);
+  // This error might occur if Firebase services are down or there's a network issue,
+  // or if initializeApp is called multiple times incorrectly (though getApps().length should prevent that).
   throw new Error(`Firebase app initialization failed directly. Original error: ${error.message}. Ensure your Firebase project is set up correctly and accessible, and that all Firebase config values in .env are correct.`);
 }
 

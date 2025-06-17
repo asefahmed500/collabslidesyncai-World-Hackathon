@@ -20,7 +20,7 @@ import {
   limit,
   runTransaction
 } from 'firebase/firestore';
-import type { Presentation, Slide, SlideElement, SlideComment, User, Team, ActiveCollaboratorInfo, TeamRole, TeamMember, TeamActivity, TeamActivityType } from '@/types';
+import type { Presentation, Slide, SlideElement, SlideComment, User, Team, ActiveCollaboratorInfo, TeamRole, TeamMember, TeamActivity, TeamActivityType, PresentationActivity, PresentationActivityType, PresentationAccessRole } from '@/types';
 
 const USER_COLORS = [
   '#FF6B6B', '#4ECDC4', '#45B7D1', '#FED766', '#2AB7CA',
@@ -56,6 +56,7 @@ const usersCollection = collection(db, 'users');
 const teamsCollection = collection(db, 'teams');
 const presentationsCollection = collection(db, 'presentations');
 const teamActivitiesCollection = collection(db, 'teamActivities');
+const presentationActivitiesCollection = collection(db, 'presentationActivities');
 
 
 export async function createTeam(teamName: string, owner: User): Promise<string> {
@@ -137,7 +138,7 @@ export async function createPresentation(userId: string, title: string, teamId?:
     title,
     description,
     creatorId: userId,
-    teamId: teamId || undefined, // Ensure it's undefined if not provided
+    teamId: teamId || undefined, 
     access: { [userId]: 'owner' },
     settings: {
       isPublic: false,
@@ -170,15 +171,15 @@ export async function getPresentationsForUser(userId: string): Promise<Presentat
   if (!user) return [];
 
   const queries = [];
-  // Presentations created by the user
+  
   queries.push(query(presentationsCollection, where('creatorId', '==', userId)));
-  // Presentations where user has direct access
+  
   queries.push(query(presentationsCollection, where(`access.${userId}`, 'in', ['owner', 'editor', 'viewer'])));
 
-  // Presentations belonging to the user's primary team (if they have one and are a member)
+  
   if (user.teamId) {
     const team = await getTeamById(user.teamId);
-    if (team && team.members[userId]) { // Check if user is actually a member of their "primary" team
+    if (team && team.members[userId]) { 
         queries.push(query(presentationsCollection, where('teamId', '==', user.teamId)));
     }
   }
@@ -209,26 +210,65 @@ export async function getPresentationById(presentationId: string): Promise<Prese
 
 export async function updatePresentation(presentationId: string, data: Partial<Presentation>): Promise<void> {
   const docRef = doc(db, 'presentations', presentationId);
-  if (data.slides) {
-    data.slides = data.slides.map(slide => ({
-      ...slide,
-      elements: slide.elements.map(el => ({
-        ...el,
-        zIndex: el.zIndex === undefined ? 0 : el.zIndex,
-        lockedBy: el.lockedBy || null,
-        lockTimestamp: el.lockTimestamp || null,
-        style: {
-            fontFamily: el.style?.fontFamily || 'PT Sans',
-            fontSize: el.style?.fontSize || '16px',
-            color: el.style?.color || '#000000',
-            backgroundColor: el.style?.backgroundColor || 'transparent',
-            ...el.style,
+  
+  // Prepare a payload that Firestore's updateDoc can merge correctly, especially for nested objects.
+  // Using dot notation for specific fields within nested objects is often necessary if you only want to update parts of them.
+  // However, if `data` already contains the full nested object (e.g., `data.settings = { isPublic: true, passwordProtected: false, ... }`),
+  // then a direct update will merge at that level.
+  const updatePayload: { [key:string]: any } = { lastUpdatedAt: serverTimestamp() };
+
+  for (const key in data) {
+    if (Object.prototype.hasOwnProperty.call(data, key)) {
+      const typedKey = key as keyof Presentation;
+      if (typedKey === 'settings') {
+        // Merge settings specifically to avoid overwriting entire object if only some fields change
+        const newSettings = data.settings;
+        if (newSettings) {
+          for (const settingKey in newSettings) {
+            updatePayload[`settings.${settingKey}`] = newSettings[settingKey as keyof Presentation['settings']];
+          }
         }
-      }))
-    }));
+      } else if (typedKey === 'access') {
+        const newAccess = data.access;
+        if (newAccess) {
+          for (const accessKey in newAccess) {
+             if (newAccess[accessKey] === null || newAccess[accessKey] === undefined) { // For removing access
+                updatePayload[`access.${accessKey}`] = deleteField();
+             } else {
+                updatePayload[`access.${accessKey}`] = newAccess[accessKey];
+             }
+          }
+        }
+      } else if (typedKey === 'slides' && data.slides) {
+        // Full slides update (as it was before)
+        updatePayload.slides = data.slides.map(slide => ({
+          ...slide,
+          elements: slide.elements.map(el => ({
+            ...el,
+            zIndex: el.zIndex === undefined ? 0 : el.zIndex,
+            lockedBy: el.lockedBy || null,
+            lockTimestamp: el.lockTimestamp || null,
+            style: {
+                fontFamily: el.style?.fontFamily || 'PT Sans',
+                fontSize: el.style?.fontSize || '16px',
+                color: el.style?.color || '#000000',
+                backgroundColor: el.style?.backgroundColor || 'transparent',
+                ...el.style,
+            }
+          }))
+        }));
+      } else if (typedKey !== 'id' && typedKey !== 'lastUpdatedAt' && typedKey !== 'createdAt') {
+        // For other top-level fields
+        updatePayload[typedKey] = data[typedKey];
+      }
+    }
   }
-  await updateDoc(docRef, { ...data, lastUpdatedAt: serverTimestamp() });
+  
+  if (Object.keys(updatePayload).length > 1) { // more than just lastUpdatedAt
+    await updateDoc(docRef, updatePayload);
+  }
 }
+
 
 export async function deletePresentation(presentationId: string): Promise<void> {
   const docRef = doc(db, 'presentations', presentationId);
@@ -317,7 +357,7 @@ export async function updateElementInSlide(presentationId: string, slideId: stri
           }
           return el;
         });
-        if (!elementFound && updatedElementPartial.id) { // Check if ID is defined before warning
+        if (!elementFound && updatedElementPartial.id) { 
             console.warn(`Element with ID ${updatedElementPartial.id} not found in slide ${slideId}`);
         }
         return { ...s, elements: newElements };
@@ -327,7 +367,7 @@ export async function updateElementInSlide(presentationId: string, slideId: stri
 
     if (!slideFound) {
         console.warn(`Slide with ID ${slideId} not found in presentation ${presentationId}`);
-        return; // or throw error
+        return; 
     }
 
     transaction.update(presRef, { slides: updatedSlides, lastUpdatedAt: serverTimestamp() });
@@ -351,7 +391,7 @@ export async function addCommentToSlide(presentationId: string, slideId: string,
             id: `comment-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
             createdAt: serverTimestamp() as Timestamp,
         };
-        const updatedSlides = [...slides]; // Create a mutable copy
+        const updatedSlides = [...slides]; 
         const targetSlide = {...updatedSlides[slideIndex]};
         targetSlide.comments = [...(targetSlide.comments || []), newComment];
         updatedSlides[slideIndex] = targetSlide;
@@ -392,7 +432,7 @@ export async function getUserProfile(userId: string): Promise<User | null> {
         return {
           id: userSnap.id,
           ...userData,
-          isAppAdmin: userData.isAppAdmin || false // Ensure isAppAdmin defaults to false if not present
+          isAppAdmin: userData.isAppAdmin || false, 
         } as User;
     }
     return null;
@@ -462,9 +502,9 @@ export async function acquireLock(presentationId: string, slideId: string, eleme
                 if (el.id === elementId) {
                   if (el.lockedBy && el.lockedBy !== userId && el.lockTimestamp && (el.lockTimestamp.toMillis() + LOCK_DURATION_MS > Date.now())) {
                     alreadyLockedByOther = true;
-                    return el; // Element is locked by someone else, don't change it
+                    return el; 
                   }
-                  // Acquire or renew lock
+                  
                   lockAcquired = true;
                   return { ...el, lockedBy: userId, lockTimestamp: serverTimestamp() as Timestamp };
                 }
@@ -479,15 +519,15 @@ export async function acquireLock(presentationId: string, slideId: string, eleme
             throw new Error("Element already locked by another user.");
         }
         if (!lockAcquired) {
-             throw new Error("Element not found to acquire lock."); // Should not happen if elementId is valid
+             throw new Error("Element not found to acquire lock."); 
         }
 
         transaction.update(presRef, { slides: updatedSlides, lastUpdatedAt: serverTimestamp() });
     });
-    return true; // Transaction successful
+    return true; 
   } catch (error) {
     console.error("Failed to acquire lock:", error);
-    return false; // Transaction failed or specific error thrown
+    return false; 
   }
 }
 
@@ -597,13 +637,59 @@ export async function getTeamActivities(teamId: string, limitCount = 20): Promis
   return snapshot.docs.map(docSnap => ({ id: docSnap.id, ...convertTimestamps(docSnap.data()) } as TeamActivity));
 }
 
+
+// --- Presentation Activity Logging ---
+export async function logPresentationActivity(
+  presentationId: string,
+  actorId: string, // Can be 'system' or a guest session ID too
+  actionType: PresentationActivityType,
+  details?: PresentationActivity['details']
+): Promise<string> {
+  let actorName = 'System';
+  if (actorId !== 'system' && actorId !== 'guest') {
+    const actor = await getUserProfile(actorId);
+    actorName = actor?.name || 'Unknown User';
+  } else if (actorId === 'guest') {
+    actorName = 'Guest Viewer';
+  }
+
+  const activityData: Omit<PresentationActivity, 'id'> = {
+    presentationId,
+    actorId,
+    actorName,
+    actionType,
+    details: details || {},
+    createdAt: serverTimestamp() as Timestamp,
+  };
+  
+  if (details?.targetUserId) {
+      const targetUser = await getUserProfile(details.targetUserId);
+      activityData.targetUserName = targetUser?.name || details.targetUserId;
+  }
+
+  const activityRef = await addDoc(presentationActivitiesCollection, activityData);
+  return activityRef.id;
+}
+
+export async function getPresentationActivities(presentationId: string, limitCount = 20): Promise<PresentationActivity[]> {
+    const q = query(
+        presentationActivitiesCollection,
+        where('presentationId', '==', presentationId),
+        orderBy('createdAt', 'desc'),
+        limit(limitCount)
+    );
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(docSnap => ({ id: docSnap.id, ...convertTimestamps(docSnap.data())} as PresentationActivity));
+}
+
+
 // --- Admin Firestore Services ---
 export async function getAllUsers(): Promise<User[]> {
   const snapshot = await getDocs(usersCollection);
   return snapshot.docs.map(docSnap => ({
     id: docSnap.id,
     ...convertTimestamps(docSnap.data()),
-    isAppAdmin: docSnap.data().isAppAdmin || false, // Ensure default
+    isAppAdmin: docSnap.data().isAppAdmin || false, 
   } as User));
 }
 
