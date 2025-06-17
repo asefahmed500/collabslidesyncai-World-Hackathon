@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PresentationCard } from '@/components/dashboard/PresentationCard';
 import type { Presentation, User as AppUser } from '@/types'; 
-import { PlusCircle, Search, Filter, List, Grid, Users, Activity, Loader2, FileWarning } from 'lucide-react';
+import { PlusCircle, Search, Filter, List, Grid, Users, Activity, Loader2, FileWarning, Library } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import Image from 'next/image';
@@ -71,8 +71,6 @@ export default function DashboardPage() {
     const matchesSearch = p.title.toLowerCase().includes(searchTerm.toLowerCase());
     if (!currentUser) return false;
     
-    // For "team" filter, it correctly lists presentations associated with the user's primary teamId.
-    // For "shared", it's presentations explicitly shared where the user is in `access` map but not creator.
     const matchesFilter = filter === 'all' || 
                          (filter === 'mine' && p.creatorId === currentUser.id) ||
                          (filter === 'shared' && p.access && p.access[currentUser.id] && p.creatorId !== currentUser.id) ||
@@ -117,7 +115,7 @@ export default function DashboardPage() {
       <main className="flex-grow container mx-auto p-4 sm:p-6 lg:p-8">
         <div className="mb-8">
           <h1 className="font-headline text-4xl font-bold text-primary">Your Dashboard</h1>
-          <p className="text-muted-foreground">Welcome back, {currentUser?.name}! Manage your presentations here.</p>
+          <p className="text-muted-foreground">Welcome back, {currentUser?.name}! Manage your presentations and assets here.</p>
         </div>
 
         <div className="mb-6 flex flex-col sm:flex-row items-center justify-between gap-4">
@@ -171,7 +169,7 @@ export default function DashboardPage() {
           )}
         </section>
 
-        <section>
+        <section className="mb-12">
           <h2 className="font-headline text-2xl font-semibold mb-4">All Presentations</h2>
           {isLoading ? <Loader2 className="h-8 w-8 animate-spin text-primary" /> : filteredPresentations.length > 0 ? (
             <div className={`grid gap-6 ${viewMode === 'grid' ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4' : 'grid-cols-1'}`}>
@@ -220,7 +218,29 @@ export default function DashboardPage() {
           )}
         </section>
         
-        <section className="mt-12">
+        <section className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
+          <Card>
+            <CardHeader>
+              <CardTitle className="font-headline text-2xl flex items-center">
+                <Library className="mr-2 h-5 w-5 text-primary" />
+                Team Asset Library
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+               {currentUser?.teamId ? (
+                <>
+                  <p className="text-muted-foreground mb-4">
+                      Manage your team's shared images and other files.
+                  </p>
+                  <Link href="/dashboard/assets" passHref legacyBehavior>
+                     <Button variant="outline">Go to Asset Library</Button>
+                  </Link>
+                </>
+               ) : (
+                 <p className="text-muted-foreground">Create or join a team to use the asset library.</p>
+               )}
+            </CardContent>
+          </Card>
            <Card>
             <CardHeader>
               <CardTitle className="font-headline text-2xl flex items-center">

@@ -100,6 +100,7 @@ export interface ActiveCollaboratorInfo {
   cursorPosition?: { slideId: string; x: number; y: number } | null;
   lastSeen: Timestamp;
   color: string;
+  email?: string; // Added email for ShareDialog collaborator list
 }
 
 export interface Presentation {
@@ -123,6 +124,7 @@ export interface Presentation {
   lastUpdatedAt: Timestamp;
   slides: Slide[];
   activeCollaborators?: { [userId: string]: ActiveCollaboratorInfo };
+  collaborators?: User[]; // For PresentationCard, if needed for simpler display
 }
 
 export type TeamActivityType =
@@ -154,7 +156,7 @@ export interface TeamActivity {
 
 export type PresentationActivityType =
   | 'presentation_viewed'
-  | 'sharing_settings_updated' // Generic for isPublic, passwordProtected changes
+  | 'sharing_settings_updated' 
   | 'password_set'
   | 'password_removed'
   | 'collaborator_added'
@@ -164,21 +166,43 @@ export type PresentationActivityType =
 export interface PresentationActivity {
   id: string;
   presentationId: string;
-  actorId: string; // User ID of who performed action, or 'system' or 'guest_session_id'
-  actorName?: string; // Denormalized name, or "Guest"
+  actorId: string; 
+  actorName?: string; 
   actionType: PresentationActivityType;
-  targetUserId?: string; // For collaborator related actions: the user being added/removed/role_changed
-  targetUserName?: string; // Denormalized name of target user
+  targetUserId?: string; 
+  targetUserName?: string; 
   details?: {
     oldRole?: PresentationAccessRole;
     newRole?: PresentationAccessRole;
-    changedSetting?: keyof Presentation['settings']; // e.g. 'isPublic', 'passwordProtected'
+    changedSetting?: keyof Presentation['settings']; 
     oldValue?: any;
     newValue?: any;
-    ipAddress?: string; // Consider privacy implications
-    userAgent?: string; // Consider privacy implications
-    accessMethod?: 'direct' | 'public_link' | 'team_access';
+    ipAddress?: string; 
+    userAgent?: string; 
+    accessMethod?: 'direct' | 'public_link' | 'team_access' | 'public_link_password';
     [key: string]: any;
   };
   createdAt: Timestamp;
+}
+
+export type AssetType = 'image' | 'video' | 'audio' | 'pdf' | 'other';
+
+export interface Asset {
+  id: string;
+  teamId: string;
+  uploaderId: string;
+  uploaderName?: string; // Denormalized for convenience
+  fileName: string;
+  fileType: string; // MIME type
+  assetType: AssetType; // Categorized type
+  storagePath: string; // Full path in Firebase Storage
+  downloadURL: string;
+  size: number; // in bytes
+  thumbnailURL?: string; // Optional, e.g., for images or video stills
+  dimensions?: { width: number; height: number }; // For images
+  duration?: number; // For audio/video in seconds
+  tags?: string[];
+  description?: string;
+  createdAt: Timestamp;
+  lastUpdatedAt?: Timestamp;
 }

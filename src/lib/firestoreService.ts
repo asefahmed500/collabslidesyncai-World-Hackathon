@@ -1,5 +1,5 @@
 
-import { db } from './firebaseConfig';
+import { db, storage as fbStorage } from './firebaseConfig'; // Renamed storage to fbStorage to avoid name clash
 import {
   collection,
   addDoc,
@@ -20,7 +20,8 @@ import {
   limit,
   runTransaction
 } from 'firebase/firestore';
-import type { Presentation, Slide, SlideElement, SlideComment, User, Team, ActiveCollaboratorInfo, TeamRole, TeamMember, TeamActivity, TeamActivityType, PresentationActivity, PresentationActivityType, PresentationAccessRole } from '@/types';
+import { ref, deleteObject } from 'firebase/storage';
+import type { Presentation, Slide, SlideElement, SlideComment, User, Team, ActiveCollaboratorInfo, TeamRole, TeamMember, TeamActivity, TeamActivityType, PresentationActivity, PresentationActivityType, PresentationAccessRole, Asset, AssetType } from '@/types';
 
 const USER_COLORS = [
   '#FF6B6B', '#4ECDC4', '#45B7D1', '#FED766', '#2AB7CA',
@@ -57,6 +58,7 @@ const teamsCollection = collection(db, 'teams');
 const presentationsCollection = collection(db, 'presentations');
 const teamActivitiesCollection = collection(db, 'teamActivities');
 const presentationActivitiesCollection = collection(db, 'presentationActivities');
+const assetsCollection = collection(db, 'assets');
 
 
 export async function createTeam(teamName: string, owner: User): Promise<string> {
@@ -211,17 +213,12 @@ export async function getPresentationById(presentationId: string): Promise<Prese
 export async function updatePresentation(presentationId: string, data: Partial<Presentation>): Promise<void> {
   const docRef = doc(db, 'presentations', presentationId);
   
-  // Prepare a payload that Firestore's updateDoc can merge correctly, especially for nested objects.
-  // Using dot notation for specific fields within nested objects is often necessary if you only want to update parts of them.
-  // However, if `data` already contains the full nested object (e.g., `data.settings = { isPublic: true, passwordProtected: false, ... }`),
-  // then a direct update will merge at that level.
   const updatePayload: { [key:string]: any } = { lastUpdatedAt: serverTimestamp() };
 
   for (const key in data) {
     if (Object.prototype.hasOwnProperty.call(data, key)) {
       const typedKey = key as keyof Presentation;
       if (typedKey === 'settings') {
-        // Merge settings specifically to avoid overwriting entire object if only some fields change
         const newSettings = data.settings;
         if (newSettings) {
           for (const settingKey in newSettings) {
@@ -232,7 +229,7 @@ export async function updatePresentation(presentationId: string, data: Partial<P
         const newAccess = data.access;
         if (newAccess) {
           for (const accessKey in newAccess) {
-             if (newAccess[accessKey] === null || newAccess[accessKey] === undefined) { // For removing access
+             if (newAccess[accessKey] === null || newAccess[accessKey] === undefined) { 
                 updatePayload[`access.${accessKey}`] = deleteField();
              } else {
                 updatePayload[`access.${accessKey}`] = newAccess[accessKey];
@@ -240,7 +237,6 @@ export async function updatePresentation(presentationId: string, data: Partial<P
           }
         }
       } else if (typedKey === 'slides' && data.slides) {
-        // Full slides update (as it was before)
         updatePayload.slides = data.slides.map(slide => ({
           ...slide,
           elements: slide.elements.map(el => ({
@@ -258,13 +254,12 @@ export async function updatePresentation(presentationId: string, data: Partial<P
           }))
         }));
       } else if (typedKey !== 'id' && typedKey !== 'lastUpdatedAt' && typedKey !== 'createdAt') {
-        // For other top-level fields
         updatePayload[typedKey] = data[typedKey];
       }
     }
   }
   
-  if (Object.keys(updatePayload).length > 1) { // more than just lastUpdatedAt
+  if (Object.keys(updatePayload).length > 1) { 
     await updateDoc(docRef, updatePayload);
   }
 }
@@ -445,7 +440,7 @@ export async function updateUserProfile(userId: string, data: Partial<User>): Pr
 
 // --- Collaboration Features ---
 
-export async function updateUserPresence(presentationId: string, userId: string, userInfo: Pick<ActiveCollaboratorInfo, 'name' | 'profilePictureUrl' | 'color'>): Promise<void> {
+export async function updateUserPresence(presentationId: string, userId: string, userInfo: Pick<ActiveCollaboratorInfo, 'name' | 'profilePictureUrl' | 'color' | 'email'>): Promise<void> {
   const presRef = doc(db, 'presentations', presentationId);
   const collaboratorPath = `activeCollaborators.${userId}`;
   await updateDoc(presRef, {
@@ -453,9 +448,9 @@ export async function updateUserPresence(presentationId: string, userId: string,
       ...userInfo,
       id: userId,
       lastSeen: serverTimestamp(),
-      cursorPosition: null,
+      cursorPosition: null, // Reset cursor on presence update, let client send new position
     },
-    lastUpdatedAt: serverTimestamp()
+    lastUpdatedAt: serverTimestamp() 
   });
 }
 
@@ -471,7 +466,7 @@ export async function removeUserPresence(presentationId: string, userId: string)
 export async function updateUserCursorPosition(presentationId: string, userId: string, slideId: string, position: { x: number; y: number }): Promise<void> {
   const presRef = doc(db, 'presentations', presentationId);
   const cursorPath = `activeCollaborators.${userId}.cursorPosition`;
-  const lastSeenPath = `activeCollaborators.${userId}.lastSeen`;
+  const lastSeenPath = `activeCollaborators.${userId}.lastSeen`; // Also update lastSeen
   await updateDoc(presRef, {
     [cursorPath]: { slideId, ...position },
     [lastSeenPath]: serverTimestamp()
@@ -598,7 +593,7 @@ export async function logTeamActivity(
   teamId: string,
   actorId: string,
   actionType: TeamActivityType,
-  targetType?: 'user' | 'presentation' | 'team_profile',
+  targetType?: 'user' | 'presentation' | 'team_profile' | 'asset',
   targetId?: string,
   details?: object
 ): Promise<string> {
@@ -641,16 +636,16 @@ export async function getTeamActivities(teamId: string, limitCount = 20): Promis
 // --- Presentation Activity Logging ---
 export async function logPresentationActivity(
   presentationId: string,
-  actorId: string, // Can be 'system' or a guest session ID too
+  actorId: string, 
   actionType: PresentationActivityType,
   details?: PresentationActivity['details']
 ): Promise<string> {
   let actorName = 'System';
-  if (actorId !== 'system' && actorId !== 'guest') {
+  if (actorId !== 'system' && actorId !== 'guest' && actorId !== 'guest_password_verified') {
     const actor = await getUserProfile(actorId);
     actorName = actor?.name || 'Unknown User';
-  } else if (actorId === 'guest') {
-    actorName = 'Guest Viewer';
+  } else if (actorId === 'guest' || actorId === 'guest_password_verified') {
+    actorName = actorId === 'guest_password_verified' ? 'Guest (Password Verified)' : 'Guest Viewer';
   }
 
   const activityData: Omit<PresentationActivity, 'id'> = {
@@ -696,6 +691,42 @@ export async function getAllUsers(): Promise<User[]> {
 export async function getAllTeams(): Promise<Team[]> {
   const snapshot = await getDocs(teamsCollection);
   return snapshot.docs.map(docSnap => ({ id: docSnap.id, ...convertTimestamps(docSnap.data()) } as Team));
+}
+
+// --- Asset Management Firestore Services ---
+export async function createAssetMetadata(assetData: Omit<Asset, 'id' | 'createdAt'>): Promise<string> {
+  const docRef = await addDoc(assetsCollection, {
+    ...assetData,
+    createdAt: serverTimestamp() as Timestamp,
+    lastUpdatedAt: serverTimestamp() as Timestamp,
+  });
+  if (assetData.teamId && assetData.uploaderId) {
+    await logTeamActivity(assetData.teamId, assetData.uploaderId, 'asset_uploaded' as any, 'asset', docRef.id, { fileName: assetData.fileName, assetType: assetData.assetType });
+  }
+  return docRef.id;
+}
+
+export async function getTeamAssets(teamId: string): Promise<Asset[]> {
+  const q = query(assetsCollection, where('teamId', '==', teamId), orderBy('createdAt', 'desc'));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(doc => ({ id: doc.id, ...convertTimestamps(doc.data()) } as Asset));
+}
+
+export async function deleteAsset(assetId: string, storagePath: string, teamId: string, actorId: string): Promise<void> {
+  const assetRef = doc(db, 'assets', assetId);
+  const assetDoc = await getDoc(assetRef);
+  const assetData = assetDoc.data() as Asset | undefined;
+
+  // Delete from Firebase Storage
+  const fileRef = ref(fbStorage, storagePath);
+  await deleteObject(fileRef);
+
+  // Delete from Firestore
+  await deleteDoc(assetRef);
+
+  if (teamId && actorId && assetData) {
+    await logTeamActivity(teamId, actorId, 'asset_deleted' as any, 'asset', assetId, { fileName: assetData.fileName, assetType: assetData.assetType });
+  }
 }
 
 
