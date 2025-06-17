@@ -1,3 +1,4 @@
+
 // This file can be expanded with more auth-related utility functions if needed.
 // For now, it serves as a placeholder or for simple helper functions
 // that might not fit directly into components or server actions.

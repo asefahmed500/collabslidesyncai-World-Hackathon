@@ -6,7 +6,7 @@ import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { auth, db } from '@/lib/firebaseConfig';
 import type { User as AppUser } from '@/types';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
-import { mapFirebaseUserToAppUser } from '@/lib/authService'; // Assuming you have this helper
+import { mapFirebaseUserToAppUser } from '@/lib/authService';
 
 interface AuthContextType {
   currentUser: AppUser | null;
@@ -25,7 +25,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setFirebaseUser(user);
       if (user) {
-        // User is signed in, now fetch their profile from Firestore
         const userDocRef = doc(db, "users", user.uid);
         const unsubProfile = onSnapshot(userDocRef, (docSnap) => {
           if (docSnap.exists()) {
@@ -39,28 +38,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               lastActive: userData.lastActive?.toDate() || new Date(),
               settings: userData.settings || { darkMode: false, aiFeatures: true, notifications: true },
               teamId: userData.teamId,
+              isAppAdmin: userData.isAppAdmin || false, // Fetch isAppAdmin
             });
           } else {
-            // No profile yet, create a basic one or use a default
             const basicUser = mapFirebaseUserToAppUser(user);
-            setCurrentUser(basicUser);
-            // Consider creating a Firestore document here if it's expected
+            setCurrentUser({...basicUser, isAppAdmin: false });
           }
           setLoading(false);
         }, (error) => {
           console.error("Error fetching user profile:", error);
-          setCurrentUser(mapFirebaseUserToAppUser(user)); // Fallback to basic mapping
+          const basicUser = mapFirebaseUserToAppUser(user);
+          setCurrentUser({...basicUser, isAppAdmin: false });
           setLoading(false);
         });
-        return () => unsubProfile(); // Unsubscribe from profile listener
+        return () => unsubProfile();
       } else {
-        // User is signed out
         setCurrentUser(null);
         setLoading(false);
       }
     });
 
-    return () => unsubscribe(); // Unsubscribe from auth state listener
+    return () => unsubscribe();
   }, []);
 
   return (

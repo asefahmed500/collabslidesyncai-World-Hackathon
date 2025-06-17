@@ -1,9 +1,8 @@
-
 "use client";
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Zap, LayoutDashboard, UserCircle, LogOut, Settings, User, Users } from 'lucide-react'; // Added Users icon
+import { Zap, LayoutDashboard, UserCircle, LogOut, Settings, User, Users, ShieldCheck } from 'lucide-react'; // Added Users, ShieldCheck icon
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
@@ -27,13 +26,13 @@ export function SiteHeader() {
     const result = await signOut();
     if (result.success) {
       toast({ title: 'Logged Out', description: 'You have been successfully logged out.' });
-      router.push('/login'); 
-      router.refresh(); 
+      router.push('/login');
+      router.refresh();
     } else {
       toast({ title: 'Logout Failed', description: result.message, variant: 'destructive' });
     }
   };
-  
+
   if (loading && !currentUser) {
      return (
         <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -61,7 +60,7 @@ export function SiteHeader() {
             CollabSlideSyncAI
           </span>
         </Link>
-        
+
         <nav className="flex items-center space-x-4">
           {currentUser && (
              <Link href="/dashboard" passHref legacyBehavior>
@@ -76,7 +75,7 @@ export function SiteHeader() {
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative h-9 w-9 rounded-full">
                   <Avatar className="h-9 w-9">
-                    <AvatarImage src={currentUser.profilePictureUrl || `https://placehold.co/40x40.png?text=${currentUser.name?.charAt(0).toUpperCase()}`} alt={currentUser.name || 'User'} data-ai-hint="profile avatar" />
+                    <AvatarImage src={currentUser.profilePictureUrl || \`https://placehold.co/40x40.png?text=\${currentUser.name?.charAt(0).toUpperCase()}\`} alt={currentUser.name || 'User'} data-ai-hint="profile avatar" />
                     <AvatarFallback>{currentUser.name ? currentUser.name.charAt(0).toUpperCase() : <User className="h-4 w-4"/>}</AvatarFallback>
                   </Avatar>
                 </Button>
@@ -100,9 +99,15 @@ export function SiteHeader() {
                   <span>Dashboard</span>
                 </DropdownMenuItem>
                 {canManageTeam && (
-                  <DropdownMenuItem onClick={() => router.push(`/dashboard/manage-team`)}>
+                  <DropdownMenuItem onClick={() => router.push(\`/dashboard/manage-team\`)}>
                     <Users className="mr-2 h-4 w-4" />
                     <span>Manage Team</span>
+                  </DropdownMenuItem>
+                )}
+                {currentUser.isAppAdmin && (
+                  <DropdownMenuItem onClick={() => router.push('/admin')}>
+                    <ShieldCheck className="mr-2 h-4 w-4" />
+                    <span>Admin Dashboard</span>
                   </DropdownMenuItem>
                 )}
                  <DropdownMenuItem disabled>

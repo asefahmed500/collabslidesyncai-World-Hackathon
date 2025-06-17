@@ -1,4 +1,3 @@
-
 import { db } from './firebaseConfig';
 import {
   collection,
@@ -132,7 +131,7 @@ export async function createPresentation(userId: string, title: string, teamId?:
     thumbnailUrl: `https://placehold.co/160x90.png?text=S1`,
     backgroundColor: '#FFFFFF',
   };
-  
+
   const newPresentationData: Omit<Presentation, 'id' | 'slides' | 'activeCollaborators'> & { slides: Omit<Slide, 'presentationId'>[] } = {
     title,
     description,
@@ -152,13 +151,13 @@ export async function createPresentation(userId: string, title: string, teamId?:
   };
 
   const docRef = await addDoc(presentationsCollection, newPresentationData);
-  
+
   const finalSlide: Slide = {
     ...newSlide,
     presentationId: docRef.id,
   };
   await updateDoc(docRef, { slides: [finalSlide], lastUpdatedAt: serverTimestamp() });
-  
+
   if (teamId) {
     await logTeamActivity(teamId, userId, 'presentation_created', 'presentation', docRef.id, { presentationTitle: title });
   }
@@ -174,20 +173,17 @@ export async function getPresentationsForUser(userId: string): Promise<Presentat
   queries.push(query(presentationsCollection, where('creatorId', '==', userId)));
   // Presentations where user has direct access
   queries.push(query(presentationsCollection, where(`access.${userId}`, 'in', ['owner', 'editor', 'viewer'])));
-  
+
   // Presentations belonging to the user's primary team (if they have one and are a member)
-  // This part needs careful consideration of how team access implies presentation access.
-  // For now, if a presentation has a teamId matching user's primary team, include it.
-  // More granular role-based access to team presentations would check Team.members[userId].role.
   if (user.teamId) {
     const team = await getTeamById(user.teamId);
     if (team && team.members[userId]) { // Check if user is actually a member of their "primary" team
         queries.push(query(presentationsCollection, where('teamId', '==', user.teamId)));
     }
   }
-  
+
   const allSnapshots = await Promise.all(queries.map(q => getDocs(q)));
-  
+
   const presentationsMap = new Map<string, Presentation>();
   allSnapshots.forEach(snapshot => {
     snapshot.docs.forEach(docSnap => {
@@ -196,7 +192,7 @@ export async function getPresentationsForUser(userId: string): Promise<Presentat
       }
     });
   });
-  
+
   return Array.from(presentationsMap.values());
 }
 
@@ -235,17 +231,12 @@ export async function updatePresentation(presentationId: string, data: Partial<P
 
 export async function deletePresentation(presentationId: string): Promise<void> {
   const docRef = doc(db, 'presentations', presentationId);
-  // Optional: Log activity before deleting if teamId is present
-  // const pres = await getDoc(docRef);
-  // if (pres.exists() && pres.data().teamId) {
-  //   await logTeamActivity(pres.data().teamId, actorId, 'presentation_deleted', 'presentation', presentationId, { title: pres.data().title });
-  // }
   await deleteDoc(docRef);
 }
 
 export async function addSlideToPresentation(presentationId: string, newSlideData: Partial<Omit<Slide, 'id' | 'presentationId' | 'slideNumber'>> = {}): Promise<string> {
   const presRef = doc(db, 'presentations', presentationId);
-  
+
   return await runTransaction(db, async (transaction) => {
     const presDoc = await transaction.get(presRef);
     if (!presDoc.exists()) {
@@ -273,7 +264,7 @@ export async function addSlideToPresentation(presentationId: string, newSlideDat
       elements: newSlideData.elements || [defaultElement],
       speakerNotes: newSlideData.speakerNotes || "",
       comments: newSlideData.comments || [],
-      thumbnailUrl: newSlideData.thumbnailUrl || `https://placehold.co/160x90.png?text=S${slideNumber}`,
+      thumbnailUrl: newSlideData.thumbnailUrl || \`https://placehold.co/160x90.png?text=S\${slideNumber}\`,
       backgroundColor: newSlideData.backgroundColor || '#FFFFFF',
       aiSuggestions: newSlideData.aiSuggestions || [],
     };
@@ -293,13 +284,13 @@ export async function updateElementInSlide(presentationId: string, slideId: stri
     return;
   }
   const presRef = doc(db, 'presentations', presentationId);
- 
+
   await runTransaction(db, async (transaction) => {
     const presDoc = await transaction.get(presRef);
     if (!presDoc.exists()) {
-        throw new Error(`Presentation with ID ${presentationId} not found.`);
+        throw new Error(\`Presentation with ID \${presentationId} not found.\`);
     }
-    
+
     const presentationData = presDoc.data() as Presentation;
     let slideFound = false;
     const updatedSlides = presentationData.slides.map(s => {
@@ -309,10 +300,10 @@ export async function updateElementInSlide(presentationId: string, slideId: stri
         const newElements = s.elements.map(el => {
           if (el.id === updatedElementPartial.id) {
             elementFound = true;
-            return { 
-                ...el, 
+            return {
+                ...el,
                 ...updatedElementPartial,
-                style: { 
+                style: {
                     ...(el.style || {}),
                     ...(updatedElementPartial.style || {}),
                     fontFamily: updatedElementPartial.style?.fontFamily || el.style?.fontFamily || 'PT Sans',
@@ -326,7 +317,7 @@ export async function updateElementInSlide(presentationId: string, slideId: stri
           return el;
         });
         if (!elementFound && updatedElementPartial.id) { // Check if ID is defined before warning
-            console.warn(`Element with ID ${updatedElementPartial.id} not found in slide ${slideId}`);
+            console.warn(\`Element with ID \${updatedElementPartial.id} not found in slide \${slideId}\`);
         }
         return { ...s, elements: newElements };
       }
@@ -334,7 +325,7 @@ export async function updateElementInSlide(presentationId: string, slideId: stri
     });
 
     if (!slideFound) {
-        console.warn(`Slide with ID ${slideId} not found in presentation ${presentationId}`);
+        console.warn(\`Slide with ID \${slideId} not found in presentation \${presentationId}\`);
         return; // or throw error
     }
 
@@ -352,21 +343,21 @@ export async function addCommentToSlide(presentationId: string, slideId: string,
     const presentationData = presDoc.data() as Presentation;
     const slides = (presentationData?.slides || []);
     const slideIndex = slides.findIndex(s => s.id === slideId);
-    
+
     if (slideIndex > -1) {
         const newComment: SlideComment = {
             ...comment,
-            id: `comment-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+            id: \`comment-\${Date.now()}-\${Math.random().toString(36).substring(2, 9)}\`,
             createdAt: serverTimestamp() as Timestamp,
         };
         const updatedSlides = [...slides]; // Create a mutable copy
         const targetSlide = {...updatedSlides[slideIndex]};
         targetSlide.comments = [...(targetSlide.comments || []), newComment];
         updatedSlides[slideIndex] = targetSlide;
-        
+
         transaction.update(presRef, { slides: updatedSlides, lastUpdatedAt: serverTimestamp() });
     } else {
-        console.warn(`Slide with ID ${slideId} not found in presentation ${presentationId}`);
+        console.warn(\`Slide with ID \${slideId} not found in presentation \${presentationId}\`);
     }
   });
 }
@@ -397,7 +388,11 @@ export async function getUserProfile(userId: string): Promise<User | null> {
     const userSnap = await getDoc(userRef);
     if (userSnap.exists()) {
         const userData = convertTimestamps(userSnap.data());
-        return { id: userSnap.id, ...userData } as User;
+        return {
+          id: userSnap.id,
+          ...userData,
+          isAppAdmin: userData.isAppAdmin || false // Ensure isAppAdmin defaults to false if not present
+        } as User;
     }
     return null;
 }
@@ -411,21 +406,21 @@ export async function updateUserProfile(userId: string, data: Partial<User>): Pr
 
 export async function updateUserPresence(presentationId: string, userId: string, userInfo: Pick<ActiveCollaboratorInfo, 'name' | 'profilePictureUrl' | 'color'>): Promise<void> {
   const presRef = doc(db, 'presentations', presentationId);
-  const collaboratorPath = `activeCollaborators.${userId}`;
+  const collaboratorPath = \`activeCollaborators.\${userId}\`;
   await updateDoc(presRef, {
     [collaboratorPath]: {
       ...userInfo,
       id: userId,
       lastSeen: serverTimestamp(),
-      cursorPosition: null, 
+      cursorPosition: null,
     },
-    lastUpdatedAt: serverTimestamp() 
+    lastUpdatedAt: serverTimestamp()
   });
 }
 
 export async function removeUserPresence(presentationId: string, userId: string): Promise<void> {
   const presRef = doc(db, 'presentations', presentationId);
-  const collaboratorPath = `activeCollaborators.${userId}`;
+  const collaboratorPath = \`activeCollaborators.\${userId}\`;
   await updateDoc(presRef, {
     [collaboratorPath]: deleteField(),
     lastUpdatedAt: serverTimestamp()
@@ -434,19 +429,19 @@ export async function removeUserPresence(presentationId: string, userId: string)
 
 export async function updateUserCursorPosition(presentationId: string, userId: string, slideId: string, position: { x: number; y: number }): Promise<void> {
   const presRef = doc(db, 'presentations', presentationId);
-  const cursorPath = `activeCollaborators.${userId}.cursorPosition`;
-  const lastSeenPath = `activeCollaborators.${userId}.lastSeen`;
+  const cursorPath = \`activeCollaborators.\${userId}.cursorPosition\`;
+  const lastSeenPath = \`activeCollaborators.\${userId}.lastSeen\`;
   await updateDoc(presRef, {
     [cursorPath]: { slideId, ...position },
     [lastSeenPath]: serverTimestamp()
   });
 }
 
-const LOCK_DURATION_MS = 30 * 1000; 
+const LOCK_DURATION_MS = 30 * 1000;
 
 export async function acquireLock(presentationId: string, slideId: string, elementId: string, userId: string): Promise<boolean> {
   const presRef = doc(db, 'presentations', presentationId);
-  
+
   try {
     await runTransaction(db, async (transaction) => {
         const presDoc = await transaction.get(presRef);
@@ -478,7 +473,7 @@ export async function acquireLock(presentationId: string, slideId: string, eleme
           }
           return s;
         });
-        
+
         if (alreadyLockedByOther) {
             throw new Error("Element already locked by another user.");
         }
@@ -548,7 +543,7 @@ export async function releaseExpiredLocks(presentationId: string): Promise<void>
 
         if (locksReleased) {
           transaction.update(presRef, { slides: updatedSlides, lastUpdatedAt: serverTimestamp() });
-          console.log(`Released expired locks for presentation ${presentationId}`);
+          console.log(\`Released expired locks for presentation \${presentationId}\`);
         }
     });
   } catch (error) {
@@ -583,8 +578,6 @@ export async function logTeamActivity(
   } else if (targetType === 'presentation' && targetId) {
     // const pres = await getPresentationById(targetId);
     // activityData.targetName = pres?.title || targetId;
-    // For simplicity in this turn, avoid fetching presentation title here.
-    // It can be passed in details if needed, e.g. details: { presentationTitle: 'My Pres' }
   }
 
 
@@ -601,6 +594,21 @@ export async function getTeamActivities(teamId: string, limitCount = 20): Promis
   );
   const snapshot = await getDocs(q);
   return snapshot.docs.map(docSnap => ({ id: docSnap.id, ...convertTimestamps(docSnap.data()) } as TeamActivity));
+}
+
+// --- Admin Firestore Services ---
+export async function getAllUsers(): Promise<User[]> {
+  const snapshot = await getDocs(usersCollection);
+  return snapshot.docs.map(docSnap => ({
+    id: docSnap.id,
+    ...convertTimestamps(docSnap.data()),
+    isAppAdmin: docSnap.data().isAppAdmin || false, // Ensure default
+  } as User));
+}
+
+export async function getAllTeams(): Promise<Team[]> {
+  const snapshot = await getDocs(teamsCollection);
+  return snapshot.docs.map(docSnap => ({ id: docSnap.id, ...convertTimestamps(docSnap.data()) } as Team));
 }
 
 

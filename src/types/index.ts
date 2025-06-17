@@ -1,4 +1,3 @@
-
 import type { Timestamp } from 'firebase/firestore';
 
 export interface User {
@@ -15,6 +14,7 @@ export interface User {
     aiFeatures: boolean;
     notifications: boolean;
   };
+  isAppAdmin?: boolean; // New flag for application-level admin
 }
 
 export type TeamRole = 'owner' | 'admin' | 'editor' | 'viewer';
@@ -124,7 +124,7 @@ export interface Presentation {
   activeCollaborators?: { [userId: string]: ActiveCollaboratorInfo };
 }
 
-export type TeamActivityType = 
+export type TeamActivityType =
   | 'team_created'
   | 'member_added'
   | 'member_removed'
