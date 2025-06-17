@@ -6,8 +6,8 @@ import { useForm } from "react-hook-form";
 import * as z from "zod";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useFormStatus, useFormState } from "react-dom";
-import React, { useEffect } from "react";
+import { useFormStatus } from "react-dom"; // Keep useFormStatus from react-dom
+import React, { useEffect } from "react"; // React is already imported
 
 
 import { Button } from "@/components/ui/button";
@@ -50,7 +50,8 @@ export function SignupForm() {
   const router = useRouter();
   const { toast } = useToast();
 
-  const [formState, formAction] = useFormState<AuthResponse, FormData>(signUpWithEmail, {
+  // Changed from useFormState (from react-dom) to React.useActionState
+  const [formState, formAction] = React.useActionState<AuthResponse, FormData>(signUpWithEmail, {
     success: false,
     message: "",
   });
