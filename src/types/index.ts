@@ -6,8 +6,8 @@ export interface User {
   name?: string | null;
   email?: string | null;
   profilePictureUrl?: string | null;
-  teamId?: string; // ID of the team the user belongs to or owns
-  role: 'owner' | 'admin' | 'editor' | 'viewer' | 'guest'; // Role within their primary team
+  teamId?: string; 
+  role: 'owner' | 'admin' | 'editor' | 'viewer' | 'guest'; 
   lastActive: Date | Timestamp;
   createdAt?: Date | Timestamp;
   settings: {
@@ -20,16 +20,16 @@ export interface User {
 export interface Team {
   id: string;
   name: string;
-  ownerId: string; // User ID of the team owner
-  memberIds: string[]; // Array of user IDs who are members
+  ownerId: string; 
+  memberIds: string[]; 
   branding: {
     logoUrl?: string;
-    colors: string[]; // hex codes, e.g., ['#FF0000', '#00FF00']
-    fonts: string[]; // font names, e.g., ['Arial', 'Verdana']
+    colors: string[]; 
+    fonts: string[]; 
   };
   settings: {
     allowGuestEdits: boolean;
-    aiFeaturesEnabled: boolean; // e.g. team-wide AI setting
+    aiFeaturesEnabled: boolean; 
   };
   createdAt: Date | Timestamp;
 }
@@ -39,18 +39,19 @@ export type SlideElementType = 'text' | 'image' | 'shape' | 'chart';
 export interface SlideElement {
   id: string;
   type: SlideElementType;
-  content: any; // For text: string, for image: URL string, for chart: chart data/config
+  content: any; 
   position: { x: number; y: number };
   size: { width: number; height: number };
   style: {
-    color?: string; // Text color, shape border color (if applicable)
+    color?: string; 
     fontFamily?: string;
-    fontSize?: string; // e.g., '16px'
-    backgroundColor?: string; // Shape fill color, text box background
-    borderColor?: string; // For elements that might have a border
-    // Future: textAlign, fontWeight, fontStyle, etc.
+    fontSize?: string; 
+    backgroundColor?: string; 
+    borderColor?: string; 
   };
   zIndex?: number;
+  lockedBy?: string | null; // UserID of the user who locked this element
+  lockTimestamp?: Timestamp | null; // Timestamp when the lock was acquired
 }
 
 export interface SlideComment {
@@ -72,16 +73,25 @@ export interface Slide {
   comments: SlideComment[];
   aiSuggestions?: string[];
   thumbnailUrl?: string;
-  backgroundColor?: string; // Overall background color for the slide
+  backgroundColor?: string; 
+}
+
+export interface ActiveCollaboratorInfo {
+  id: string; // userId
+  name: string;
+  profilePictureUrl?: string;
+  cursorPosition?: { slideId: string; x: number; y: number } | null;
+  lastSeen: Timestamp;
+  color: string; // A unique color for this collaborator's cursor/presence
 }
 
 export interface Presentation {
   id: string;
   title: string;
   description?: string;
-  creatorId: string; // User ID of the original creator
-  teamId?: string; // Team this presentation belongs to
-  access: { // Defines specific user access if different from team role
+  creatorId: string; 
+  teamId?: string; 
+  access: { 
     [userId: string]: 'owner' | 'editor' | 'viewer';
   };
   settings: {
@@ -95,6 +105,6 @@ export interface Presentation {
   createdAt?: Date | Timestamp;
   lastUpdatedAt: Date | Timestamp;
   slides: Slide[];
-  collaborators?: User[]; // Full User objects for active collaborators, might be simplified for just IDs/names for display
+  // Store active collaborators directly in the presentation document for simplicity with listeners
+  activeCollaborators?: { [userId: string]: ActiveCollaboratorInfo }; 
 }
-

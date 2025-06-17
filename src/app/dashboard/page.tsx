@@ -8,11 +8,10 @@ import { SiteHeader } from '@/components/shared/SiteHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PresentationCard } from '@/components/dashboard/PresentationCard';
-import type { Presentation, User as AppUser } from '@/types';
+import type { Presentation, User as AppUser } from '@/types'; // User aliased to AppUser
 import { PlusCircle, Search, Filter, List, Grid, Users, Activity, Loader2, FileWarning } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-// import { ScrollArea } from '@/components/ui/scroll-area'; // Not used here directly
 import Image from 'next/image';
 import { useAuth } from '@/hooks/useAuth';
 import { getPresentationsForUser, createPresentation as apiCreatePresentation } from '@/lib/firestoreService';
@@ -49,7 +48,7 @@ export default function DashboardPage() {
           setIsLoading(false);
         });
     } else if (!authLoading && !currentUser) {
-        setIsLoading(false); // Not logged in, no presentations to fetch
+        setIsLoading(false); 
     }
   }, [currentUser, toast, authLoading]);
 
@@ -59,6 +58,7 @@ export default function DashboardPage() {
       return;
     }
     try {
+      // Pass teamId to createPresentation
       const newPresentationId = await apiCreatePresentation(currentUser.id, "Untitled Presentation", currentUser.teamId);
       toast({ title: "Presentation Created", description: "Redirecting to editor..." });
       router.push(`/editor/${newPresentationId}`);
@@ -72,14 +72,16 @@ export default function DashboardPage() {
     const matchesSearch = p.title.toLowerCase().includes(searchTerm.toLowerCase());
     if (!currentUser) return false;
     
-    // Adjust filter logic if team-based filtering is needed later
+    // Adjust filter logic for team-based filtering if needed later
+    // This is a simplified filter; real team sharing might involve checking a shared_with_team_ids array or similar.
     const matchesFilter = filter === 'all' || 
                          (filter === 'mine' && p.creatorId === currentUser.id) ||
-                         (filter === 'shared' && p.access && p.access[currentUser.id] && p.creatorId !== currentUser.id); // Basic shared example
+                         (filter === 'shared' && p.access && p.access[currentUser.id] && p.creatorId !== currentUser.id) ||
+                         (filter === 'team' && p.teamId && p.teamId === currentUser.teamId && p.creatorId !== currentUser.id); // Basic team filter
     return matchesSearch && matchesFilter;
   });
   
-  const recentPresentations = [...filteredPresentations] // Filter first, then sort and slice
+  const recentPresentations = [...filteredPresentations]
     .sort((a,b) => {
         const dateA = a.lastUpdatedAt instanceof Date ? a.lastUpdatedAt.getTime() : (a.lastUpdatedAt as any)?.toDate ? (a.lastUpdatedAt as any).toDate().getTime() : 0;
         const dateB = b.lastUpdatedAt instanceof Date ? b.lastUpdatedAt.getTime() : (b.lastUpdatedAt as any)?.toDate ? (b.lastUpdatedAt as any).toDate().getTime() : 0;
@@ -87,7 +89,7 @@ export default function DashboardPage() {
     })
     .slice(0,3);
 
-  if (authLoading || (isLoading && currentUser)) { // Show loader if auth is loading OR if user exists and presentations are loading
+  if (authLoading || (isLoading && currentUser)) { 
     return (
       <div className="flex flex-col min-h-screen">
         <SiteHeader />
@@ -98,8 +100,7 @@ export default function DashboardPage() {
     );
   }
   
-  if (!currentUser && !authLoading) { // User is definitely not logged in
-     // The useEffect hook should have redirected. This is a fallback or covers race conditions.
+  if (!currentUser && !authLoading) { 
      return (
         <div className="flex flex-col min-h-screen">
           <SiteHeader />
@@ -141,6 +142,7 @@ export default function DashboardPage() {
                 <SelectItem value="all">All Presentations</SelectItem>
                 <SelectItem value="mine">Created by Me</SelectItem>
                 <SelectItem value="shared">Shared with Me</SelectItem>
+                {currentUser?.teamId && <SelectItem value="team">My Team&apos;s</SelectItem>}
               </SelectContent>
             </Select>
             <Button variant="outline" size="icon" onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')} aria-label="Toggle view mode">

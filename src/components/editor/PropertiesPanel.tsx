@@ -8,8 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import type { SlideElement, Slide, SlideComment } from '@/types';
-import { Text, Image as ImageIcon, Shapes, MessageSquare, Send, Palette, UserCircleIcon } from 'lucide-react';
-import { useState, useEffect, ChangeEvent } from 'react';
+import { Text, Image as ImageIcon, Shapes, MessageSquare, Send, Palette, UserCircleIcon, Lock } from 'lucide-react';
+import { useState, ChangeEvent } from 'react';
 import { Textarea } from '../ui/textarea';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
 
@@ -21,7 +21,8 @@ interface PropertiesPanelProps {
   onAddComment: (text: string) => void;
   onResolveComment: (commentId: string) => void;
   onUpdateSlideBackgroundColor: (color: string) => void;
-  disabled?: boolean;
+  disabled?: boolean; // General disable, e.g. saving, offline
+  currentUserId: string;
 }
 
 export function PropertiesPanel({
@@ -32,25 +33,27 @@ export function PropertiesPanel({
   onResolveComment,
   onUpdateSlideBackgroundColor,
   disabled,
+  currentUserId,
 }: PropertiesPanelProps) {
   const [newComment, setNewComment] = useState("");
 
-  // Handler for direct property changes on the selected element
+  const isElementLockedByOther = selectedElement?.lockedBy && selectedElement.lockedBy !== currentUserId;
+  const effectiveDisabled = disabled || isElementLockedByOther;
+
   const handleInputChange = (prop: keyof SlideElement, value: any) => {
-    if (!selectedElement || disabled) return;
+    if (!selectedElement || effectiveDisabled) return;
     onUpdateElement({ id: selectedElement.id, [prop]: value });
   };
   
-  // Handler for changes to the 'style' object of the selected element
   const handleStyleChange = (styleProp: keyof SlideElement['style'], value: any) => {
-    if (!selectedElement || disabled) return;
+    if (!selectedElement || effectiveDisabled) return;
     const updatedStyle = { ...(selectedElement.style || {}), [styleProp]: value };
     onUpdateElement({ id: selectedElement.id, style: updatedStyle });
   };
   
   const handleCommentSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (disabled || !newComment.trim()) return;
+    if (disabled || !newComment.trim()) return; // Comments not affected by element lock
     onAddComment(newComment.trim());
     setNewComment("");
   };
@@ -74,7 +77,7 @@ export function PropertiesPanel({
                                     value={currentSlide?.backgroundColor || '#FFFFFF'}
                                     onChange={(e) => currentSlide && onUpdateSlideBackgroundColor(e.target.value)}
                                     className="mt-1 h-10 p-1"
-                                    disabled={disabled || !currentSlide}
+                                    disabled={disabled || !currentSlide} // Slide bg not affected by element lock
                                 />
                             </div>
                         </AccordionContent>
@@ -94,7 +97,9 @@ export function PropertiesPanel({
           {selectedElement.type === 'text' && <Text className="mr-2 h-5 w-5" />}
           {selectedElement.type === 'image' && <ImageIcon className="mr-2 h-5 w-5" />}
           {selectedElement.type === 'shape' && <Shapes className="mr-2 h-5 w-5" />}
-          Properties: <span className="font-mono text-sm ml-2 bg-muted px-1.5 py-0.5 rounded">{selectedElement.id.slice(0,8)}...</span>
+          Properties: 
+          <span className="font-mono text-sm ml-2 bg-muted px-1.5 py-0.5 rounded">{selectedElement.id.slice(0,8)}...</span>
+          {isElementLockedByOther && <Lock title="Locked by another user" className="ml-2 h-4 w-4 text-destructive" />}
         </h3>
 
         <Accordion type="multiple" defaultValue={['appearance', 'layout']} className="w-full">
@@ -111,12 +116,12 @@ export function PropertiesPanel({
                       onChange={(e: ChangeEvent<HTMLTextAreaElement>) => handleInputChange('content', e.target.value)}
                       className="mt-1"
                       rows={3}
-                      disabled={disabled}
+                      disabled={effectiveDisabled}
                     />
                   </div>
                   <div>
                     <Label htmlFor="fontFamily">Font Family</Label>
-                    <Select value={currentStyle.fontFamily || 'PT Sans'} onValueChange={(val) => handleStyleChange('fontFamily', val)} disabled={disabled}>
+                    <Select value={currentStyle.fontFamily || 'PT Sans'} onValueChange={(val) => handleStyleChange('fontFamily', val)} disabled={effectiveDisabled}>
                       <SelectTrigger id="fontFamily" className="mt-1">
                         <SelectValue placeholder="Select font" />
                       </SelectTrigger>
@@ -139,7 +144,7 @@ export function PropertiesPanel({
                       value={parseInt(String(currentStyle.fontSize || '16').replace('px',''))}
                       onChange={(e) => handleStyleChange('fontSize', `${e.target.value}px`)}
                       className="mt-1"
-                      disabled={disabled}
+                      disabled={effectiveDisabled}
                       min="1"
                     />
                   </div>
@@ -151,21 +156,21 @@ export function PropertiesPanel({
                         value={currentStyle.color || '#000000'}
                         onChange={(e) => handleStyleChange('color', e.target.value)}
                         className="mt-1 h-10 p-1"
-                        disabled={disabled}
+                        disabled={effectiveDisabled}
                       />
                     </div>
                 </>
               )}
-              {(selectedElement.type === 'shape' || selectedElement.type === 'text') && ( // backgroundColor applicable to text box too
+              {(selectedElement.type === 'shape' || selectedElement.type === 'text') && ( 
                 <div>
                   <Label htmlFor="backgroundColor">Background Color</Label>
                   <Input
                     id="backgroundColor"
                     type="color"
-                    value={currentStyle.backgroundColor || (selectedElement.type === 'shape' ? '#CCCCCC' : '#FFFFFF00') } // Default for shape vs text
+                    value={currentStyle.backgroundColor || (selectedElement.type === 'shape' ? '#CCCCCC' : '#FFFFFF00') } 
                     onChange={(e) => handleStyleChange('backgroundColor', e.target.value)}
                     className="mt-1 h-10 p-1"
-                    disabled={disabled}
+                    disabled={effectiveDisabled}
                   />
                 </div>
               )}
@@ -178,7 +183,7 @@ export function PropertiesPanel({
                     onChange={(e: ChangeEvent<HTMLInputElement>) => handleInputChange('content', e.target.value)}
                     className="mt-1"
                     placeholder="https://example.com/image.png"
-                    disabled={disabled}
+                    disabled={effectiveDisabled}
                   />
                 </div>
               )}
@@ -190,23 +195,23 @@ export function PropertiesPanel({
             <AccordionContent className="space-y-3 pt-2 grid grid-cols-2 gap-3">
               <div>
                 <Label htmlFor="posX">Position X (px)</Label>
-                <Input id="posX" type="number" value={currentProps.position?.x || 0} onChange={(e) => handleInputChange('position', { ...currentProps.position, x: parseInt(e.target.value) })} className="mt-1" disabled={disabled} />
+                <Input id="posX" type="number" value={currentProps.position?.x || 0} onChange={(e) => handleInputChange('position', { ...currentProps.position, x: parseInt(e.target.value) })} className="mt-1" disabled={effectiveDisabled} />
               </div>
               <div>
                 <Label htmlFor="posY">Position Y (px)</Label>
-                <Input id="posY" type="number" value={currentProps.position?.y || 0} onChange={(e) => handleInputChange('position', { ...currentProps.position, y: parseInt(e.target.value) })} className="mt-1" disabled={disabled} />
+                <Input id="posY" type="number" value={currentProps.position?.y || 0} onChange={(e) => handleInputChange('position', { ...currentProps.position, y: parseInt(e.target.value) })} className="mt-1" disabled={effectiveDisabled} />
               </div>
               <div>
                 <Label htmlFor="width">Width (px)</Label>
-                <Input id="width" type="number" value={currentProps.size?.width || 100} onChange={(e) => handleInputChange('size', { ...currentProps.size, width: parseInt(e.target.value) })} className="mt-1" disabled={disabled} min="10" />
+                <Input id="width" type="number" value={currentProps.size?.width || 100} onChange={(e) => handleInputChange('size', { ...currentProps.size, width: parseInt(e.target.value) })} className="mt-1" disabled={effectiveDisabled} min="10" />
               </div>
               <div>
                 <Label htmlFor="height">Height (px)</Label>
-                <Input id="height" type="number" value={currentProps.size?.height || 100} onChange={(e) => handleInputChange('size', { ...currentProps.size, height: parseInt(e.target.value) })} className="mt-1" disabled={disabled} min="10" />
+                <Input id="height" type="number" value={currentProps.size?.height || 100} onChange={(e) => handleInputChange('size', { ...currentProps.size, height: parseInt(e.target.value) })} className="mt-1" disabled={effectiveDisabled} min="10" />
               </div>
                <div>
                 <Label htmlFor="zIndex">Stack Order (z-index)</Label>
-                <Input id="zIndex" type="number" value={currentProps.zIndex || 0} onChange={(e) => handleInputChange('zIndex', parseInt(e.target.value))} className="mt-1" disabled={disabled} />
+                <Input id="zIndex" type="number" value={currentProps.zIndex || 0} onChange={(e) => handleInputChange('zIndex', parseInt(e.target.value))} className="mt-1" disabled={effectiveDisabled} />
               </div>
             </AccordionContent>
           </AccordionItem>
@@ -221,7 +226,7 @@ export function PropertiesPanel({
                         value={currentSlide?.backgroundColor || '#FFFFFF'}
                         onChange={(e) => currentSlide && onUpdateSlideBackgroundColor(e.target.value)}
                         className="mt-1 h-10 p-1"
-                        disabled={disabled || !currentSlide}
+                        disabled={disabled || !currentSlide} // Not affected by element lock
                     />
                 </div>
             </AccordionContent>
@@ -240,7 +245,7 @@ export function PropertiesPanel({
         <h3 className="font-semibold text-lg mb-3 flex items-center">
           <MessageSquare className="mr-2 h-5 w-5" /> Comments ({comments.filter(c => !c.resolved).length} active)
         </h3>
-        <ScrollArea className="h-[200px] mb-3 pr-2"> {/* Fixed height for scroll area */}
+        <ScrollArea className="h-[200px] mb-3 pr-2"> 
           {comments.length === 0 && <p className="text-sm text-muted-foreground text-center pt-2">No comments on this slide yet.</p>}
           <ul className="space-y-3">
             {comments.map(comment => (
@@ -286,11 +291,10 @@ export function PropertiesPanel({
 
   return (
     <div className="bg-card border-l w-80 h-full flex flex-col shadow-md">
-      <ScrollArea className="flex-grow"> {/* ScrollArea wraps both sections */}
+      <ScrollArea className="flex-grow"> 
         {renderElementProperties()}
-        {currentSlide && renderSlideComments()} {/* Only render comments if a slide is selected */}
+        {currentSlide && renderSlideComments()} 
       </ScrollArea>
     </div>
   );
 }
-
