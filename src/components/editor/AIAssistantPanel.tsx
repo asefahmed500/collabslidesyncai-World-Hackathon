@@ -2,6 +2,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
+import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -11,7 +12,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import { Lightbulb, Palette, Sparkles, Wand2, Edit, FileText, Type, AlignLeft, Loader2, LayoutDashboard } from 'lucide-react';
+import { Lightbulb, Palette, Sparkles, Wand2, Edit, FileText, Type, AlignLeft, Loader2, LayoutDashboard, BarChart3, ImagePlus } from 'lucide-react';
 
 import { suggestDesignLayout, SuggestDesignLayoutInput, SuggestDesignLayoutOutput } from '@/ai/flows/design-assistant';
 import { getSmartSuggestions, SmartSuggestionsInput, SmartSuggestionsOutput } from '@/ai/flows/smart-suggestions';
@@ -19,6 +20,9 @@ import { improveText, ImproveTextInput, ImproveTextOutput } from '@/ai/flows/tex
 import { generateContent, GenerateContentInput, GenerateContentOutput } from '@/ai/flows/content-generation-flow';
 import { adjustTone, AdjustToneInput, AdjustToneOutput } from '@/ai/flows/tone-adjustment-flow';
 import { generateSpeakerNotes, GenerateSpeakerNotesInput, GenerateSpeakerNotesOutput } from '@/ai/flows/speaker-notes-flow';
+import { generateIcon, GenerateIconInput, GenerateIconOutput } from '@/ai/flows/generate-icon-flow';
+import { suggestChart, SuggestChartInput, SuggestChartOutput, SuggestedChartConfig } from '@/ai/flows/generate-chart-flow';
+
 
 import type { Slide, Presentation as PresentationType, SlideElement } from '@/types';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -30,6 +34,7 @@ interface AIAssistantPanelProps {
   selectedElement: SlideElement | null;
   onApplyAITextUpdate?: (elementId: string, newContent: string) => void;
   onApplyAISpeakerNotes?: (notes: string) => void;
+  // Potentially add onApplyGeneratedIcon, onApplyGeneratedChart in future
 }
 
 export function AIAssistantPanel({ 
@@ -41,21 +46,17 @@ export function AIAssistantPanel({
 }: AIAssistantPanelProps) {
   const { toast } = useToast();
 
-  // Design Assistant State
   const [designSuggestions, setDesignSuggestions] = useState<SuggestDesignLayoutOutput | null>(null);
   const [isLoadingDesign, setIsLoadingDesign] = useState(false);
 
-  // Smart Tips State
   const [smartTips, setSmartTips] = useState<SmartSuggestionsOutput | null>(null);
   const [isLoadingTips, setIsLoadingTips] = useState(false);
 
-  // Text Improvement State
   const [textToImprove, setTextToImprove] = useState('');
   const [improvementType, setImprovementType] = useState<'grammar' | 'clarity' | 'professionalism' | 'conciseness'>('clarity');
   const [improvedTextResult, setImprovedTextResult] = useState<ImproveTextOutput | null>(null);
   const [isLoadingImproveText, setIsLoadingImproveText] = useState(false);
 
-  // Content Generation State
   const [contentGenInput, setContentGenInput] = useState('');
   const [contentGenType, setContentGenType] = useState<'bullet_points_from_content' | 'rewrite_content' | 'summarize_content' | 'bullet_points_from_topic'>('rewrite_content');
   const [contentGenTopic, setContentGenTopic] = useState('');
@@ -63,15 +64,22 @@ export function AIAssistantPanel({
   const [generatedContentResult, setGeneratedContentResult] = useState<GenerateContentOutput | null>(null);
   const [isLoadingGenContent, setIsLoadingGenContent] = useState(false);
   
-  // Tone Adjustment State
   const [textToAdjust, setTextToAdjust] = useState('');
   const [targetTone, setTargetTone] = useState<'formal' | 'casual' | 'enthusiastic' | 'neutral'>('formal');
   const [adjustedToneResult, setAdjustedToneResult] = useState<AdjustToneOutput | null>(null);
   const [isLoadingAdjustTone, setIsLoadingAdjustTone] = useState(false);
 
-  // Speaker Notes State
   const [generatedSpeakerNotes, setGeneratedSpeakerNotes] = useState<GenerateSpeakerNotesOutput | null>(null);
   const [isLoadingSpeakerNotes, setIsLoadingSpeakerNotes] = useState(false);
+
+  const [iconDescription, setIconDescription] = useState('');
+  const [generatedIcon, setGeneratedIcon] = useState<GenerateIconOutput | null>(null);
+  const [isLoadingIcon, setIsLoadingIcon] = useState(false);
+
+  const [chartDataDescription, setChartDataDescription] = useState('');
+  const [chartGoal, setChartGoal] = useState('');
+  const [generatedChartSuggestions, setGeneratedChartSuggestions] = useState<SuggestChartOutput | null>(null);
+  const [isLoadingChart, setIsLoadingChart] = useState(false);
   
   useEffect(() => {
     if (selectedElement && selectedElement.type === 'text') {
@@ -203,6 +211,33 @@ export function AIAssistantPanel({
     finally { setIsLoadingSpeakerNotes(false); }
   };
 
+  const handleGenerateIcon = async () => {
+    if (!iconDescription.trim()) { toast({ title: "Input Missing", description: "Please enter an icon description.", variant: "destructive" }); return; }
+    setIsLoadingIcon(true); setGeneratedIcon(null);
+    try {
+      const result = await generateIcon({ description: iconDescription });
+      setGeneratedIcon(result);
+      if (result.iconDataUri) {
+        toast({ title: "Icon Generated", description: "AI has generated an icon." });
+      } else {
+        toast({ title: "Icon Generation Failed", description: result.feedback || "Could not generate icon.", variant: "destructive" });
+      }
+    } catch (e: any) { toast({ title: "AI Icon Error", description: e.message || "Could not generate icon.", variant: "destructive" });}
+    finally { setIsLoadingIcon(false); }
+  };
+  
+  const handleSuggestChart = async () => {
+    if (!chartDataDescription.trim()) { toast({ title: "Input Missing", description: "Please enter data or a description for the chart.", variant: "destructive" }); return; }
+    setIsLoadingChart(true); setGeneratedChartSuggestions(null);
+    try {
+      const result = await suggestChart({ dataDescription: chartDataDescription, goal: chartGoal });
+      setGeneratedChartSuggestions(result);
+      toast({ title: "Chart Suggestions Ready", description: "AI has provided chart ideas." });
+    } catch (e: any) { toast({ title: "AI Chart Error", description: e.message || "Could not fetch chart suggestions.", variant: "destructive" });}
+    finally { setIsLoadingChart(false); }
+  };
+
+
   const renderLoadingSkeletons = (count: number = 2, itemHeight: string = "h-10") => (
     <div className="space-y-3 mt-2">
       {[...Array(count)].map((_, i) => (
@@ -222,10 +257,11 @@ export function AIAssistantPanel({
         </h2>
       </div>
       <ScrollArea className="flex-grow">
-        <Accordion type="multiple" defaultValue={['content-tools']} className="w-full">
+        <Accordion type="multiple" defaultValue={['content-tools', 'visual-tools']} className="w-full">
+          
           <AccordionItem value="design-layout">
             <AccordionTrigger className="px-4 py-3 text-base font-medium">
-                <LayoutDashboard className="mr-2 h-4 w-4" /> Design & Layout
+                <Palette className="mr-2 h-4 w-4" /> Design & Layout
             </AccordionTrigger>
             <AccordionContent className="px-4 pb-4 space-y-3">
                 <Button onClick={handleSuggestDesign} disabled={isLoadingDesign || !currentSlide} className="w-full">
@@ -378,13 +414,75 @@ export function AIAssistantPanel({
             </AccordionContent>
           </AccordionItem>
 
+          <AccordionItem value="visual-tools">
+            <AccordionTrigger className="px-4 py-3 text-base font-medium">
+                <ImagePlus className="mr-2 h-4 w-4" /> Visual AI Tools
+            </AccordionTrigger>
+            <AccordionContent className="px-4 pb-4 space-y-4">
+              <Tabs defaultValue="icon-gen" className="w-full">
+                <TabsList className="grid w-full grid-cols-2 mb-3">
+                  <TabsTrigger value="icon-gen"><Sparkles className="mr-1 h-4 w-4" />Generate Icon</TabsTrigger>
+                  <TabsTrigger value="chart-gen"><BarChart3 className="mr-1 h-4 w-4" />Suggest Chart</TabsTrigger>
+                </TabsList>
+                <TabsContent value="icon-gen" className="space-y-3">
+                  <Input placeholder="Describe the icon (e.g., 'red apple icon')" value={iconDescription} onChange={(e) => setIconDescription(e.target.value)} />
+                  <Button onClick={handleGenerateIcon} disabled={isLoadingIcon} className="w-full">
+                    {isLoadingIcon ? <Loader2 className="animate-spin mr-2" /> : <Wand2 className="mr-2 h-4 w-4" />} Generate Icon
+                  </Button>
+                  {isLoadingIcon && <div className="flex justify-center py-4"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>}
+                  {generatedIcon && generatedIcon.iconDataUri && (
+                    <Card className="mt-2 bg-muted/50">
+                      <CardHeader className="p-2"><CardTitle className="text-sm">Generated Icon:</CardTitle></CardHeader>
+                      <CardContent className="p-2 flex justify-center">
+                        <Image src={generatedIcon.iconDataUri} alt={iconDescription || "Generated icon"} width={100} height={100} className="border rounded" data-ai-hint="generated icon" />
+                      </CardContent>
+                       {/* Add to slide button could be here */}
+                    </Card>
+                  )}
+                  {generatedIcon && !generatedIcon.iconDataUri && generatedIcon.feedback && (
+                     <p className="text-sm text-destructive text-center pt-2">{generatedIcon.feedback}</p>
+                  )}
+                </TabsContent>
+                <TabsContent value="chart-gen" className="space-y-3">
+                    <Textarea placeholder="Describe your data or paste simple data (e.g., 'Categories: Sales, Marketing, HR. Budgets: 50k, 30k, 20k')" value={chartDataDescription} onChange={(e) => setChartDataDescription(e.target.value)} rows={4}/>
+                    <Input placeholder="Optional: Goal of the chart (e.g., 'Compare budgets')" value={chartGoal} onChange={(e) => setChartGoal(e.target.value)} />
+                    <Button onClick={handleSuggestChart} disabled={isLoadingChart} className="w-full">
+                        {isLoadingChart ? <Loader2 className="animate-spin mr-2" /> : <Wand2 className="mr-2 h-4 w-4" />} Suggest Chart Config
+                    </Button>
+                    {isLoadingChart && renderLoadingSkeletons(2, "h-12")}
+                    {generatedChartSuggestions && (
+                        <div className="space-y-3 text-sm max-h-80 overflow-y-auto pr-2">
+                            {generatedChartSuggestions.interpretation && (
+                                <p className="text-xs text-muted-foreground italic p-2 border-b">AI interpretation: {generatedChartSuggestions.interpretation}</p>
+                            )}
+                            {generatedChartSuggestions.suggestions.map((sugg, i) => (
+                                <Card key={i} className="bg-muted/30">
+                                    <CardHeader className="p-2 pb-1"><CardTitle className="text-sm">{sugg.titleSuggestion || `Suggestion ${i+1}: ${sugg.chartType}`}</CardTitle></CardHeader>
+                                    <CardContent className="p-2 text-xs space-y-1">
+                                        <p><strong>Type:</strong> {sugg.chartType}</p>
+                                        <p><strong>Mapping:</strong> {sugg.dataMapping}</p>
+                                        {sugg.additionalNotes && <p className="mt-1 italic text-muted-foreground"><strong>Notes:</strong> {sugg.additionalNotes}</p>}
+                                    </CardContent>
+                                </Card>
+                            ))}
+                            {generatedChartSuggestions.suggestions.length === 0 && !generatedChartSuggestions.interpretation &&(
+                                 <p className="text-sm text-muted-foreground text-center">No specific chart suggestions generated.</p>
+                            )}
+                        </div>
+                    )}
+                </TabsContent>
+              </Tabs>
+            </AccordionContent>
+          </AccordionItem>
+
+
           <AccordionItem value="slide-tools">
             <AccordionTrigger className="px-4 py-3 text-base font-medium">
                 <FileText className="mr-2 h-4 w-4" /> Slide Specific
             </AccordionTrigger>
             <AccordionContent className="px-4 pb-4 space-y-4">
               <Tabs defaultValue="speaker-notes" className="w-full">
-                  <TabsList className="grid w-full grid-cols-1 mb-3"> {/* Changed to 1 col for single item */}
+                  <TabsList className="grid w-full grid-cols-1 mb-3"> 
                     <TabsTrigger value="speaker-notes"><Lightbulb className="mr-1 h-4 w-4" />Speaker Notes</TabsTrigger>
                   </TabsList>
                   <TabsContent value="speaker-notes" className="space-y-3">
@@ -438,4 +536,3 @@ export function AIAssistantPanel({
     </div>
   );
 }
-

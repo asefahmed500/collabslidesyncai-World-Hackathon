@@ -1,4 +1,3 @@
-
 // Import the functions you need from the SDKs you need
 import { initializeApp, getApps, getApp, type FirebaseOptions } from "firebase/app";
 import { getAuth } from "firebase/auth";
@@ -15,6 +14,7 @@ const firebaseProjectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
 const firebaseStorageBucket = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
 const firebaseMessagingSenderId = process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID;
 const firebaseAppId = process.env.NEXT_PUBLIC_FIREBASE_APP_ID;
+const firebaseMeasurementId = process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID;
 
 // Helper function to check individual config values
 const checkFirebaseConfigValue = (value: string | undefined, envVarName: string, humanName: string, examplePlaceholder?: string) => {
@@ -32,15 +32,11 @@ const checkFirebaseConfigValue = (value: string | undefined, envVarName: string,
 
 // Validate essential Firebase configuration values
 const checkedFirebaseApiKey = checkFirebaseConfigValue(firebaseApiKey, 'NEXT_PUBLIC_FIREBASE_API_KEY', 'API Key', 'YOUR_API_KEY');
-const checkedFirebaseAuthDomain = checkFirebaseConfigValue(firebaseAuthDomain, 'NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN', 'Auth Domain');
-const checkedFirebaseProjectId = checkFirebaseConfigValue(firebaseProjectId, 'NEXT_PUBLIC_FIREBASE_PROJECT_ID', 'Project ID');
-// Note: storageBucket, messagingSenderId, and appId are also important but might not always cause an immediate "invalid-api-key" error with getAuth().
-// If further issues arise, these should also be checked with the same rigor.
-// For now, we'll use the potentially undefined values for less critical ones,
-// but ensure the core ones that cause `getAuth` to fail are validated.
-const checkedFirebaseStorageBucket = firebaseStorageBucket; // No strict check for now, can be undefined
-const checkedFirebaseMessagingSenderId = firebaseMessagingSenderId; // No strict check for now
-const checkedFirebaseAppId = firebaseAppId; // No strict check for now
+const checkedFirebaseAuthDomain = checkFirebaseConfigValue(firebaseAuthDomain, 'NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN', 'Auth Domain', 'YOUR_PROJECT_ID.firebaseapp.com');
+const checkedFirebaseProjectId = checkFirebaseConfigValue(firebaseProjectId, 'NEXT_PUBLIC_FIREBASE_PROJECT_ID', 'Project ID', 'YOUR_PROJECT_ID');
+const checkedFirebaseStorageBucket = checkFirebaseConfigValue(firebaseStorageBucket, 'NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET', 'Storage Bucket', 'YOUR_PROJECT_ID.appspot.com');
+const checkedFirebaseMessagingSenderId = checkFirebaseConfigValue(firebaseMessagingSenderId, 'NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID', 'Messaging Sender ID', 'YOUR_MESSAGING_SENDER_ID');
+const checkedFirebaseAppId = checkFirebaseConfigValue(firebaseAppId, 'NEXT_PUBLIC_FIREBASE_APP_ID', 'App ID', 'YOUR_APP_ID');
 
 
 const firebaseConfig: FirebaseOptions = {
@@ -50,7 +46,7 @@ const firebaseConfig: FirebaseOptions = {
   storageBucket: checkedFirebaseStorageBucket,
   messagingSenderId: checkedFirebaseMessagingSenderId,
   appId: checkedFirebaseAppId,
-  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID, // Optional
+  measurementId: firebaseMeasurementId, // Optional, so no strict check for placeholder
 };
 
 // Initialize Firebase
@@ -67,8 +63,7 @@ try {
   throw new Error(`Firebase app initialization failed directly. Original error: ${error.message}. Ensure your Firebase project is set up correctly and accessible, and that all Firebase config values in .env are correct.`);
 }
 
-const auth = getAuth(app); // If config values like API key are wrong (but not placeholders caught above), this is where it typically errors out.
+const auth = getAuth(app);
 const db = getFirestore(app);
 
 export { app, auth, db };
-
