@@ -6,7 +6,7 @@ import { useForm } from "react-hook-form";
 import * as z from "zod";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useFormStatus } from "react-dom";
+import { useFormStatus, useFormState } from "react-dom";
 import React, { useEffect } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -43,7 +43,7 @@ export function LoginForm() {
   const router = useRouter();
   const { toast } = useToast();
   
-  const [formState, formAction] = React.useFormState<AuthResponse, FormData>(signInWithEmail, {
+  const [formState, formAction] = useFormState<AuthResponse, FormData>(signInWithEmail, {
     success: false,
     message: "",
   });
@@ -88,13 +88,6 @@ export function LoginForm() {
       </CardHeader>
       <CardContent>
         <Form {...form}>
-          {/* 
-            The onSubmit prop has been removed. 
-            When using React.useFormState, the 'action' prop on the form element 
-            (formAction from useFormState) handles the submission to the server action.
-            React Hook Form's validation (via the <Form {...form}> provider context and 
-            FormField components) will still run before the server action is invoked.
-          */}
           <form action={formAction} className="space-y-6">
             <FormField
               control={form.control}

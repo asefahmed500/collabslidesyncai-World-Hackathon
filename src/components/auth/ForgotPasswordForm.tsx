@@ -6,7 +6,7 @@ import { useForm } from "react-hook-form";
 import * as z from "zod";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useFormStatus } from "react-dom";
+import { useFormStatus, useFormState } from "react-dom";
 import React, { useEffect } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -41,7 +41,7 @@ export function ForgotPasswordForm() {
   const router = useRouter();
   const { toast } = useToast();
 
-  const [formState, formAction] = React.useFormState<AuthResponse, FormData>(sendPasswordResetEmail, {
+  const [formState, formAction] = useFormState<AuthResponse, FormData>(sendPasswordResetEmail, {
     success: false,
     message: "",
   });
