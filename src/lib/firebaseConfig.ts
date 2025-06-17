@@ -36,14 +36,20 @@ const checkedFirebaseAuthDomain = checkFirebaseConfigValue(firebaseAuthDomain, '
 const checkedFirebaseProjectId = checkFirebaseConfigValue(firebaseProjectId, 'NEXT_PUBLIC_FIREBASE_PROJECT_ID', 'Project ID');
 // Note: storageBucket, messagingSenderId, and appId are also important but might not always cause an immediate "invalid-api-key" error with getAuth().
 // If further issues arise, these should also be checked with the same rigor.
+// For now, we'll use the potentially undefined values for less critical ones,
+// but ensure the core ones that cause `getAuth` to fail are validated.
+const checkedFirebaseStorageBucket = firebaseStorageBucket; // No strict check for now, can be undefined
+const checkedFirebaseMessagingSenderId = firebaseMessagingSenderId; // No strict check for now
+const checkedFirebaseAppId = firebaseAppId; // No strict check for now
+
 
 const firebaseConfig: FirebaseOptions = {
   apiKey: checkedFirebaseApiKey,
   authDomain: checkedFirebaseAuthDomain,
   projectId: checkedFirebaseProjectId,
-  storageBucket: firebaseStorageBucket, // Use the original (potentially undefined) value after checks
-  messagingSenderId: firebaseMessagingSenderId, // Use the original
-  appId: firebaseAppId, // Use the original
+  storageBucket: checkedFirebaseStorageBucket,
+  messagingSenderId: checkedFirebaseMessagingSenderId,
+  appId: checkedFirebaseAppId,
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID, // Optional
 };
 

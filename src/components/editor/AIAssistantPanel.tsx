@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -10,7 +10,8 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { Lightbulb, Palette, Sparkles, Wand2, Edit, FileText, Type, AlignLeft } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Lightbulb, Palette, Sparkles, Wand2, Edit, FileText, Type, AlignLeft, Loader2, LayoutDashboard } from 'lucide-react';
 
 import { suggestDesignLayout, SuggestDesignLayoutInput, SuggestDesignLayoutOutput } from '@/ai/flows/design-assistant';
 import { getSmartSuggestions, SmartSuggestionsInput, SmartSuggestionsOutput } from '@/ai/flows/smart-suggestions';
@@ -56,7 +57,7 @@ export function AIAssistantPanel({
 
   // Content Generation State
   const [contentGenInput, setContentGenInput] = useState('');
-  const [contentGenType, setContentGenType] = useState<'bullet_points_from_content' | 'rewrite_content' | 'summarize_content'>('rewrite_content');
+  const [contentGenType, setContentGenType] = useState<'bullet_points_from_content' | 'rewrite_content' | 'summarize_content' | 'bullet_points_from_topic'>('rewrite_content');
   const [contentGenTopic, setContentGenTopic] = useState('');
   const [contentGenInstructions, setContentGenInstructions] = useState('');
   const [generatedContentResult, setGeneratedContentResult] = useState<GenerateContentOutput | null>(null);
@@ -72,8 +73,7 @@ export function AIAssistantPanel({
   const [generatedSpeakerNotes, setGeneratedSpeakerNotes] = useState<GenerateSpeakerNotesOutput | null>(null);
   const [isLoadingSpeakerNotes, setIsLoadingSpeakerNotes] = useState(false);
   
-  // Effect to preload text areas with selected element's content
-  useState(() => {
+  useEffect(() => {
     if (selectedElement && selectedElement.type === 'text') {
       setTextToImprove(selectedElement.content);
       setContentGenInput(selectedElement.content);
@@ -83,25 +83,38 @@ export function AIAssistantPanel({
       setContentGenInput('');
       setTextToAdjust('');
     }
-  });
+  }, [selectedElement]);
 
 
   const handleSuggestDesign = async () => {
     if (!currentSlide) {
-      toast({ title: "Error", description: "No slide selected.", variant: "destructive" });
+      toast({ title: "Error", description: "No slide selected for design suggestions.", variant: "destructive" });
       return;
     }
     setIsLoadingDesign(true); setDesignSuggestions(null);
     try {
-      const slideContent = currentSlide.elements.map(el => el.type === 'text' ? el.content : \`[\${el.type}]\`).join('\\n');
+      let slideContentForAI = `Slide Number: ${currentSlide.slideNumber}\n`;
+      if (currentSlide.elements.length === 0) {
+        slideContentForAI += "This slide is currently empty.";
+      } else {
+        currentSlide.elements.forEach(el => {
+          if (el.type === 'text') {
+            slideContentForAI += `TEXT_ELEMENT: "${el.content}" (Size: ${el.size.width}x${el.size.height} at ${el.position.x},${el.position.y})\n`;
+          } else {
+            slideContentForAI += `[${el.type.toUpperCase()}_ELEMENT] (Size: ${el.size.width}x${el.size.height} at ${el.position.x},${el.position.y})\n`;
+          }
+        });
+      }
+
       const input: SuggestDesignLayoutInput = {
-        slideContent: slideContent || "Empty slide",
-        teamBrandColors: currentPresentation?.branding?.primaryColor || "#3F51B5",
-        teamBrandFonts: currentPresentation?.branding?.fontPrimary || "Space Grotesk",
+        slideContent: slideContentForAI,
+        teamBrandColors: currentPresentation?.branding?.primaryColor ? `${currentPresentation.branding.primaryColor}${currentPresentation.branding.secondaryColor ? ',' + currentPresentation.branding.secondaryColor : ''}` : undefined,
+        teamBrandFonts: currentPresentation?.branding?.fontPrimary ? `${currentPresentation.branding.fontPrimary}${currentPresentation.branding.fontSecondary ? ',' + currentPresentation.branding.fontSecondary : ''}`: undefined,
       };
       const result = await suggestDesignLayout(input);
       setDesignSuggestions(result);
-    } catch (e: any) { toast({ title: "AI Error", description: e.message || "Could not fetch design suggestions.", variant: "destructive" });}
+      toast({ title: "Design Suggestions Ready", description: "AI has provided design ideas for your slide."});
+    } catch (e: any) { toast({ title: "AI Design Error", description: e.message || "Could not fetch design suggestions.", variant: "destructive" });}
     finally { setIsLoadingDesign(false); }
   };
 
@@ -112,15 +125,16 @@ export function AIAssistantPanel({
     setIsLoadingTips(true); setSmartTips(null);
     try {
       const presentationContent = currentPresentation.slides.map((s, idx) => 
-        \`Slide \${idx + 1}:\\n\${s.elements.map(el => el.type === 'text' ? el.content : \`[\${el.type}]\`).join('\\n')}\`
-      ).join('\\n\\n');
+        `Slide ${idx + 1} (ID: ${s.id}):\n${s.elements.map(el => el.type === 'text' ? `  - TEXT: "${el.content}"` : `  - [${el.type.toUpperCase()}]`).join('\n')}`
+      ).join('\n\n');
       const input: SmartSuggestionsInput = {
         presentationContent: presentationContent || "Empty presentation",
-        teamBrandGuidelines: \`Colors: \${currentPresentation.branding?.primaryColor}, Fonts: \${currentPresentation.branding?.fontPrimary}\`
+        teamBrandGuidelines: `Colors: ${currentPresentation.branding?.primaryColor || 'default'}, Fonts: ${currentPresentation.branding?.fontPrimary || 'default'}`
       };
       const result = await getSmartSuggestions(input);
       setSmartTips(result);
-    } catch (e: any) { toast({ title: "AI Error", description: e.message || "Could not fetch smart tips.", variant: "destructive" }); }
+      toast({ title: "Smart Tips Ready", description: "AI has provided tips for your presentation."});
+    } catch (e: any) { toast({ title: "AI Tips Error", description: e.message || "Could not fetch smart tips.", variant: "destructive" }); }
     finally { setIsLoadingTips(false); }
   };
 
@@ -130,7 +144,8 @@ export function AIAssistantPanel({
     try {
       const result = await improveText({ textToImprove, improvementType });
       setImprovedTextResult(result);
-    } catch (e: any) { toast({ title: "AI Error", description: e.message || "Could not improve text.", variant: "destructive" });}
+      toast({ title: "Text Improved", description: "AI has suggested improvements."});
+    } catch (e: any) { toast({ title: "AI Text Error", description: e.message || "Could not improve text.", variant: "destructive" });}
     finally { setIsLoadingImproveText(false); }
   };
 
@@ -151,7 +166,8 @@ export function AIAssistantPanel({
       };
       const result = await generateContent(input);
       setGeneratedContentResult(result);
-    } catch (e: any) { toast({ title: "AI Error", description: e.message || "Could not generate content.", variant: "destructive" });}
+      toast({ title: "Content Generated", description: "AI has generated new content."});
+    } catch (e: any) { toast({ title: "AI Content Gen Error", description: e.message || "Could not generate content.", variant: "destructive" });}
     finally { setIsLoadingGenContent(false); }
   };
 
@@ -161,7 +177,8 @@ export function AIAssistantPanel({
     try {
       const result = await adjustTone({ textToAdjust, targetTone });
       setAdjustedToneResult(result);
-    } catch (e: any) { toast({ title: "AI Error", description: e.message || "Could not adjust tone.", variant: "destructive" });}
+      toast({ title: "Tone Adjusted", description: "AI has adjusted the text tone."});
+    } catch (e: any) { toast({ title: "AI Tone Error", description: e.message || "Could not adjust tone.", variant: "destructive" });}
     finally { setIsLoadingAdjustTone(false); }
   };
   
@@ -169,26 +186,27 @@ export function AIAssistantPanel({
     if (!currentSlide) { toast({ title: "Error", description: "No slide selected.", variant: "destructive" }); return; }
     setIsLoadingSpeakerNotes(true); setGeneratedSpeakerNotes(null);
     try {
-      const slideContent = currentSlide.elements.filter(el => el.type === 'text').map(el => el.content).join(' \\n ');
-      if (!slideContent.trim()) {
-        toast({ title: "Info", description: "Current slide has no text content for speaker notes.", variant: "default" });
-        setIsLoadingSpeakerNotes(false);
-        return;
+      const slideContent = currentSlide.elements.filter(el => el.type === 'text').map(el => el.content).join(' \n ');
+      if (!slideContent.trim() && currentSlide.elements.length > 0) {
+         toast({ title: "Info", description: "Current slide has non-text elements. Notes will be general.", variant: "default" });
+      } else if (!slideContent.trim()) {
+        toast({ title: "Info", description: "Current slide is empty or has no text content for specific speaker notes.", variant: "default" });
       }
       const input: GenerateSpeakerNotesInput = {
-        slideContent,
+        slideContent: slideContent || "This slide may contain images or shapes. Please provide general speaker notes.",
         presentationContext: currentPresentation?.description || currentPresentation?.title
       };
       const result = await generateSpeakerNotes(input);
       setGeneratedSpeakerNotes(result);
-    } catch (e: any) { toast({ title: "AI Error", description: e.message || "Could not generate speaker notes.", variant: "destructive" });}
+      toast({ title: "Speaker Notes Generated", description: "AI has created speaker notes for this slide."});
+    } catch (e: any) { toast({ title: "AI Notes Error", description: e.message || "Could not generate speaker notes.", variant: "destructive" });}
     finally { setIsLoadingSpeakerNotes(false); }
   };
 
-  const renderLoadingSkeletons = (count: number = 2) => (
+  const renderLoadingSkeletons = (count: number = 2, itemHeight: string = "h-10") => (
     <div className="space-y-3 mt-2">
       {[...Array(count)].map((_, i) => (
-        <div key={i} className="p-3 border rounded-md bg-muted/30">
+        <div key={i} className={`p-3 border rounded-md bg-muted/30 ${itemHeight}`}>
           <Skeleton className="h-4 w-3/4 mb-2" />
           <Skeleton className="h-3 w-1/2" />
         </div>
@@ -205,9 +223,56 @@ export function AIAssistantPanel({
       </div>
       <ScrollArea className="flex-grow">
         <Accordion type="multiple" defaultValue={['content-tools']} className="w-full">
+          <AccordionItem value="design-layout">
+            <AccordionTrigger className="px-4 py-3 text-base font-medium">
+                <LayoutDashboard className="mr-2 h-4 w-4" /> Design & Layout
+            </AccordionTrigger>
+            <AccordionContent className="px-4 pb-4 space-y-3">
+                <Button onClick={handleSuggestDesign} disabled={isLoadingDesign || !currentSlide} className="w-full">
+                    {isLoadingDesign ? <Loader2 className="animate-spin mr-2" /> : <Wand2 className="mr-2 h-4 w-4" />}
+                    Suggest Design for Current Slide
+                </Button>
+                {isLoadingDesign && renderLoadingSkeletons(3, "h-16")}
+                {!isLoadingDesign && designSuggestions && (
+                <div className="space-y-3 text-sm max-h-96 overflow-y-auto pr-2">
+                    {designSuggestions.layoutSuggestions && designSuggestions.layoutSuggestions.length > 0 && (
+                        <Card>
+                            <CardHeader className="p-3"><CardTitle className="text-md">Layout Ideas</CardTitle></CardHeader>
+                            <CardContent className="p-3 text-xs space-y-1.5">
+                                {designSuggestions.layoutSuggestions.map((s, i) => <p key={`layout-${i}`} className="pb-1 border-b last:border-b-0">- {s}</p>)}
+                            </CardContent>
+                        </Card>
+                    )}
+                    {designSuggestions.colorSchemeSuggestions && designSuggestions.colorSchemeSuggestions.length > 0 && (
+                        <Card>
+                            <CardHeader className="p-3"><CardTitle className="text-md">Color Schemes</CardTitle></CardHeader>
+                            <CardContent className="p-3 text-xs space-y-1.5">
+                                {designSuggestions.colorSchemeSuggestions.map((s, i) => <p key={`color-${i}`} className="pb-1 border-b last:border-b-0">- {s}</p>)}
+                            </CardContent>
+                        </Card>
+                    )}
+                     {designSuggestions.fontRecommendations && (
+                        <Card>
+                            <CardHeader className="p-3"><CardTitle className="text-md">Font Tips</CardTitle></CardHeader>
+                            <CardContent className="p-3 text-xs"><p>{designSuggestions.fontRecommendations}</p></CardContent>
+                        </Card>
+                    )}
+                    {designSuggestions.spacingRecommendations && (
+                        <Card>
+                            <CardHeader className="p-3"><CardTitle className="text-md">Spacing & Alignment</CardTitle></CardHeader>
+                            <CardContent className="p-3 text-xs"><p>{designSuggestions.spacingRecommendations}</p></CardContent>
+                        </Card>
+                    )}
+                </div>
+                )}
+                {!isLoadingDesign && !designSuggestions && currentSlide && <p className="text-sm text-muted-foreground text-center pt-2">Click to get design suggestions for the current slide.</p>}
+                 {!currentSlide && <p className="text-sm text-muted-foreground text-center pt-2">Select a slide to enable design suggestions.</p>}
+            </AccordionContent>
+          </AccordionItem>
+
           <AccordionItem value="content-tools">
             <AccordionTrigger className="px-4 py-3 text-base font-medium">
-                <Edit className="mr-2 h-4 w-4" /> Content & Writing Tools
+                <Edit className="mr-2 h-4 w-4" /> Content & Writing
             </AccordionTrigger>
             <AccordionContent className="px-4 pb-4 space-y-4">
               <Tabs defaultValue="text-improve" className="w-full">
@@ -269,7 +334,7 @@ export function AIAssistantPanel({
                         <CardHeader className="p-2"><CardTitle className="text-sm">Generated Content:</CardTitle></CardHeader>
                         <CardContent className="p-2 text-sm">
                             <Textarea value={generatedContentResult.generatedContent} readOnly rows={4} className="bg-background"/>
-                             {selectedElement && selectedElement.type === 'text' && onApplyAITextUpdate && (
+                             {selectedElement && selectedElement.type === 'text' && onApplyAITextUpdate && generatedContentResult.contentType === 'text' && (
                                 <Button size="sm" variant="outline" className="mt-2 w-full" onClick={() => onApplyAITextUpdate(selectedElement!.id, generatedContentResult.generatedContent)}>Apply to Selected</Button>
                             )}
                         </CardContent>
@@ -315,31 +380,17 @@ export function AIAssistantPanel({
 
           <AccordionItem value="slide-tools">
             <AccordionTrigger className="px-4 py-3 text-base font-medium">
-                <FileText className="mr-2 h-4 w-4" /> Slide Specific Tools
+                <FileText className="mr-2 h-4 w-4" /> Slide Specific
             </AccordionTrigger>
             <AccordionContent className="px-4 pb-4 space-y-4">
-              <Tabs defaultValue="design-suggestions" className="w-full">
-                  <TabsList className="grid w-full grid-cols-2 mb-3">
-                    <TabsTrigger value="design-suggestions"><Palette className="mr-1 h-4 w-4" />Design</TabsTrigger>
+              <Tabs defaultValue="speaker-notes" className="w-full">
+                  <TabsList className="grid w-full grid-cols-1 mb-3"> {/* Changed to 1 col for single item */}
                     <TabsTrigger value="speaker-notes"><Lightbulb className="mr-1 h-4 w-4" />Speaker Notes</TabsTrigger>
                   </TabsList>
-                  <TabsContent value="design-suggestions" className="space-y-3">
-                    <Button onClick={handleSuggestDesign} disabled={isLoadingDesign || !currentSlide} className="w-full">
-                        <Wand2 className="mr-2 h-4 w-4" /> {isLoadingDesign ? "Generating Designs..." : "Suggest Designs for Current Slide"}
-                    </Button>
-                    {isLoadingDesign && renderLoadingSkeletons()}
-                    {!isLoadingDesign && designSuggestions && (
-                    <div className="space-y-2 text-sm">
-                        <Card><CardHeader className="p-2"><CardTitle className="text-sm">Layout Ideas</CardTitle></CardHeader><CardContent className="p-2 text-xs space-y-1">{designSuggestions.layoutSuggestions.map((s, i) => <p key={i}>- {s}</p>)}</CardContent></Card>
-                        <Card><CardHeader className="p-2"><CardTitle className="text-sm">Color Schemes</CardTitle></CardHeader><CardContent className="p-2 text-xs space-y-1">{designSuggestions.colorSchemeSuggestions.map((s, i) => <p key={i}>- {s}</p>)}</CardContent></Card>
-                        <Card><CardHeader className="p-2"><CardTitle className="text-sm">Spacing Tips</CardTitle></CardHeader><CardContent className="p-2 text-xs"><p>{designSuggestions.spacingRecommendations}</p></CardContent></Card>
-                    </div>
-                    )}
-                    {!isLoadingDesign && !designSuggestions && <p className="text-sm text-muted-foreground text-center pt-2">Click to get design suggestions.</p>}
-                  </TabsContent>
                   <TabsContent value="speaker-notes" className="space-y-3">
                     <Button onClick={handleGenerateSpeakerNotes} disabled={isLoadingSpeakerNotes || !currentSlide} className="w-full">
-                        <Wand2 className="mr-2 h-4 w-4" /> {isLoadingSpeakerNotes ? "Generating Notes..." : "Generate Speaker Notes"}
+                        {isLoadingSpeakerNotes ? <Loader2 className="animate-spin mr-2" /> : <Wand2 className="mr-2 h-4 w-4" />}
+                        Generate Speaker Notes
                     </Button>
                     {isLoadingSpeakerNotes && renderLoadingSkeletons(1)}
                     {generatedSpeakerNotes && (
@@ -353,7 +404,8 @@ export function AIAssistantPanel({
                         </CardContent>
                         </Card>
                     )}
-                     {!isLoadingSpeakerNotes && !generatedSpeakerNotes && <p className="text-sm text-muted-foreground text-center pt-2">Click to generate speaker notes for the current slide.</p>}
+                     {!isLoadingSpeakerNotes && !generatedSpeakerNotes && currentSlide && <p className="text-sm text-muted-foreground text-center pt-2">Click to generate speaker notes for the current slide.</p>}
+                     {!currentSlide && <p className="text-sm text-muted-foreground text-center pt-2">Select a slide to enable speaker notes generation.</p>}
                   </TabsContent>
               </Tabs>
             </AccordionContent>
@@ -365,17 +417,20 @@ export function AIAssistantPanel({
             </AccordionTrigger>
             <AccordionContent className="px-4 pb-4 space-y-3">
                 <Button onClick={handleGetSmartTips} disabled={isLoadingTips || !currentPresentation} className="w-full">
-                    <Wand2 className="mr-2 h-4 w-4" /> {isLoadingTips ? "Analyzing Presentation..." : "Get Smart Tips for Presentation"}
+                    {isLoadingTips ? <Loader2 className="animate-spin mr-2" /> : <Wand2 className="mr-2 h-4 w-4" />}
+                    Get Smart Tips for Presentation
                 </Button>
                 {isLoadingTips && renderLoadingSkeletons()}
                 {!isLoadingTips && smartTips && (
-                <div className="space-y-2">
+                <div className="space-y-2 max-h-80 overflow-y-auto pr-2">
                     {smartTips.suggestions.map((tip, i) => (
-                    <Card key={i} className="bg-muted/30"><CardContent className="p-2 text-sm"><p>{tip}</p></CardContent></Card>
+                    <Card key={i} className="bg-muted/30"><CardContent className="p-3 text-sm"><p>- {tip}</p></CardContent></Card>
                     ))}
+                     {smartTips.suggestions.length === 0 && <p className="text-sm text-muted-foreground text-center">No specific tips at the moment.</p>}
                 </div>
                 )}
-                {!isLoadingTips && !smartTips && <p className="text-sm text-muted-foreground text-center pt-2">Click to get smart tips for the entire presentation.</p>}
+                {!isLoadingTips && !smartTips && currentPresentation && <p className="text-sm text-muted-foreground text-center pt-2">Click to get smart tips for the entire presentation.</p>}
+                {!currentPresentation && <p className="text-sm text-muted-foreground text-center pt-2">Load a presentation to get smart tips.</p>}
             </AccordionContent>
           </AccordionItem>
         </Accordion>
@@ -383,3 +438,4 @@ export function AIAssistantPanel({
     </div>
   );
 }
+

@@ -1,3 +1,4 @@
+
 'use server';
 
 /**
@@ -14,26 +15,32 @@ import {z} from 'genkit';
 const SuggestDesignLayoutInputSchema = z.object({
   slideContent: z
     .string()
-    .describe('The text content of the slide to analyze for design suggestions.'),
+    .describe('A textual representation of the slide content (e.g., "Title: Quarterly Review\n- Bullet 1: Sales up\n[IMAGE: Growth Chart]").'),
   teamBrandColors: z
     .string()
-    .describe('The team brand colors, as a comma-separated list of hex codes.'),
+    .optional()
+    .describe('The team brand colors, as a comma-separated list of hex codes (e.g., "#FF0000,#00FF00").'),
   teamBrandFonts: z
     .string()
-    .describe('The team brand fonts, as a comma-separated list of font names.'),
+    .optional()
+    .describe('The team brand fonts, as a comma-separated list of font names (e.g., "Arial,Space Grotesk").'),
 });
 export type SuggestDesignLayoutInput = z.infer<typeof SuggestDesignLayoutInputSchema>;
 
 const SuggestDesignLayoutOutputSchema = z.object({
   layoutSuggestions: z
     .array(z.string())
-    .describe('An array of suggested slide layouts based on the content.'),
+    .describe('An array of 2-3 distinct layout suggestions, described textually (e.g., "Classic title and content layout", "Two-column layout with image on left, text on right").'),
   colorSchemeSuggestions: z
     .array(z.string())
-    .describe('An array of suggested color schemes to use for the slide.'),
+    .describe('An array of 2-3 color palette suggestions (e.g., "Primary: #003366, Accent: #FF9900, Background: #F0F0F0"). These should harmonize with team brand colors if provided.'),
   spacingRecommendations: z
     .string()
-    .describe('Recommendations for spacing and alignment of elements on the slide.'),
+    .describe('General recommendations for spacing, alignment, and visual hierarchy to improve readability and appeal, considering the slide content.'),
+  fontRecommendations: z
+    .string()
+    .optional()
+    .describe('Suggestions for font usage (e.g., headings, body text) that align with team brand fonts if provided, and improve legibility.')
 });
 export type SuggestDesignLayoutOutput = z.infer<typeof SuggestDesignLayoutOutputSchema>;
 
@@ -45,19 +52,29 @@ const prompt = ai.definePrompt({
   name: 'suggestDesignLayoutPrompt',
   input: {schema: SuggestDesignLayoutInputSchema},
   output: {schema: SuggestDesignLayoutOutputSchema},
-  prompt: `You are an AI design assistant that helps users create visually appealing slides.
+  prompt: `You are an expert AI Design Assistant for presentations. Your goal is to help users create professional, visually appealing, and effective slides.
 
-You will analyze the content of the slide and suggest professional-looking layouts, automatically applying the team's branding (colors, fonts) and ensuring smart spacing and color harmony.
+Analyze the provided slide content and team branding information to offer actionable design suggestions.
 
-Slide Content: {{{slideContent}}}
-Team Brand Colors: {{{teamBrandColors}}}
-Team Brand Fonts: {{{teamBrandFonts}}}
+Slide Content:
+{{{slideContent}}}
 
-Based on the above information, provide layout suggestions, color scheme suggestions and spacing recommendations for the slide.
+{{#if teamBrandColors}}
+Team Brand Colors (to consider for harmony): {{{teamBrandColors}}}
+{{/if}}
 
-Ensure that the layout suggestions are suitable for presentation slides, that the suggested color schemes complement the team branding and the content, and that the spacing recommendations promote readability and visual appeal.
+{{#if teamBrandFonts}}
+Team Brand Fonts (to consider for usage): {{{teamBrandFonts}}}
+{{/if}}
 
-Please provide the output in JSON format.`,
+Based on the above:
+1.  **Layout Suggestions:** Provide 2-3 distinct layout ideas suitable for the given slide content. Describe them clearly (e.g., "Header with two content columns below", "Full-bleed image with text overlay").
+2.  **Color Scheme Suggestions:** Offer 2-3 harmonious color palettes. If team brand colors are provided, suggest schemes that complement or correctly utilize them. Specify colors for primary elements, accents, and backgrounds (e.g., "Palette 1: Main Text: #333, Accent: {{{teamBrandColors}}}, Background: #FFF").
+3.  **Spacing & Alignment Recommendations:** Give general advice on how to arrange elements for better visual flow, balance, and readability. Consider concepts like proximity, white space, and alignment.
+4.  **Font Recommendations:** If team brand fonts are provided, suggest how to use them for different text elements (headings, body, captions). Otherwise, suggest standard professional font pairings.
+
+Focus on clarity, modern design principles, and ensuring the suggestions are practical for a presentation slide context.
+Please provide the output strictly in the specified JSON format.`,
 });
 
 const suggestDesignLayoutFlow = ai.defineFlow(
@@ -67,7 +84,17 @@ const suggestDesignLayoutFlow = ai.defineFlow(
     outputSchema: SuggestDesignLayoutOutputSchema,
   },
   async input => {
+    // Basic validation, more can be added
+    if (!input.slideContent.trim()) {
+      return {
+        layoutSuggestions: ["Content is empty. Cannot provide specific layout suggestions without content."],
+        colorSchemeSuggestions: [],
+        spacingRecommendations: "Ensure content is added to the slide for design analysis.",
+        fontRecommendations: "Specify fonts if you have branding guidelines."
+      };
+    }
     const {output} = await prompt(input);
     return output!;
   }
 );
+
