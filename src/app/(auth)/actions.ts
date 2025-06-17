@@ -12,7 +12,7 @@ import {
 } from 'firebase/auth';
 import { doc, setDoc, serverTimestamp, getDoc } from 'firebase/firestore';
 import type { User, Team } from '@/types';
-import { createTeam as apiCreateTeam } from '@/lib/firestoreService'; // To create team
+import { createTeam as apiCreateTeam, getUserProfile } from '@/lib/firestoreService'; // To create team
 
 export interface AuthResponse {
   success: boolean;
@@ -40,8 +40,19 @@ export async function signUpWithEmail(prevState: any, formData: FormData): Promi
     // Send email verification
     await sendEmailVerification(firebaseUser);
 
+    // Create user object for creating team
+    const tempUserForTeam: User = {
+      id: firebaseUser.uid,
+      name: name,
+      email: email,
+      role: 'owner', // This role is context specific to the team being created
+      lastActive: serverTimestamp() as any,
+      settings: { darkMode: false, aiFeatures: true, notifications: true },
+      profilePictureUrl: `https://placehold.co/100x100.png?text=${name.charAt(0).toUpperCase()}`,
+    };
+    
     // Create team
-    const teamId = await apiCreateTeam(teamName, firebaseUser.uid, name);
+    const teamId = await apiCreateTeam(teamName, tempUserForTeam);
 
     // Create user document in Firestore
     const userRef = doc(db, 'users', firebaseUser.uid);
@@ -49,8 +60,8 @@ export async function signUpWithEmail(prevState: any, formData: FormData): Promi
       id: firebaseUser.uid,
       name: name,
       email: email,
-      role: 'owner', // User who creates team is owner
-      teamId: teamId,
+      role: 'owner', // User who creates team is owner of that team
+      teamId: teamId, // Primary team ID
       lastActive: serverTimestamp() as any, 
       createdAt: serverTimestamp() as any,
       settings: {
@@ -60,7 +71,7 @@ export async function signUpWithEmail(prevState: any, formData: FormData): Promi
       },
       profilePictureUrl: `https://placehold.co/100x100.png?text=${name.charAt(0).toUpperCase()}`,
     };
-    await setDoc(userRef, newUser, { merge: true }); // Use merge:true if user doc might pre-exist from social
+    await setDoc(userRef, newUser, { merge: true });
 
     return { 
       success: true, 
@@ -69,7 +80,6 @@ export async function signUpWithEmail(prevState: any, formData: FormData): Promi
     };
   } catch (error: any) {
     console.error('Signup error:', error);
-    // Provide more specific error messages
     if (error.code === 'auth/email-already-in-use') {
       return { success: false, message: 'This email address is already in use. Please try another.' };
     }
@@ -93,40 +103,32 @@ export async function signInWithEmail(prevState: any, formData: FormData): Promi
     const firebaseUser = userCredential.user;
 
     if (!firebaseUser.emailVerified) {
-        // Option: Resend verification email or just inform
-        // await sendEmailVerification(firebaseUser); 
         return { 
             success: false, 
-            message: 'Email not verified. Please check your inbox for the verification link. If you need a new link, try signing up again or use password reset to confirm ownership.' // Simplified message for now
+            message: 'Email not verified. Please check your inbox for the verification link.'
         };
     }
 
-    const userDocRef = doc(db, 'users', firebaseUser.uid);
-    const userDoc = await getDoc(userDocRef);
-    let appUser: User | null = null;
-    if (userDoc.exists()) {
-        const userData = userDoc.data();
-        appUser = {
+    // Fetch full AppUser profile after successful Firebase auth
+    const appUser = await getUserProfile(firebaseUser.uid);
+
+    if (!appUser) {
+        // This case should ideally not happen if signup creates the user doc
+        // But handle it as a fallback
+        console.warn(`User document not found for UID: ${firebaseUser.uid} after login.`);
+        const fallbackAppUser: User = {
             id: firebaseUser.uid,
-            name: userData.name || firebaseUser.displayName || firebaseUser.email,
-            email: userData.email || firebaseUser.email,
-            profilePictureUrl: userData.profilePictureUrl || firebaseUser.photoURL || `https://placehold.co/100x100.png?text=${(userData.name || firebaseUser.displayName || firebaseUser.email || 'A').charAt(0).toUpperCase()}`,
-            role: userData.role || 'editor', // Default if somehow role not set
-            lastActive: userData.lastActive?.toDate() || new Date(),
-            settings: userData.settings || { darkMode: false, aiFeatures: true, notifications: true },
-            teamId: userData.teamId,
-        };
-    } else {
-         appUser = { // Fallback, though user doc should exist after signup
-            id: firebaseUser.uid,
-            name: firebaseUser.displayName || firebaseUser.email,
-            email: firebaseUser.email,
+            name: firebaseUser.displayName || firebaseUser.email || "User",
+            email: firebaseUser.email || "",
             profilePictureUrl: firebaseUser.photoURL || `https://placehold.co/100x100.png?text=${(firebaseUser.displayName || firebaseUser.email || 'A').charAt(0).toUpperCase()}`,
-            role: 'editor',
+            role: 'editor', // Default role
             lastActive: new Date(),
             settings: { darkMode: false, aiFeatures: true, notifications: true },
+            // teamId might be missing here if doc wasn't found
         };
+        return { success: true, message: 'Login successful! (User profile partially loaded)', userId: firebaseUser.uid, user: fallbackAppUser };
     }
+
 
     return { success: true, message: 'Login successful!', userId: firebaseUser.uid, user: appUser };
   } catch (error: any) {
@@ -157,7 +159,8 @@ export async function sendPasswordResetEmail(prevState: any, formData: FormData)
   try {
     await firebaseSendPasswordResetEmail(auth, email);
     return { success: true, message: 'Password reset email sent! Check your inbox.' };
-  } catch (error: any) {
+  } catch (error: any)
+{
     console.error('Password reset error:', error);
     if (error.code === 'auth/user-not-found') {
       return { success: false, message: 'No user found with this email address.' };
@@ -165,7 +168,3 @@ export async function sendPasswordResetEmail(prevState: any, formData: FormData)
     return { success: false, message: error.message || 'Failed to send password reset email.' };
   }
 }
-
-// Placeholder for social logins - to be implemented
-// export async function signInWithGoogle(): Promise<AuthResponse> { ... }
-// export async function signInWithMicrosoft(): Promise<AuthResponse> { ... }

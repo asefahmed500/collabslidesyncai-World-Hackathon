@@ -3,7 +3,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Zap, LayoutDashboard, UserCircle, LogOut, Settings, User } from 'lucide-react';
+import { Zap, LayoutDashboard, UserCircle, LogOut, Settings, User, Users } from 'lucide-react'; // Added Users icon
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
@@ -14,7 +14,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useAuth } from '@/hooks/useAuth'; // Using real auth
+import { useAuth } from '@/hooks/useAuth';
 import { signOut } from '@/app/(auth)/actions';
 import { useToast } from '@/hooks/use-toast';
 
@@ -27,14 +27,13 @@ export function SiteHeader() {
     const result = await signOut();
     if (result.success) {
       toast({ title: 'Logged Out', description: 'You have been successfully logged out.' });
-      router.push('/login'); // Redirect to login page
-      router.refresh(); // Force refresh to update auth state across app
+      router.push('/login'); 
+      router.refresh(); 
     } else {
       toast({ title: 'Logout Failed', description: result.message, variant: 'destructive' });
     }
   };
   
-  // To prevent flash of login button before auth state is loaded
   if (loading && !currentUser) {
      return (
         <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -45,12 +44,13 @@ export function SiteHeader() {
                         CollabSlideSyncAI
                     </span>
                 </Link>
-                <div className="h-9 w-9 bg-muted rounded-full animate-pulse"></div> {/* Skeleton for avatar */}
+                <div className="h-9 w-9 bg-muted rounded-full animate-pulse"></div>
             </div>
         </header>
      );
   }
 
+  const canManageTeam = currentUser && currentUser.teamId && (currentUser.role === 'owner' || currentUser.role === 'admin');
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -91,7 +91,7 @@ export function SiteHeader() {
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => router.push('/profile')}> {/* Placeholder for profile page */}
+                <DropdownMenuItem onClick={() => router.push('/profile')} disabled> {/* Placeholder for profile page */}
                   <UserCircle className="mr-2 h-4 w-4" />
                   <span>Profile</span>
                 </DropdownMenuItem>
@@ -99,6 +99,12 @@ export function SiteHeader() {
                   <LayoutDashboard className="mr-2 h-4 w-4" />
                   <span>Dashboard</span>
                 </DropdownMenuItem>
+                {canManageTeam && (
+                  <DropdownMenuItem onClick={() => router.push(`/dashboard/manage-team`)}>
+                    <Users className="mr-2 h-4 w-4" />
+                    <span>Manage Team</span>
+                  </DropdownMenuItem>
+                )}
                  <DropdownMenuItem disabled>
                   <Settings className="mr-2 h-4 w-4" />
                   <span>Settings</span>

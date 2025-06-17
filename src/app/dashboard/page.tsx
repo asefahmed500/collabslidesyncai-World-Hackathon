@@ -8,7 +8,7 @@ import { SiteHeader } from '@/components/shared/SiteHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PresentationCard } from '@/components/dashboard/PresentationCard';
-import type { Presentation, User as AppUser } from '@/types'; // User aliased to AppUser
+import type { Presentation, User as AppUser } from '@/types'; 
 import { PlusCircle, Search, Filter, List, Grid, Users, Activity, Loader2, FileWarning } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -58,7 +58,6 @@ export default function DashboardPage() {
       return;
     }
     try {
-      // Pass teamId to createPresentation
       const newPresentationId = await apiCreatePresentation(currentUser.id, "Untitled Presentation", currentUser.teamId);
       toast({ title: "Presentation Created", description: "Redirecting to editor..." });
       router.push(`/editor/${newPresentationId}`);
@@ -72,12 +71,12 @@ export default function DashboardPage() {
     const matchesSearch = p.title.toLowerCase().includes(searchTerm.toLowerCase());
     if (!currentUser) return false;
     
-    // Adjust filter logic for team-based filtering if needed later
-    // This is a simplified filter; real team sharing might involve checking a shared_with_team_ids array or similar.
+    // For "team" filter, it correctly lists presentations associated with the user's primary teamId.
+    // For "shared", it's presentations explicitly shared where the user is in `access` map but not creator.
     const matchesFilter = filter === 'all' || 
                          (filter === 'mine' && p.creatorId === currentUser.id) ||
                          (filter === 'shared' && p.access && p.access[currentUser.id] && p.creatorId !== currentUser.id) ||
-                         (filter === 'team' && p.teamId && p.teamId === currentUser.teamId && p.creatorId !== currentUser.id); // Basic team filter
+                         (filter === 'team' && p.teamId && p.teamId === currentUser.teamId && p.creatorId !== currentUser.id); 
     return matchesSearch && matchesFilter;
   });
   
@@ -230,7 +229,13 @@ export default function DashboardPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-               <p className="text-muted-foreground">Team activity feed and advanced team management features are coming soon.</p>
+               {currentUser?.teamId ? (
+                <p className="text-muted-foreground">
+                    View your team's recent activity in the <Link href="/dashboard/manage-team" className="text-primary hover:underline">Manage Team</Link> section.
+                </p>
+               ) : (
+                 <p className="text-muted-foreground">Create or join a team to see team activity.</p>
+               )}
             </CardContent>
           </Card>
         </section>
