@@ -1,3 +1,4 @@
+
 "use client";
 
 import Image from 'next/image';
@@ -12,9 +13,10 @@ interface SlideThumbnailListProps {
   currentSlideId: string | null;
   onSlideSelect: (slideId: string) => void;
   onAddSlide: () => void;
+  disabled?: boolean;
 }
 
-export function SlideThumbnailList({ slides, currentSlideId, onSlideSelect, onAddSlide }: SlideThumbnailListProps) {
+export function SlideThumbnailList({ slides, currentSlideId, onSlideSelect, onAddSlide, disabled }: SlideThumbnailListProps) {
   return (
     <div className="bg-card border-r w-60 flex flex-col h-full shadow-md">
       <ScrollArea className="flex-grow p-3">
@@ -22,25 +24,27 @@ export function SlideThumbnailList({ slides, currentSlideId, onSlideSelect, onAd
           {slides.map((slide, index) => (
             <div
               key={slide.id}
-              onClick={() => onSlideSelect(slide.id)}
+              onClick={() => !disabled && onSlideSelect(slide.id)}
               className={cn(
                 "group relative border-2 rounded-lg overflow-hidden cursor-pointer transition-all duration-150 ease-in-out",
                 currentSlideId === slide.id ? "border-primary shadow-lg" : "border-border hover:border-primary/50",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                disabled && "cursor-not-allowed opacity-70"
               )}
-              tabIndex={0}
-              onKeyDown={(e) => e.key === 'Enter' && onSlideSelect(slide.id)}
+              tabIndex={disabled ? -1 : 0}
+              onKeyDown={(e) => !disabled && e.key === 'Enter' && onSlideSelect(slide.id)}
               role="button"
               aria-label={`Select slide ${slide.slideNumber}`}
               aria-current={currentSlideId === slide.id ? "true" : "false"}
+              aria-disabled={disabled}
             >
               <div className="absolute top-1 left-1 bg-black/50 text-white text-xs px-1.5 py-0.5 rounded-full z-10">
-                {slide.slideNumber}
+                {slide.slideNumber || index + 1}
               </div>
               <div className="aspect-[16/9] bg-muted relative">
                 <Image
                   src={slide.thumbnailUrl || "https://placehold.co/160x90.png?text=No+Preview"}
-                  alt={`Slide ${slide.slideNumber}`}
+                  alt={`Slide ${slide.slideNumber || index + 1}`}
                   layout="fill"
                   objectFit="cover"
                   className="transition-transform group-hover:scale-105"
@@ -50,7 +54,7 @@ export function SlideThumbnailList({ slides, currentSlideId, onSlideSelect, onAd
                   <div className="absolute inset-0 bg-primary/20" />
                 )}
               </div>
-              {/* Drag handle (visual only) */}
+              {/* Drag handle (visual only for now) */}
               <div className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-50 transition-opacity">
                 <GripVertical className="h-5 w-5 text-muted-foreground" />
               </div>
@@ -59,10 +63,11 @@ export function SlideThumbnailList({ slides, currentSlideId, onSlideSelect, onAd
         </div>
       </ScrollArea>
       <div className="p-3 border-t">
-        <Button onClick={onAddSlide} className="w-full" variant="outline">
+        <Button onClick={onAddSlide} className="w-full" variant="outline" disabled={disabled}>
           <PlusCircle className="mr-2 h-4 w-4" /> Add Slide
         </Button>
       </div>
     </div>
   );
 }
+

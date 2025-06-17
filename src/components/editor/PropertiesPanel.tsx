@@ -8,69 +8,85 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import type { SlideElement, Slide, SlideComment } from '@/types';
-import { Text, Image as ImageIcon, Shapes, MessageSquare, Send, UserCircle } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { Text, Image as ImageIcon, Shapes, MessageSquare, Send, Palette, UserCircleIcon } from 'lucide-react';
+import { useState, useEffect, ChangeEvent } from 'react';
 import { Textarea } from '../ui/textarea';
-// Removed: Palette, AlignLeft, AlignCenter, AlignRight, Bold, Italic, Underline as they are not fully implemented.
+import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
+
 
 interface PropertiesPanelProps {
   selectedElement: SlideElement | null;
-  currentSlide: Slide | null; // Keep currentSlide to access comments
-  onUpdateElement: (updatedElement: Partial<SlideElement>) => void;
+  currentSlide: Slide | null; 
+  onUpdateElement: (updatedElementPartial: Partial<SlideElement>) => void;
   onAddComment: (text: string) => void;
   onResolveComment: (commentId: string) => void;
+  onUpdateSlideBackgroundColor: (color: string) => void;
+  disabled?: boolean;
 }
 
 export function PropertiesPanel({
   selectedElement,
-  currentSlide, // Passed for comments
+  currentSlide,
   onUpdateElement,
   onAddComment,
   onResolveComment,
+  onUpdateSlideBackgroundColor,
+  disabled,
 }: PropertiesPanelProps) {
-  // Local state for element properties to allow editing before "applying"
-  // For simplicity, we'll directly call onUpdateElement on change.
-  // A more robust solution might use a local state and an "Apply" button or debounce.
-  // const [elementProps, setElementProps] = useState<Partial<SlideElement>>({});
-
   const [newComment, setNewComment] = useState("");
 
-  // No longer need useEffect for elementProps if directly updating
-  // useEffect(() => {
-  //   if (selectedElement) {
-  //     setElementProps({ ...selectedElement });
-  //   } else {
-  //     setElementProps({});
-  //   }
-  // }, [selectedElement]);
-
+  // Handler for direct property changes on the selected element
   const handleInputChange = (prop: keyof SlideElement, value: any) => {
-    if (!selectedElement) return;
+    if (!selectedElement || disabled) return;
     onUpdateElement({ id: selectedElement.id, [prop]: value });
   };
-
+  
+  // Handler for changes to the 'style' object of the selected element
   const handleStyleChange = (styleProp: keyof SlideElement['style'], value: any) => {
-    if (!selectedElement) return;
+    if (!selectedElement || disabled) return;
     const updatedStyle = { ...(selectedElement.style || {}), [styleProp]: value };
     onUpdateElement({ id: selectedElement.id, style: updatedStyle });
   };
   
   const handleCommentSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (newComment.trim()) {
-      onAddComment(newComment.trim());
-      setNewComment("");
-    }
+    if (disabled || !newComment.trim()) return;
+    onAddComment(newComment.trim());
+    setNewComment("");
   };
 
-
   const renderElementProperties = () => {
-    if (!selectedElement) return <p className="text-muted-foreground text-sm p-4">Select an element to edit its properties.</p>;
+    if (!selectedElement) {
+        return (
+            <div className="space-y-4 p-4">
+                <h3 className="font-semibold text-lg flex items-center">
+                  <Palette className="mr-2 h-5 w-5" /> Slide Properties
+                </h3>
+                 <Accordion type="single" collapsible defaultValue="appearance" className="w-full">
+                    <AccordionItem value="appearance">
+                        <AccordionTrigger className="text-base">Appearance</AccordionTrigger>
+                        <AccordionContent className="space-y-3 pt-2">
+                            <div>
+                                <Label htmlFor="slideBackgroundColor">Slide Background Color</Label>
+                                <Input
+                                    id="slideBackgroundColor"
+                                    type="color"
+                                    value={currentSlide?.backgroundColor || '#FFFFFF'}
+                                    onChange={(e) => currentSlide && onUpdateSlideBackgroundColor(e.target.value)}
+                                    className="mt-1 h-10 p-1"
+                                    disabled={disabled || !currentSlide}
+                                />
+                            </div>
+                        </AccordionContent>
+                    </AccordionItem>
+                 </Accordion>
+                 <p className="text-muted-foreground text-sm p-4 text-center">Select an element to edit its properties.</p>
+            </div>
+        );
+    }
 
-    // Use selectedElement directly for values, as updates are propagated up.
     const currentProps = selectedElement; 
     const currentStyle = selectedElement.style || {};
-
 
     return (
       <div className="space-y-4 p-4">
@@ -78,7 +94,7 @@ export function PropertiesPanel({
           {selectedElement.type === 'text' && <Text className="mr-2 h-5 w-5" />}
           {selectedElement.type === 'image' && <ImageIcon className="mr-2 h-5 w-5" />}
           {selectedElement.type === 'shape' && <Shapes className="mr-2 h-5 w-5" />}
-          Properties: <span className="font-mono text-sm ml-2 bg-muted px-1.5 py-0.5 rounded">{selectedElement.id.slice(0,8)}</span>
+          Properties: <span className="font-mono text-sm ml-2 bg-muted px-1.5 py-0.5 rounded">{selectedElement.id.slice(0,8)}...</span>
         </h3>
 
         <Accordion type="multiple" defaultValue={['appearance', 'layout']} className="w-full">
@@ -92,14 +108,15 @@ export function PropertiesPanel({
                     <Textarea
                       id="content"
                       value={currentProps.content || ''}
-                      onChange={(e) => handleInputChange('content', e.target.value)}
+                      onChange={(e: ChangeEvent<HTMLTextAreaElement>) => handleInputChange('content', e.target.value)}
                       className="mt-1"
                       rows={3}
+                      disabled={disabled}
                     />
                   </div>
                   <div>
                     <Label htmlFor="fontFamily">Font Family</Label>
-                    <Select value={currentStyle.fontFamily || 'PT Sans'} onValueChange={(val) => handleStyleChange('fontFamily', val)}>
+                    <Select value={currentStyle.fontFamily || 'PT Sans'} onValueChange={(val) => handleStyleChange('fontFamily', val)} disabled={disabled}>
                       <SelectTrigger id="fontFamily" className="mt-1">
                         <SelectValue placeholder="Select font" />
                       </SelectTrigger>
@@ -108,6 +125,9 @@ export function PropertiesPanel({
                         <SelectItem value="Space Grotesk">Space Grotesk</SelectItem>
                         <SelectItem value="Arial">Arial</SelectItem>
                         <SelectItem value="Verdana">Verdana</SelectItem>
+                        <SelectItem value="Georgia">Georgia</SelectItem>
+                        <SelectItem value="Courier New">Courier New</SelectItem>
+                        <SelectItem value="Lucida Console">Lucida Console</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -116,35 +136,36 @@ export function PropertiesPanel({
                     <Input
                       id="fontSize"
                       type="number"
-                      value={parseInt(currentStyle.fontSize || '16')}
+                      value={parseInt(String(currentStyle.fontSize || '16').replace('px',''))}
                       onChange={(e) => handleStyleChange('fontSize', `${e.target.value}px`)}
                       className="mt-1"
+                      disabled={disabled}
+                      min="1"
                     />
                   </div>
-                  {/* Text Style and Alignment buttons removed for brevity, can be re-added */}
+                   <div>
+                      <Label htmlFor="color">Text Color</Label>
+                      <Input
+                        id="color"
+                        type="color"
+                        value={currentStyle.color || '#000000'}
+                        onChange={(e) => handleStyleChange('color', e.target.value)}
+                        className="mt-1 h-10 p-1"
+                        disabled={disabled}
+                      />
+                    </div>
                 </>
               )}
-               {(selectedElement.type === 'shape' || selectedElement.type === 'text') && (
-                <div>
-                  <Label htmlFor="color">Text Color</Label>
-                  <Input
-                    id="color"
-                    type="color"
-                    value={currentStyle.color || '#000000'}
-                    onChange={(e) => handleStyleChange('color', e.target.value)}
-                    className="mt-1 h-10 p-1"
-                  />
-                </div>
-              )}
-              {(selectedElement.type === 'shape' || selectedElement.type === 'text') && (
+              {(selectedElement.type === 'shape' || selectedElement.type === 'text') && ( // backgroundColor applicable to text box too
                 <div>
                   <Label htmlFor="backgroundColor">Background Color</Label>
                   <Input
                     id="backgroundColor"
                     type="color"
-                    value={currentStyle.backgroundColor || '#ffffff'}
+                    value={currentStyle.backgroundColor || (selectedElement.type === 'shape' ? '#CCCCCC' : '#FFFFFF00') } // Default for shape vs text
                     onChange={(e) => handleStyleChange('backgroundColor', e.target.value)}
                     className="mt-1 h-10 p-1"
+                    disabled={disabled}
                   />
                 </div>
               )}
@@ -154,9 +175,10 @@ export function PropertiesPanel({
                   <Input
                     id="imageUrl"
                     value={currentProps.content || ''}
-                    onChange={(e) => handleInputChange('content', e.target.value)}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => handleInputChange('content', e.target.value)}
                     className="mt-1"
                     placeholder="https://example.com/image.png"
+                    disabled={disabled}
                   />
                 </div>
               )}
@@ -168,24 +190,40 @@ export function PropertiesPanel({
             <AccordionContent className="space-y-3 pt-2 grid grid-cols-2 gap-3">
               <div>
                 <Label htmlFor="posX">Position X (px)</Label>
-                <Input id="posX" type="number" value={currentProps.position?.x || 0} onChange={(e) => handleInputChange('position', { ...currentProps.position, x: parseInt(e.target.value) })} className="mt-1" />
+                <Input id="posX" type="number" value={currentProps.position?.x || 0} onChange={(e) => handleInputChange('position', { ...currentProps.position, x: parseInt(e.target.value) })} className="mt-1" disabled={disabled} />
               </div>
               <div>
                 <Label htmlFor="posY">Position Y (px)</Label>
-                <Input id="posY" type="number" value={currentProps.position?.y || 0} onChange={(e) => handleInputChange('position', { ...currentProps.position, y: parseInt(e.target.value) })} className="mt-1" />
+                <Input id="posY" type="number" value={currentProps.position?.y || 0} onChange={(e) => handleInputChange('position', { ...currentProps.position, y: parseInt(e.target.value) })} className="mt-1" disabled={disabled} />
               </div>
               <div>
                 <Label htmlFor="width">Width (px)</Label>
-                <Input id="width" type="number" value={currentProps.size?.width || 100} onChange={(e) => handleInputChange('size', { ...currentProps.size, width: parseInt(e.target.value) })} className="mt-1" />
+                <Input id="width" type="number" value={currentProps.size?.width || 100} onChange={(e) => handleInputChange('size', { ...currentProps.size, width: parseInt(e.target.value) })} className="mt-1" disabled={disabled} min="10" />
               </div>
               <div>
                 <Label htmlFor="height">Height (px)</Label>
-                <Input id="height" type="number" value={currentProps.size?.height || 100} onChange={(e) => handleInputChange('size', { ...currentProps.size, height: parseInt(e.target.value) })} className="mt-1" />
+                <Input id="height" type="number" value={currentProps.size?.height || 100} onChange={(e) => handleInputChange('size', { ...currentProps.size, height: parseInt(e.target.value) })} className="mt-1" disabled={disabled} min="10" />
               </div>
                <div>
                 <Label htmlFor="zIndex">Stack Order (z-index)</Label>
-                <Input id="zIndex" type="number" value={currentProps.zIndex || 0} onChange={(e) => handleInputChange('zIndex', parseInt(e.target.value))} className="mt-1" />
+                <Input id="zIndex" type="number" value={currentProps.zIndex || 0} onChange={(e) => handleInputChange('zIndex', parseInt(e.target.value))} className="mt-1" disabled={disabled} />
               </div>
+            </AccordionContent>
+          </AccordionItem>
+           <AccordionItem value="slideAppearance">
+            <AccordionTrigger className="text-base">Slide Appearance</AccordionTrigger>
+            <AccordionContent className="space-y-3 pt-2">
+                <div>
+                    <Label htmlFor="slideBackgroundColorPanel">Slide Background Color</Label>
+                    <Input
+                        id="slideBackgroundColorPanel"
+                        type="color"
+                        value={currentSlide?.backgroundColor || '#FFFFFF'}
+                        onChange={(e) => currentSlide && onUpdateSlideBackgroundColor(e.target.value)}
+                        className="mt-1 h-10 p-1"
+                        disabled={disabled || !currentSlide}
+                    />
+                </div>
             </AccordionContent>
           </AccordionItem>
         </Accordion>
@@ -194,7 +232,7 @@ export function PropertiesPanel({
   };
   
   const renderSlideComments = () => {
-    if (!currentSlide) return null; // Ensure currentSlide is available
+    if (!currentSlide) return null;
     const comments = currentSlide.comments || [];
 
     return (
@@ -202,24 +240,28 @@ export function PropertiesPanel({
         <h3 className="font-semibold text-lg mb-3 flex items-center">
           <MessageSquare className="mr-2 h-5 w-5" /> Comments ({comments.filter(c => !c.resolved).length} active)
         </h3>
-        <ScrollArea className="h-[200px] mb-3 pr-2">
-          {comments.length === 0 && <p className="text-sm text-muted-foreground">No comments on this slide yet.</p>}
+        <ScrollArea className="h-[200px] mb-3 pr-2"> {/* Fixed height for scroll area */}
+          {comments.length === 0 && <p className="text-sm text-muted-foreground text-center pt-2">No comments on this slide yet.</p>}
           <ul className="space-y-3">
             {comments.map(comment => (
-              <li key={comment.id} className={`text-sm p-2 rounded-md ${comment.resolved ? 'bg-muted/30 opacity-70' : 'bg-muted/50'}`}>
-                <div className="flex items-center mb-1">
-                   <Avatar className="w-5 h-5 mr-2">
-                      <AvatarImage src={comment.userAvatarUrl} alt={comment.userName} data-ai-hint="profile avatar small" />
-                      <AvatarFallback className="text-xs">{comment.userName?.charAt(0)}</AvatarFallback>
+              <li key={comment.id} className={`text-sm p-2.5 rounded-md shadow-sm ${comment.resolved ? 'bg-muted/30 opacity-70' : 'bg-card border'}`}>
+                <div className="flex items-start mb-1.5">
+                   <Avatar className="w-6 h-6 mr-2.5 mt-0.5">
+                      <AvatarImage src={comment.userAvatarUrl || undefined} alt={comment.userName} data-ai-hint="profile avatar small" />
+                      <AvatarFallback className="text-xs">
+                        {comment.userName ? comment.userName.charAt(0).toUpperCase() : <UserCircleIcon size={12}/>}
+                      </AvatarFallback>
                     </Avatar>
-                  <span className="font-semibold">{comment.userName}</span>
-                  <span className="text-xs text-muted-foreground ml-auto">
+                  <div className="flex-grow">
+                    <span className="font-semibold text-sm">{comment.userName}</span>
+                    <p className={`text-xs text-muted-foreground ${comment.resolved ? 'line-through' : ''}`}>{comment.text}</p>
+                  </div>
+                  <span className="text-xs text-muted-foreground whitespace-nowrap">
                     {comment.createdAt ? new Date(comment.createdAt as Date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit'}) : ''}
                   </span>
                 </div>
-                <p className={`ml-7 ${comment.resolved ? 'line-through' : ''}`}>{comment.text}</p>
                 {!comment.resolved && (
-                  <Button variant="link" size="sm" className="ml-7 p-0 h-auto text-primary hover:text-primary/80" onClick={() => onResolveComment(comment.id)}>Resolve</Button>
+                  <Button variant="link" size="sm" className="ml-[34px] p-0 h-auto text-xs text-primary hover:text-primary/80" onClick={() => !disabled && onResolveComment(comment.id)} disabled={disabled}>Resolve</Button>
                 )}
               </li>
             ))}
@@ -231,8 +273,10 @@ export function PropertiesPanel({
             value={newComment}
             onChange={(e) => setNewComment(e.target.value)}
             rows={2}
+            className="text-sm"
+            disabled={disabled}
           />
-          <Button type="submit" size="sm" className="w-full" disabled={!newComment.trim()}>
+          <Button type="submit" size="sm" className="w-full" disabled={disabled || !newComment.trim()}>
             <Send className="mr-2 h-4 w-4" /> Send Comment
           </Button>
         </form>
@@ -242,10 +286,11 @@ export function PropertiesPanel({
 
   return (
     <div className="bg-card border-l w-80 h-full flex flex-col shadow-md">
-      <ScrollArea className="flex-grow">
+      <ScrollArea className="flex-grow"> {/* ScrollArea wraps both sections */}
         {renderElementProperties()}
-        {renderSlideComments()}
+        {currentSlide && renderSlideComments()} {/* Only render comments if a slide is selected */}
       </ScrollArea>
     </div>
   );
 }
+

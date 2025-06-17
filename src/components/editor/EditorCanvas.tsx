@@ -9,25 +9,29 @@ interface EditorCanvasProps {
   slide: Slide | null;
   onElementSelect: (elementId: string | null) => void;
   selectedElementId: string | null;
-  onUpdateElement: (updatedElement: Partial<SlideElement>) => void; // Added for drag/resize
+  onUpdateElement: (updatedElementPartial: Partial<SlideElement>) => void;
+  disabled?: boolean;
 }
 
 const renderElement = (
   element: SlideElement,
   isSelected: boolean,
   onSelect: (e: React.MouseEvent) => void,
-  onUpdateElement: (updatedElement: Partial<SlideElement>) => void,
-  canvasRef: React.RefObject<HTMLDivElement>
+  onUpdateElement: (updatedElementPartial: Partial<SlideElement>) => void,
+  canvasRef: React.RefObject<HTMLDivElement>,
+  disabled?: boolean
 ) => {
   const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0, initialX: 0, initialY: 0 });
   const elementRef = useRef<HTMLDivElement>(null);
 
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (!isSelected) return; // Only drag selected elements
-    e.stopPropagation(); // Prevent canvas deselection
+    if (disabled || !isSelected || !elementRef.current) return;
+    e.stopPropagation();
     setIsDragging(true);
-    setDragStart({ x: e.clientX, y: e.clientY });
+    // Store initial element position and mouse position
+    setDragStart({ x: e.clientX, y: e.clientY, initialX: element.position.x, initialY: element.position.y });
+    document.body.style.cursor = 'grabbing';
   };
 
   useEffect(() => {
@@ -36,28 +40,27 @@ const renderElement = (
 
       const dx = e.clientX - dragStart.x;
       const dy = e.clientY - dragStart.y;
-
-      // Calculate new position relative to canvas, considering canvas scale if any (zoom not implemented yet)
-      const newX = element.position.x + dx;
-      const newY = element.position.y + dy;
       
-      // Basic boundary checks (optional, can be improved)
-      // const canvasRect = canvasRef.current.getBoundingClientRect();
-      // const newBoundedX = Math.max(0, Math.min(newX, canvasRect.width - element.size.width));
-      // const newBoundedY = Math.max(0, Math.min(newY, canvasRect.height - element.size.height));
-
-
-      // Call onUpdateElement immediately for real-time feedback
-      // In a real app, you might debounce this or update onMouseUp
-      onUpdateElement({ id: element.id, position: { x: newX, y: newY } });
-      setDragStart({ x: e.clientX, y: e.clientY }); // Reset drag start for next move delta
+      const newX = dragStart.initialX + dx;
+      const newY = dragStart.initialY + dy;
+      
+      // Update element style directly for visual feedback during drag
+      elementRef.current.style.left = `${newX}px`;
+      elementRef.current.style.top = `${newY}px`;
     };
 
-    const handleMouseUp = () => {
-      if (isDragging) {
+    const handleMouseUp = (e: MouseEvent) => {
+      if (isDragging && elementRef.current) {
         setIsDragging(false);
-        // Final update call could be here if not updating on every mouse move
-        // This is where you would persist the final position to backend if not done in onUpdateElement
+        document.body.style.cursor = 'default';
+        
+        // Calculate final position based on the total delta from the initial drag point
+        const dx = e.clientX - dragStart.x;
+        const dy = e.clientY - dragStart.y;
+        const finalX = dragStart.initialX + dx;
+        const finalY = dragStart.initialY + dy;
+
+        onUpdateElement({ id: element.id, position: { x: finalX, y: finalY } });
       }
     };
 
@@ -69,8 +72,11 @@ const renderElement = (
     return () => {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
+      if (document.body.style.cursor === 'grabbing') {
+        document.body.style.cursor = 'default';
+      }
     };
-  }, [isDragging, dragStart, element, isSelected, onUpdateElement, canvasRef]);
+  }, [isDragging, dragStart, element, isSelected, onUpdateElement, canvasRef, elementRef]);
 
 
   const baseStyle: React.CSSProperties = {
@@ -79,21 +85,22 @@ const renderElement = (
     top: `${element.position.y}px`,
     width: `${element.size.width}px`,
     height: `${element.size.height}px`,
-    fontFamily: element.style.fontFamily,
-    fontSize: element.style.fontSize,
-    color: element.style.color,
-    backgroundColor: element.style.backgroundColor,
-    border: isSelected ? '2px dashed hsl(var(--primary))' : `1px solid ${element.style.borderColor || 'transparent'}`,
+    fontFamily: element.style?.fontFamily || 'PT Sans',
+    fontSize: element.style?.fontSize || '16px',
+    color: element.style?.color || '#000000',
+    backgroundColor: element.style?.backgroundColor || 'transparent',
+    border: isSelected ? '2px dashed hsl(var(--primary))' : `1px solid ${element.style?.borderColor || 'transparent'}`,
     boxSizing: 'border-box',
-    cursor: isSelected ? (isDragging ? 'grabbing' : 'grab') : 'pointer',
-    overflow: 'hidden',
-    zIndex: element.zIndex,
-    userSelect: 'none', // Prevent text selection while dragging
+    cursor: disabled ? 'default' : (isSelected ? (isDragging ? 'grabbing' : 'grab') : 'pointer'),
+    overflow: 'hidden', // Clip content that overflows, common for text boxes
+    zIndex: element.zIndex || 0,
+    userSelect: isDragging ? 'none': 'auto',
   };
 
   const selectAndPrepareDrag = (e: React.MouseEvent) => {
-    onSelect(e); // Calls onElementSelect(element.id) via propagation
-    if (isSelected) { // If it's already selected, prepare for drag
+    if (disabled) return;
+    onSelect(e); 
+    if (isSelected) { 
         handleMouseDown(e);
     }
   };
@@ -107,8 +114,8 @@ const renderElement = (
           key={element.id}
           style={baseStyle}
           onClick={selectAndPrepareDrag}
-          onMouseDown={isSelected ? handleMouseDown : undefined} // Only allow dragging selected item
-          className="flex items-center justify-center p-2"
+          onMouseDown={isSelected && !disabled ? handleMouseDown : undefined}
+          className="flex items-center justify-center p-1 whitespace-pre-wrap break-words" // Allow text wrapping
         >
           {element.content}
         </div>
@@ -120,15 +127,15 @@ const renderElement = (
           key={element.id} 
           style={baseStyle} 
           onClick={selectAndPrepareDrag}
-          onMouseDown={isSelected ? handleMouseDown : undefined}
+          onMouseDown={isSelected && !disabled ? handleMouseDown : undefined}
         >
           <Image
-            src={element.content}
+            src={element.content || "https://placehold.co/200x150.png?text=Image"}
             alt="Slide image"
             layout="fill"
-            objectFit="cover"
+            objectFit="cover" // or "contain" or other values as needed
             data-ai-hint="slide image"
-            draggable="false" // Prevent native image drag
+            draggable="false"
           />
         </div>
       );
@@ -139,24 +146,24 @@ const renderElement = (
           key={element.id}
           style={{
             ...baseStyle,
-            backgroundColor: element.style.backgroundColor || 'hsl(var(--muted))',
+            backgroundColor: element.style?.backgroundColor || 'hsl(var(--muted))',
           }}
           onClick={selectAndPrepareDrag}
-          onMouseDown={isSelected ? handleMouseDown : undefined}
+          onMouseDown={isSelected && !disabled ? handleMouseDown : undefined}
         />
       );
-    case 'chart':
+    case 'chart': // Basic placeholder for chart
       return (
          <div
           ref={elementRef}
           key={element.id}
           style={baseStyle}
           onClick={selectAndPrepareDrag}
-          onMouseDown={isSelected ? handleMouseDown : undefined}
-          className="flex flex-col items-center justify-center border border-dashed border-muted-foreground p-2"
+          onMouseDown={isSelected && !disabled ? handleMouseDown : undefined}
+          className="flex flex-col items-center justify-center border border-dashed border-muted-foreground p-2 bg-gray-50"
         >
-          <p className="text-muted-foreground text-sm">[Chart: {element.content?.type || 'Generic'}]</p>
-          <Image src="https://placehold.co/200x150.png?text=Chart" alt="chart placeholder" width={Math.min(200, element.size.width - 20)} height={Math.min(150, element.size.height - 40)} data-ai-hint="chart placeholder" draggable="false"/>
+          <p className="text-muted-foreground text-sm">[Chart: {typeof element.content === 'object' ? element.content?.type : 'Generic'}]</p>
+          <Image src="https://placehold.co/200x100.png?text=Chart+Data" alt="chart placeholder" width={Math.min(200, element.size.width - 20)} height={Math.min(100, element.size.height - 40)} data-ai-hint="chart placeholder" draggable="false"/>
         </div>
       );
     default:
@@ -165,7 +172,7 @@ const renderElement = (
 };
 
 
-export function EditorCanvas({ slide, onElementSelect, selectedElementId, onUpdateElement }: EditorCanvasProps) {
+export function EditorCanvas({ slide, onElementSelect, selectedElementId, onUpdateElement, disabled }: EditorCanvasProps) {
   const [zoom] = useState(1); 
   const canvasRef = useRef<HTMLDivElement>(null);
   
@@ -190,21 +197,24 @@ export function EditorCanvas({ slide, onElementSelect, selectedElementId, onUpda
           height: `${canvasBaseHeight * zoom}px`,
           backgroundColor: slide.backgroundColor || '#FFFFFF',
         }}
-        onClick={() => onElementSelect(null)} 
+        onClick={!disabled ? () => onElementSelect(null) : undefined} 
       >
         {(slide.elements || []).map(element =>
           renderElement(
             element,
             selectedElementId === element.id,
             (e: React.MouseEvent) => {
+              if (disabled) return;
               e.stopPropagation(); 
               onElementSelect(element.id);
             },
             onUpdateElement,
-            canvasRef
+            canvasRef,
+            disabled
           )
         )}
       </div>
     </div>
   );
 }
+

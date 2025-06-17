@@ -28,7 +28,7 @@ import {
   getPresentationById as apiGetPresentationById, 
   updatePresentation as apiUpdatePresentation,
   addSlideToPresentation as apiAddSlide,
-  updateElementInSlide as apiUpdateElement,
+  updateElementInSlide as apiUpdateElement, // We'll use this for element property changes
   addCommentToSlide as apiAddComment,
   resolveCommentOnSlide as apiResolveComment
 } from '@/lib/firestoreService';
@@ -46,6 +46,7 @@ export default function EditorPage() {
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const [isRightPanelOpen, setIsRightPanelOpen] = useState<'properties' | 'ai' | null>('properties');
   const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !currentUser) {
@@ -59,16 +60,36 @@ export default function EditorPage() {
       apiGetPresentationById(presentationId)
         .then(data => {
           if (data) {
-            // Basic access check: current user must be owner or have access defined
             const hasAccess = data.creatorId === currentUser.id || (data.access && data.access[currentUser.id]);
             if (!hasAccess && !data.settings.isPublic) {
                  toast({ title: "Access Denied", description: "You don't have permission to view this presentation.", variant: "destructive" });
                  router.push('/dashboard');
                  return;
             }
-            setPresentation(data);
-            if (data.slides.length > 0) {
-              setCurrentSlideId(data.slides[0].id);
+            // Ensure slides and elements have default styles if missing
+            const presentationWithDefaults = {
+                ...data,
+                slides: (data.slides || []).map(slide => ({
+                    ...slide,
+                    backgroundColor: slide.backgroundColor || '#FFFFFF',
+                    elements: (slide.elements || []).map(el => ({
+                        ...el,
+                        zIndex: el.zIndex === undefined ? 0 : el.zIndex,
+                        style: {
+                            fontFamily: el.style?.fontFamily || 'PT Sans',
+                            fontSize: el.style?.fontSize || '16px',
+                            color: el.style?.color || '#000000',
+                            backgroundColor: el.style?.backgroundColor || 'transparent',
+                            ...el.style,
+                        }
+                    }))
+                }))
+            };
+            setPresentation(presentationWithDefaults);
+            if (presentationWithDefaults.slides.length > 0 && !currentSlideId) {
+              setCurrentSlideId(presentationWithDefaults.slides[0].id);
+            } else if (presentationWithDefaults.slides.length === 0) {
+              setCurrentSlideId(null);
             }
           } else {
             toast({ title: "Error", description: "Presentation not found.", variant: "destructive" });
@@ -82,7 +103,7 @@ export default function EditorPage() {
         })
         .finally(() => setIsLoading(false));
     }
-  }, [presentationId, currentUser, router, toast, authLoading]);
+  }, [presentationId, currentUser, router, toast, authLoading, currentSlideId]);
 
   const currentSlide = presentation?.slides.find(s => s.id === currentSlideId) || null;
 
@@ -96,7 +117,7 @@ export default function EditorPage() {
   const handleAction = (action: string) => {
     toast({ title: "Action Triggered", description: `${action} functionality not fully implemented.`, duration: 2000 });
      if (action === 'comments') {
-       setIsRightPanelOpen(isRightPanelOpen === 'properties' ? null : 'properties'); 
+       setIsRightPanelOpen(isRightPanelOpen === 'properties' && currentSlide ? 'properties' : (currentSlide ? 'properties' : null)); 
     }
   };
 
@@ -107,40 +128,21 @@ export default function EditorPage() {
 
   const handleAddSlide = async () => {
     if (!presentation || !currentUser) return;
-    const newSlideId = `slide-${presentation.id}-${Date.now()}`;
-    const newSlide: Slide = {
-      id: newSlideId,
-      presentationId: presentation.id,
-      slideNumber: (presentation.slides?.length || 0) + 1,
-      elements: [{
-        id: `elem-${newSlideId}-1`,
-        type: 'text',
-        content: `New Slide`,
-        position: { x: 50, y: 50 },
-        size: { width: 400, height: 50 },
-        style: { fontFamily: 'Space Grotesk', fontSize: '36px', color: '#333333' }
-      }],
-      speakerNotes: "",
-      comments: [],
-      thumbnailUrl: `https://placehold.co/160x90.png?text=New`,
-      backgroundColor: '#FFFFFF',
-    };
-    
+    setIsSaving(true);
     try {
-      // Optimistically update UI
-      const updatedSlides = [...(presentation.slides || []), newSlide];
-      setPresentation(prev => prev ? { ...prev, slides: updatedSlides } : null);
-      setCurrentSlideId(newSlideId);
-
-      await apiAddSlide(presentation.id, newSlide);
-      toast({ title: "Slide Added", description: `New slide created.`, duration: 2000 });
+      const newSlideId = await apiAddSlide(presentation.id);
+      // Re-fetch presentation to get the new slide with all defaults from backend
+      const updatedPresentation = await apiGetPresentationById(presentation.id);
+      if (updatedPresentation) {
+        setPresentation(updatedPresentation);
+        setCurrentSlideId(newSlideId);
+        toast({ title: "Slide Added", description: `New slide created.` });
+      }
     } catch (error) {
       console.error("Error adding slide:", error);
       toast({ title: "Error", description: "Could not add slide.", variant: "destructive" });
-      // Revert optimistic update if necessary
-      setPresentation(prev => prev ? { ...prev, slides: presentation.slides } : null);
-      if (presentation.slides.length > 0) setCurrentSlideId(presentation.slides[presentation.slides.length -1].id); else setCurrentSlideId(null);
-
+    } finally {
+      setIsSaving(false);
     }
   };
   
@@ -148,7 +150,7 @@ export default function EditorPage() {
     if (!presentation || !currentSlideId || !updatedElementPartial.id) return;
     
     // Optimistic UI update
-    const oldPresentation = JSON.parse(JSON.stringify(presentation)); // Deep copy for potential revert
+    const oldPresentation = JSON.parse(JSON.stringify(presentation)); 
     setPresentation(prev => {
       if (!prev) return null;
       return {
@@ -158,7 +160,7 @@ export default function EditorPage() {
             return {
               ...s,
               elements: s.elements.map(el => 
-                el.id === updatedElementPartial.id ? { ...el, ...updatedElementPartial } : el
+                el.id === updatedElementPartial.id ? { ...el, ...updatedElementPartial, style: {...el.style, ...updatedElementPartial.style} } : el
               ),
             };
           }
@@ -169,50 +171,66 @@ export default function EditorPage() {
 
     try {
       await apiUpdateElement(presentation.id, currentSlideId, updatedElementPartial);
-      // toast({ title: "Element Updated", description: `Element ${updatedElementPartial.id?.slice(0,8)} saved.`, duration: 1500 });
+      // Minor toast, or rely on main save button
+      // toast({ title: "Element Updated", description: `Element ${updatedElementPartial.id?.slice(0,8)} saved.`, duration: 1000, variant:"default" });
     } catch (error) {
       console.error("Error updating element:", error);
-      toast({ title: "Error", description: "Could not save element changes.", variant: "destructive" });
+      toast({ title: "Sync Error", description: "Could not save element change. Reverted.", variant: "destructive" });
       setPresentation(oldPresentation); // Revert
     }
   }, [presentation, currentSlideId, toast]);
   
   const handleAddComment = async (text: string) => {
     if (!presentation || !currentSlideId || !currentUser) return;
-    const newComment: SlideComment = {
-      id: `comment-${Date.now()}`,
+    setIsSaving(true);
+    const newComment: Omit<SlideComment, 'createdAt' | 'id'> = { // createdAt will be server timestamp
       userId: currentUser.id,
       userName: currentUser.name || 'Anonymous',
       userAvatarUrl: currentUser.profilePictureUrl || `https://placehold.co/40x40.png?text=${(currentUser.name || 'A').charAt(0).toUpperCase()}`,
       text,
-      createdAt: new Date(), // Will be converted to Timestamp by Firestore
       resolved: false,
     };
+    
+    // Firestore will add id and createdAt
+    const tempCommentId = `temp-comment-${Date.now()}`;
+    const optimisticComment: SlideComment = { ...newComment, id: tempCommentId, createdAt: new Date() };
 
-    const oldPresentation = JSON.parse(JSON.stringify(presentation));
     setPresentation(prev => {
       if (!prev) return null;
       return {
         ...prev,
         slides: prev.slides.map(s => 
-          s.id === currentSlideId ? { ...s, comments: [...(s.comments || []), newComment] } : s
+          s.id === currentSlideId ? { ...s, comments: [...(s.comments || []), optimisticComment] } : s
         ),
       };
     });
 
     try {
-      await apiAddComment(presentation.id, currentSlideId, newComment);
-      toast({ title: "Comment Added", description: `Your comment has been posted.`});
+      await apiAddComment(presentation.id, currentSlideId, newComment as SlideComment); // Cast as Firestore will fill missing server fields
+      toast({ title: "Comment Added"});
+       // Re-fetch to get server-generated ID and timestamp
+      const updatedData = await apiGetPresentationById(presentation.id);
+      if (updatedData) setPresentation(updatedData);
     } catch (error) {
       console.error("Error adding comment:", error);
-      toast({ title: "Error", description: "Could not post comment.", variant: "destructive" });
-      setPresentation(oldPresentation); // Revert
+      toast({ title: "Error", description: "Could not post comment. Reverting.", variant: "destructive" });
+      setPresentation(prev => { // Revert optimistic update
+         if (!prev) return null;
+         return {
+           ...prev,
+           slides: prev.slides.map(s => 
+             s.id === currentSlideId ? { ...s, comments: (s.comments || []).filter(c => c.id !== tempCommentId) } : s
+           ),
+         };
+      });
+    } finally {
+      setIsSaving(false);
     }
   };
 
   const handleResolveComment = async (commentId: string) => {
      if (!presentation || !currentSlideId) return;
-
+     setIsSaving(true);
      const oldPresentation = JSON.parse(JSON.stringify(presentation));
      setPresentation(prev => {
       if (!prev) return null;
@@ -229,19 +247,42 @@ export default function EditorPage() {
     } catch (error) {
       console.error("Error resolving comment:", error);
       toast({ title: "Error", description: "Could not resolve comment.", variant: "destructive" });
-      setPresentation(oldPresentation); // Revert
+      setPresentation(oldPresentation);
+    } finally {
+      setIsSaving(false);
     }
   };
   
   const handleSavePresentation = async () => {
     if (!presentation) return;
+    setIsSaving(true);
     try {
-      await apiUpdatePresentation(presentation.id, { slides: presentation.slides, title: presentation.title /* add other fields */ });
-      toast({ title: "Presentation Saved", description: "Your changes have been saved."});
+      // The presentation state already reflects all local changes to slides and elements
+      await apiUpdatePresentation(presentation.id, { 
+        title: presentation.title, 
+        slides: presentation.slides 
+      });
+      toast({ title: "Presentation Saved", description: "Your changes have been saved to the server."});
     } catch (error) {
       console.error("Error saving presentation:", error);
       toast({ title: "Save Error", description: "Could not save presentation.", variant: "destructive" });
+    } finally {
+      setIsSaving(false);
     }
+  };
+  
+  const handleUpdateSlideBackgroundColor = (color: string) => {
+    if (!presentation || !currentSlideId) return;
+     setPresentation(prev => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        slides: prev.slides.map(s => 
+          s.id === currentSlideId ? { ...s, backgroundColor: color } : s
+        ),
+      };
+    });
+    // This change will be saved with the next call to handleSavePresentation or if we add specific slide update logic
   };
 
 
@@ -257,7 +298,7 @@ export default function EditorPage() {
     );
   }
 
-  if (!presentation && !isLoading) {
+  if (!presentation && !isLoading) { // Should be covered by redirect in useEffect, but as a fallback
     return (
       <div className="flex flex-col items-center justify-center min-h-screen">
         <SiteHeader />
@@ -282,17 +323,25 @@ export default function EditorPage() {
         <div>
           <input 
             type="text"
-            value={presentation.title}
+            value={presentation?.title || ''}
             onChange={(e) => setPresentation(p => p ? {...p, title: e.target.value} : null)}
-            onBlur={handleSavePresentation} // Save on blur
-            className="font-headline text-xl font-semibold leading-tight bg-transparent border-none focus:ring-0 p-0"
+            onBlur={handleSavePresentation} 
+            className="font-headline text-xl font-semibold leading-tight bg-transparent border-none focus:ring-0 p-0 w-full max-w-xs sm:max-w-md"
+            disabled={isSaving}
           />
-          <p className="text-xs text-muted-foreground">Version {presentation.version} - Last saved: {new Date(presentation.lastUpdatedAt).toLocaleTimeString()}</p>
+          <p className="text-xs text-muted-foreground">
+            {presentation?.version ? `Version ${presentation.version} - ` : ''}
+            Last saved: {presentation?.lastUpdatedAt ? new Date(presentation.lastUpdatedAt).toLocaleTimeString() : 'Not saved yet'}
+            {isSaving && <Loader2 className="inline-block ml-2 h-3 w-3 animate-spin" />}
+          </p>
         </div>
       </div>
       <div className="flex items-center gap-2">
-        {presentation.collaborators && currentUser && <CollaborationBar collaborators={presentation.collaborators} currentUser={currentUser} />}
-        <Button variant="outline" size="sm" onClick={handleSavePresentation}><Save className="mr-2 h-4 w-4" /> Save</Button>
+        {presentation?.collaborators && currentUser && <CollaborationBar collaborators={presentation.collaborators} currentUser={currentUser} />}
+        <Button variant="outline" size="sm" onClick={handleSavePresentation} disabled={isSaving}>
+            {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />} 
+            Save
+        </Button>
         <Button variant="outline" size="sm" disabled><Share2 className="mr-2 h-4 w-4" /> Share</Button>
         <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -301,7 +350,7 @@ export default function EditorPage() {
                 </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={handleSavePresentation}><Save className="mr-2 h-4 w-4" /> Save Now</DropdownMenuItem>
+                <DropdownMenuItem onClick={handleSavePresentation} disabled={isSaving}><Save className="mr-2 h-4 w-4" /> Save Now</DropdownMenuItem>
                 <DropdownMenuItem disabled><RotateCcw className="mr-2 h-4 w-4" /> Version History</DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem disabled><Users className="mr-2 h-4 w-4" /> Manage Collaborators</DropdownMenuItem>
@@ -318,12 +367,19 @@ export default function EditorPage() {
       <EditorToolbar onToolSelect={handleToolSelect} onAction={handleAction} />
       <div className="flex flex-grow overflow-hidden">
         <SlideThumbnailList
-          slides={presentation.slides || []}
+          slides={presentation?.slides || []}
           currentSlideId={currentSlideId}
           onSlideSelect={handleSlideSelect}
           onAddSlide={handleAddSlide}
+          disabled={isSaving}
         />
-        <EditorCanvas slide={currentSlide} onElementSelect={setSelectedElementId} selectedElementId={selectedElementId} onUpdateElement={handleUpdateElement} />
+        <EditorCanvas 
+            slide={currentSlide} 
+            onElementSelect={setSelectedElementId} 
+            selectedElementId={selectedElementId} 
+            onUpdateElement={handleUpdateElement} 
+            disabled={isSaving}
+        />
         
         {isRightPanelOpen === 'properties' && currentSlide && (
            <PropertiesPanel
@@ -332,6 +388,8 @@ export default function EditorPage() {
               onUpdateElement={handleUpdateElement}
               onAddComment={handleAddComment}
               onResolveComment={handleResolveComment}
+              onUpdateSlideBackgroundColor={handleUpdateSlideBackgroundColor}
+              disabled={isSaving}
             />
         )}
         {isRightPanelOpen === 'ai' && (
@@ -339,7 +397,7 @@ export default function EditorPage() {
         )}
 
       </div>
-        <div className="md:hidden">
+        <div className="md:hidden"> {/* Mobile AI Assistant Panel Toggle */}
           <Sheet>
             <SheetTrigger asChild>
               <Button variant="outline" className="fixed bottom-4 right-4 z-50 shadow-lg rounded-full p-3 h-auto">
@@ -353,7 +411,7 @@ export default function EditorPage() {
                   Get design suggestions and smart tips for your presentation.
                 </SheetDescription>
               </SheetHeader>
-              <div className="py-4 h-[calc(100%-4rem)]">
+              <div className="py-4 h-[calc(100%-4rem)]"> {/* Ensure content area is scrollable if needed */}
                  <AIAssistantPanel currentSlide={currentSlide} currentPresentation={presentation} />
               </div>
             </SheetContent>
@@ -362,3 +420,4 @@ export default function EditorPage() {
     </div>
   );
 }
+

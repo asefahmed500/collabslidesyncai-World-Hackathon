@@ -32,7 +32,6 @@ export interface Team {
     aiFeaturesEnabled: boolean; // e.g. team-wide AI setting
   };
   createdAt: Date | Timestamp;
-  // usageStatistics, deleteTeam flags/timestamps can be added later
 }
 
 export type SlideElementType = 'text' | 'image' | 'shape' | 'chart';
@@ -40,15 +39,16 @@ export type SlideElementType = 'text' | 'image' | 'shape' | 'chart';
 export interface SlideElement {
   id: string;
   type: SlideElementType;
-  content: any;
+  content: any; // For text: string, for image: URL string, for chart: chart data/config
   position: { x: number; y: number };
   size: { width: number; height: number };
   style: {
-    color?: string;
+    color?: string; // Text color, shape border color (if applicable)
     fontFamily?: string;
-    fontSize?: string;
-    backgroundColor?: string;
-    borderColor?: string;
+    fontSize?: string; // e.g., '16px'
+    backgroundColor?: string; // Shape fill color, text box background
+    borderColor?: string; // For elements that might have a border
+    // Future: textAlign, fontWeight, fontStyle, etc.
   };
   zIndex?: number;
 }
@@ -72,7 +72,7 @@ export interface Slide {
   comments: SlideComment[];
   aiSuggestions?: string[];
   thumbnailUrl?: string;
-  backgroundColor?: string;
+  backgroundColor?: string; // Overall background color for the slide
 }
 
 export interface Presentation {
@@ -95,5 +95,6 @@ export interface Presentation {
   createdAt?: Date | Timestamp;
   lastUpdatedAt: Date | Timestamp;
   slides: Slide[];
-  collaborators?: User[];
+  collaborators?: User[]; // Full User objects for active collaborators, might be simplified for just IDs/names for display
 }
+
