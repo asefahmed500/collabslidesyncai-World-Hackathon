@@ -3,13 +3,13 @@ import type { Timestamp } from 'firebase/firestore';
 
 export interface User {
   id: string;
-  name?: string | null; // Firebase displayName can be null
-  email?: string | null; // Firebase email can be null
+  name?: string | null;
+  email?: string | null;
   profilePictureUrl?: string | null;
-  teamId?: string;
-  role: 'owner' | 'admin' | 'editor' | 'viewer' | 'guest';
-  lastActive: Date | Timestamp; // Firestore uses Timestamp
-  createdAt?: Date | Timestamp; // For user creation date
+  teamId?: string; // ID of the team the user belongs to or owns
+  role: 'owner' | 'admin' | 'editor' | 'viewer' | 'guest'; // Role within their primary team
+  lastActive: Date | Timestamp;
+  createdAt?: Date | Timestamp;
   settings: {
     darkMode: boolean;
     aiFeatures: boolean;
@@ -20,19 +20,19 @@ export interface User {
 export interface Team {
   id: string;
   name: string;
-  ownerId: string;
-  memberIds: string[];
-  rules: {
-    allowGuestEdits: boolean;
-    aiAllowed: boolean;
-    maxMembers?: number;
-  };
+  ownerId: string; // User ID of the team owner
+  memberIds: string[]; // Array of user IDs who are members
   branding: {
     logoUrl?: string;
-    colors: string[]; // hex codes
-    fonts: string[]; // font names
+    colors: string[]; // hex codes, e.g., ['#FF0000', '#00FF00']
+    fonts: string[]; // font names, e.g., ['Arial', 'Verdana']
+  };
+  settings: {
+    allowGuestEdits: boolean;
+    aiFeaturesEnabled: boolean; // e.g. team-wide AI setting
   };
   createdAt: Date | Timestamp;
+  // usageStatistics, deleteTeam flags/timestamps can be added later
 }
 
 export type SlideElementType = 'text' | 'image' | 'shape' | 'chart';
@@ -40,7 +40,7 @@ export type SlideElementType = 'text' | 'image' | 'shape' | 'chart';
 export interface SlideElement {
   id: string;
   type: SlideElementType;
-  content: any; // Text content, image URL, shape data, chart data
+  content: any;
   position: { x: number; y: number };
   size: { width: number; height: number };
   style: {
@@ -49,7 +49,6 @@ export interface SlideElement {
     fontSize?: string;
     backgroundColor?: string;
     borderColor?: string;
-    // ... other style properties
   };
   zIndex?: number;
 }
@@ -71,8 +70,8 @@ export interface Slide {
   elements: SlideElement[];
   speakerNotes?: string;
   comments: SlideComment[];
-  aiSuggestions?: string[]; 
-  thumbnailUrl?: string; 
+  aiSuggestions?: string[];
+  thumbnailUrl?: string;
   backgroundColor?: string;
 }
 
@@ -80,9 +79,9 @@ export interface Presentation {
   id: string;
   title: string;
   description?: string;
-  creatorId: string;
-  teamId?: string; // Optional for now
-  access: {
+  creatorId: string; // User ID of the original creator
+  teamId?: string; // Team this presentation belongs to
+  access: { // Defines specific user access if different from team role
     [userId: string]: 'owner' | 'editor' | 'viewer';
   };
   settings: {
@@ -96,5 +95,5 @@ export interface Presentation {
   createdAt?: Date | Timestamp;
   lastUpdatedAt: Date | Timestamp;
   slides: Slide[];
-  collaborators?: User[]; // Simplified for now
+  collaborators?: User[];
 }

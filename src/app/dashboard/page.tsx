@@ -9,10 +9,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PresentationCard } from '@/components/dashboard/PresentationCard';
 import type { Presentation, User as AppUser } from '@/types';
-import { PlusCircle, Search, Filter, List, Grid, Users, Activity, Loader2 } from 'lucide-react';
+import { PlusCircle, Search, Filter, List, Grid, Users, Activity, Loader2, FileWarning } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ScrollArea } from '@/components/ui/scroll-area';
+// import { ScrollArea } from '@/components/ui/scroll-area'; // Not used here directly
 import Image from 'next/image';
 import { useAuth } from '@/hooks/useAuth';
 import { getPresentationsForUser, createPresentation as apiCreatePresentation } from '@/lib/firestoreService';
@@ -26,7 +26,7 @@ export default function DashboardPage() {
   const [presentations, setPresentations] = useState<Presentation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filter, setFilter] = useState('all'); // e.g., 'all', 'mine', 'shared'
+  const [filter, setFilter] = useState('all'); 
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
   useEffect(() => {
@@ -48,8 +48,10 @@ export default function DashboardPage() {
           toast({ title: "Error", description: "Could not fetch presentations.", variant: "destructive" });
           setIsLoading(false);
         });
+    } else if (!authLoading && !currentUser) {
+        setIsLoading(false); // Not logged in, no presentations to fetch
     }
-  }, [currentUser, toast]);
+  }, [currentUser, toast, authLoading]);
 
   const handleCreateNewPresentation = async () => {
     if (!currentUser) {
@@ -57,8 +59,7 @@ export default function DashboardPage() {
       return;
     }
     try {
-      // Basic title for new presentation, user can change it in editor
-      const newPresentationId = await apiCreatePresentation(currentUser.id, "Untitled Presentation");
+      const newPresentationId = await apiCreatePresentation(currentUser.id, "Untitled Presentation", currentUser.teamId);
       toast({ title: "Presentation Created", description: "Redirecting to editor..." });
       router.push(`/editor/${newPresentationId}`);
     } catch (error) {
@@ -69,19 +70,24 @@ export default function DashboardPage() {
 
   const filteredPresentations = presentations.filter(p => {
     const matchesSearch = p.title.toLowerCase().includes(searchTerm.toLowerCase());
-    if (!currentUser) return matchesSearch; // Should not happen if auth guard is effective
+    if (!currentUser) return false;
     
+    // Adjust filter logic if team-based filtering is needed later
     const matchesFilter = filter === 'all' || 
                          (filter === 'mine' && p.creatorId === currentUser.id) ||
-                         (filter === 'shared' && p.creatorId !== currentUser.id && p.access && p.access[currentUser.id]);
+                         (filter === 'shared' && p.access && p.access[currentUser.id] && p.creatorId !== currentUser.id); // Basic shared example
     return matchesSearch && matchesFilter;
   });
   
-  const recentPresentations = [...presentations]
-    .sort((a,b) => new Date(b.lastUpdatedAt).getTime() - new Date(a.lastUpdatedAt).getTime())
+  const recentPresentations = [...filteredPresentations] // Filter first, then sort and slice
+    .sort((a,b) => {
+        const dateA = a.lastUpdatedAt instanceof Date ? a.lastUpdatedAt.getTime() : (a.lastUpdatedAt as any)?.toDate ? (a.lastUpdatedAt as any).toDate().getTime() : 0;
+        const dateB = b.lastUpdatedAt instanceof Date ? b.lastUpdatedAt.getTime() : (b.lastUpdatedAt as any)?.toDate ? (b.lastUpdatedAt as any).toDate().getTime() : 0;
+        return dateB - dateA;
+    })
     .slice(0,3);
 
-  if (authLoading || (isLoading && !presentations.length)) {
+  if (authLoading || (isLoading && currentUser)) { // Show loader if auth is loading OR if user exists and presentations are loading
     return (
       <div className="flex flex-col min-h-screen">
         <SiteHeader />
@@ -92,8 +98,16 @@ export default function DashboardPage() {
     );
   }
   
-  if (!currentUser && !authLoading) {
-     return null; // Or a redirect component, router.push handles it but this prevents flash
+  if (!currentUser && !authLoading) { // User is definitely not logged in
+     // The useEffect hook should have redirected. This is a fallback or covers race conditions.
+     return (
+        <div className="flex flex-col min-h-screen">
+          <SiteHeader />
+          <main className="flex-grow container mx-auto p-4 sm:p-6 lg:p-8 flex items-center justify-center">
+            <p>Please log in to view your dashboard.</p>
+          </main>
+        </div>
+     );
   }
 
 
@@ -145,7 +159,14 @@ export default function DashboardPage() {
               {recentPresentations.map(p => <PresentationCard key={p.id} presentation={p} />)}
             </div>
           ) : (
-            <p className="text-muted-foreground">No recent presentations.</p>
+             <Card className="flex flex-col items-center justify-center p-8 border-dashed">
+                <FileWarning className="w-16 h-16 text-muted-foreground mb-4" />
+                <h3 className="text-xl font-semibold text-muted-foreground">No Recent Presentations</h3>
+                <p className="text-sm text-muted-foreground mb-4">Start by creating a new presentation.</p>
+                <Button onClick={handleCreateNewPresentation}>
+                    <PlusCircle className="mr-2 h-4 w-4" /> Create Your First Presentation
+                </Button>
+            </Card>
           )}
         </section>
 
@@ -163,7 +184,7 @@ export default function DashboardPage() {
                         <Image src={presentation.thumbnailUrl || "https://placehold.co/80x45.png"} alt={presentation.title} width={80} height={45} className="rounded" data-ai-hint="presentation thumbnail"/>
                         <div>
                           <h3 className="font-headline text-lg font-semibold">{presentation.title}</h3>
-                          <p className="text-sm text-muted-foreground">Last updated: {new Date(presentation.lastUpdatedAt).toLocaleDateString()}</p>
+                          <p className="text-sm text-muted-foreground">Last updated: {new Date(presentation.lastUpdatedAt as Date).toLocaleDateString()}</p>
                         </div>
                       </div>
                       <Button variant="outline" size="sm" asChild>
@@ -176,11 +197,24 @@ export default function DashboardPage() {
             </div>
           ) : (
             <div className="text-center py-12">
-              <Search className="mx-auto h-16 w-16 text-muted-foreground mb-4" />
-              <p className="text-muted-foreground text-lg">No presentations match your search or filter.</p>
-              <Button className="mt-4" onClick={() => { setSearchTerm(''); setFilter('all'); }}>
-                Clear Search & Filters
-              </Button>
+               {searchTerm || filter !== 'all' ? (
+                 <>
+                    <Search className="mx-auto h-16 w-16 text-muted-foreground mb-4" />
+                    <p className="text-muted-foreground text-lg">No presentations match your search or filter.</p>
+                    <Button className="mt-4" onClick={() => { setSearchTerm(''); setFilter('all'); }}>
+                        Clear Search & Filters
+                    </Button>
+                 </>
+               ) : (
+                 <Card className="flex flex-col items-center justify-center p-8 border-dashed">
+                    <FileWarning className="w-16 h-16 text-muted-foreground mb-4" />
+                    <h3 className="text-xl font-semibold text-muted-foreground">No Presentations Yet</h3>
+                    <p className="text-sm text-muted-foreground mb-4">It looks like you haven&apos;t created any presentations.</p>
+                    <Button onClick={handleCreateNewPresentation}>
+                        <PlusCircle className="mr-2 h-4 w-4" /> Create a Presentation
+                    </Button>
+                </Card>
+               )}
             </div>
           )}
         </section>
@@ -194,7 +228,7 @@ export default function DashboardPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-               <p className="text-muted-foreground">Team activity feed coming soon.</p>
+               <p className="text-muted-foreground">Team activity feed and advanced team management features are coming soon.</p>
             </CardContent>
           </Card>
         </section>
