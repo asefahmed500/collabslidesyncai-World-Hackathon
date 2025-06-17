@@ -8,7 +8,7 @@ export default function WelcomePage() {
       <header className="mb-12">
         <h1 className="font-headline text-6xl font-bold text-primary mb-4 flex items-center justify-center">
           <Zap className="w-16 h-16 mr-3 text-accent" />
-          SlideSync AI
+          CollabSlideSyncAI
         </h1>
         <p className="text-xl text-foreground/80 max-w-2xl mx-auto">
           Craft stunning presentations collaboratively, supercharged by AI. Real-time editing, intelligent design suggestions, and seamless teamwork.
@@ -33,7 +33,7 @@ export default function WelcomePage() {
         </section>
 
         <section className="mt-16 text-foreground/70">
-          <p>&copy; {new Date().getFullYear()} SlideSync AI. Revolutionizing presentations.</p>
+          <p>&copy; {new Date().getFullYear()} CollabSlideSyncAI. Revolutionizing presentations.</p>
         </section>
       </main>
     </div>

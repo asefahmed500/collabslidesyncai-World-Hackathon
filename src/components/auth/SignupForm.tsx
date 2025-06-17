@@ -62,7 +62,7 @@ export function SignupForm() {
       <CardHeader className="text-center">
         <Zap className="mx-auto h-12 w-12 text-primary mb-2" />
         <CardTitle className="font-headline text-3xl">Create an Account</CardTitle>
-        <CardDescription>Join SlideSync AI and start collaborating.</CardDescription>
+        <CardDescription>Join CollabSlideSyncAI and start collaborating.</CardDescription>
       </CardHeader>
       <CardContent>
         <Form {...form}>

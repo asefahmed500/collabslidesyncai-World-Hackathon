@@ -55,7 +55,7 @@ export function LoginForm() {
       <CardHeader className="text-center">
         <Zap className="mx-auto h-12 w-12 text-primary mb-2" />
         <CardTitle className="font-headline text-3xl">Welcome Back!</CardTitle>
-        <CardDescription>Sign in to continue to SlideSync AI.</CardDescription>
+        <CardDescription>Sign in to continue to CollabSlideSyncAI.</CardDescription>
       </CardHeader>
       <CardContent>
         <Form {...form}>

@@ -151,7 +151,7 @@ export default function DashboardPage() {
 
       </main>
       <footer className="text-center p-4 text-muted-foreground text-sm border-t">
-        © {new Date().getFullYear()} SlideSync AI.
+        © {new Date().getFullYear()} CollabSlideSyncAI.
       </footer>
     </div>
   );

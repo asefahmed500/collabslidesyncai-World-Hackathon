@@ -24,7 +24,7 @@ export function SiteHeader() {
         <Link href="/dashboard" className="flex items-center space-x-2">
           <Zap className="h-7 w-7 text-primary" />
           <span className="font-headline text-2xl font-bold text-primary hidden sm:inline-block">
-            SlideSync AI
+            CollabSlideSyncAI
           </span>
         </Link>
         

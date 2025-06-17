@@ -1,11 +1,11 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
-import { SpeedInsights } from "@vercel/speed-insights/next"
+import { SpeedInsights } from "@vercel/speed-insights/next";
 
 export const metadata: Metadata = {
-  title: 'SlideSync AI',
-  description: 'Collaborative presentation editor with AI assistance.',
+  title: 'CollabSlideSyncAI',
+  description: 'Collaborative presentation editor with AI assistance, now CollabSlideSyncAI.',
 };
 
 export default function RootLayout({
