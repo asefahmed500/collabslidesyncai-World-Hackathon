@@ -40,10 +40,10 @@ import {
 } from '@/lib/firestoreService';
 import { doc, onSnapshot, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebaseConfig';
-import { throttle } from 'lodash'; // You might need to install lodash: npm install lodash @types/lodash
+import { throttle } from 'lodash'; 
 
 
-const LOCK_CHECK_INTERVAL = 15000; // Check for expired locks every 15 seconds
+const LOCK_CHECK_INTERVAL = 15000; 
 
 export default function EditorPage() {
   const router = useRouter();
@@ -58,24 +58,26 @@ export default function EditorPage() {
   const [isRightPanelOpen, setIsRightPanelOpen] = useState<'properties' | 'ai' | null>('properties');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [isOnline, setIsOnline] = useState(true); // Assume online initially
   const [collaboratorColor, setCollaboratorColor] = useState<string>('');
 
 
-  // Ref for cleanup function for Firestore listener
   const unsubscribePresentationListener = useRef<(() => void) | null>(null);
   const presenceIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const lockCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
+    if (typeof window !== 'undefined') {
+      setIsOnline(navigator.onLine);
+      const handleOnline = () => setIsOnline(true);
+      const handleOffline = () => setIsOnline(false);
+      window.addEventListener('online', handleOnline);
+      window.addEventListener('offline', handleOffline);
+      return () => {
+        window.removeEventListener('online', handleOnline);
+        window.removeEventListener('offline', handleOffline);
+      };
+    }
   }, []);
 
   useEffect(() => {
@@ -100,7 +102,7 @@ export default function EditorPage() {
           
           const hasAccess = data.creatorId === currentUser.id || 
                             (data.access && data.access[currentUser.id]) ||
-                            (data.teamId && currentUser.teamId === data.teamId); // Basic team access check
+                            (data.teamId && currentUser.teamId === data.teamId); 
           
           if (!hasAccess && !data.settings.isPublic) {
             toast({ title: "Access Denied", description: "You don't have permission to view this presentation.", variant: "destructive" });
@@ -135,6 +137,10 @@ export default function EditorPage() {
             setCurrentSlideId(presentationWithDefaults.slides[0].id);
           } else if (presentationWithDefaults.slides.length === 0) {
             setCurrentSlideId(null);
+          } else if (currentSlideId && !presentationWithDefaults.slides.find(s => s.id === currentSlideId)) {
+            // If current slide was deleted, select first available slide or null
+            setCurrentSlideId(presentationWithDefaults.slides[0]?.id || null);
+            setSelectedElementId(null);
           }
           setIsLoading(false);
         } else {
@@ -149,14 +155,12 @@ export default function EditorPage() {
         setIsLoading(false);
       });
 
-      // Manage presence
       updateUserPresence(presentationId, currentUser.id, { 
         name: currentUser.name || 'Anonymous', 
         profilePictureUrl: currentUser.profilePictureUrl,
         color: collaboratorColor,
       });
 
-      // Keep presence updated
       if (presenceIntervalRef.current) clearInterval(presenceIntervalRef.current);
       presenceIntervalRef.current = setInterval(() => {
          updateUserPresence(presentationId, currentUser.id, { 
@@ -164,9 +168,8 @@ export default function EditorPage() {
             profilePictureUrl: currentUser.profilePictureUrl,
             color: collaboratorColor
         });
-      }, 30000); // Update every 30 seconds
+      }, 30000); 
 
-      // Periodically check for and release expired locks
       if (lockCheckIntervalRef.current) clearInterval(lockCheckIntervalRef.current);
       lockCheckIntervalRef.current = setInterval(() => {
         releaseExpiredLocks(presentationId);
@@ -175,7 +178,6 @@ export default function EditorPage() {
 
       const handleBeforeUnload = () => {
         removeUserPresence(presentationId, currentUser.id);
-        // Release any locks held by the user (best effort)
         if (presentation && currentSlideId) {
             presentation.slides.forEach(slide => {
                 slide.elements.forEach(el => {
@@ -199,28 +201,31 @@ export default function EditorPage() {
       };
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [presentationId, currentUser, authLoading, router, toast, collaboratorColor]); // currentSlideId removed to avoid re-triggering listener setup
+  }, [presentationId, currentUser, authLoading, router, toast, collaboratorColor]); 
 
   const currentSlide = presentation?.slides.find(s => s.id === currentSlideId) || null;
   const selectedElement = currentSlide?.elements.find(el => el.id === selectedElementId) || null;
 
   const handleToolSelect = (tool: string) => {
-    toast({ title: "Tool Selected", description: `${tool} functionality not fully implemented.`, duration: 2000});
-    if (tool === 'ai-design' || tool === 'ai-content') {
+    if (tool === 'ai-design' || tool === 'ai-content' || tool.startsWith('ai-')) {
       setIsRightPanelOpen('ai');
+    } else {
+      setIsRightPanelOpen('properties'); // Default to properties for other tools
+      toast({ title: "Tool Selected", description: \`\${tool} functionality not fully implemented.\`, duration: 2000});
     }
   };
 
   const handleAction = (action: string) => {
-    toast({ title: "Action Triggered", description: `${action} functionality not fully implemented.`, duration: 2000 });
      if (action === 'comments') {
-       setIsRightPanelOpen(isRightPanelOpen === 'properties' && currentSlide ? 'properties' : (currentSlide ? 'properties' : null)); 
+       setIsRightPanelOpen(isRightPanelOpen === 'properties' ? null : 'properties'); 
+    } else {
+      toast({ title: "Action Triggered", description: \`\${action} functionality not fully implemented.\`, duration: 2000 });
     }
   };
 
   const handleSlideSelect = useCallback(async (slideId: string) => {
-    if (selectedElement && currentUser) { // Release lock on previous element if any
-        await apiReleaseLock(presentationId, currentSlideId!, selectedElement.id, currentUser.id);
+    if (selectedElement && currentUser && currentSlideId) { 
+        await apiReleaseLock(presentationId, currentSlideId, selectedElement.id, currentUser.id);
     }
     setCurrentSlideId(slideId);
     setSelectedElementId(null); 
@@ -229,7 +234,6 @@ export default function EditorPage() {
   const handleElementSelect = useCallback(async (elementId: string | null) => {
     if (!currentUser || !currentSlideId || !presentation) return;
 
-    // Release lock on previously selected element
     if (selectedElementId && selectedElementId !== elementId) {
         const prevSelectedElement = presentation.slides.find(s => s.id === currentSlideId)?.elements.find(el => el.id === selectedElementId);
         if (prevSelectedElement && prevSelectedElement.lockedBy === currentUser.id) {
@@ -239,12 +243,13 @@ export default function EditorPage() {
     
     setSelectedElementId(elementId);
 
-    // Attempt to acquire lock on newly selected element
     if (elementId) {
         const success = await apiAcquireLock(presentationId, currentSlideId, elementId, currentUser.id);
         if (!success) {
-            toast({ title: "Element Locked", description: "This element is currently being edited by another user.", variant: "destructive", duration: 2000 });
-            // setSelectedElementId(null); // Optionally deselect if lock fails immediately, or let UI show locked state
+            const currentLocker = presentation.slides.find(s => s.id === currentSlideId)
+                                      ?.elements.find(el => el.id === elementId)?.lockedBy;
+            const lockerName = currentLocker ? presentation.activeCollaborators?.[currentLocker]?.name || "another user" : "another user";
+            toast({ title: "Element Locked", description: \`This element is currently being edited by \${lockerName}.\`, variant: "destructive", duration: 3000 });
         }
     }
   }, [currentUser, currentSlideId, presentation, selectedElementId, presentationId, toast]);
@@ -253,11 +258,10 @@ export default function EditorPage() {
     if (!presentation || !currentUser) return;
     setIsSaving(true);
     try {
-      // No need to re-fetch, onSnapshot will update the presentation state
-      await apiAddSlide(presentation.id); 
-      // setCurrentSlideId will be handled by onSnapshot, or we can optimistically set it
-      // For now, let onSnapshot handle currentSlideId update or find the new slide
-      toast({ title: "Slide Added", description: `New slide created.` });
+      const newSlideId = await apiAddSlide(presentation.id); 
+      // setCurrentSlideId(newSlideId); // onSnapshot will handle this if preferred, or optimistically.
+      // Let's allow onSnapshot to manage currentSlideId setting upon new slide creation.
+      toast({ title: "Slide Added", description: "New slide created." });
     } catch (error) {
       console.error("Error adding slide:", error);
       toast({ title: "Error", description: "Could not add slide.", variant: "destructive" });
@@ -272,16 +276,14 @@ export default function EditorPage() {
     const targetElement = presentation.slides.find(s => s.id === currentSlideId)?.elements.find(el => el.id === updatedElementPartial.id);
     if (targetElement && targetElement.lockedBy && targetElement.lockedBy !== currentUser.id) {
         const locker = presentation.activeCollaborators?.[targetElement.lockedBy]?.name || "another user";
-        toast({ title: "Update Failed", description: `Element is locked by ${locker}.`, variant: "destructive" });
+        toast({ title: "Update Failed", description: \`Element is locked by \${locker}.\`, variant: "destructive" });
         return;
     }
-    // Optimistic UI update is handled by Firestore listener now
     try {
       await apiUpdateElement(presentation.id, currentSlideId, updatedElementPartial);
     } catch (error) {
       console.error("Error updating element:", error);
       toast({ title: "Sync Error", description: "Could not save element change.", variant: "destructive" });
-      // Revert might be complex with listeners; Firestore state is source of truth
     }
   }, [presentation, currentSlideId, toast, currentUser]);
   
@@ -291,7 +293,7 @@ export default function EditorPage() {
     const newCommentData: Omit<SlideComment, 'id' | 'createdAt'> = { 
       userId: currentUser.id,
       userName: currentUser.name || 'Anonymous',
-      userAvatarUrl: currentUser.profilePictureUrl || `https://placehold.co/40x40.png?text=${(currentUser.name || 'A').charAt(0).toUpperCase()}`,
+      userAvatarUrl: currentUser.profilePictureUrl || \`https://placehold.co/40x40.png?text=\${(currentUser.name || 'A').charAt(0).toUpperCase()}\`,
       text,
       resolved: false,
     };
@@ -326,7 +328,6 @@ export default function EditorPage() {
     try {
       await apiUpdatePresentation(presentation.id, { 
         title: presentation.title, 
-        // slides: presentation.slides // Slides are updated individually or via element updates through listeners
       });
       toast({ title: "Presentation Title Saved", description: "Your title change has been saved."});
     } catch (error) {
@@ -339,11 +340,9 @@ export default function EditorPage() {
   
   const handleUpdateSlideBackgroundColor = async (color: string) => {
     if (!presentation || !currentSlideId) return;
-    // This change needs to be persisted to Firestore through a specific update function or handleSavePresentation
     const updatedSlides = presentation.slides.map(s => 
         s.id === currentSlideId ? { ...s, backgroundColor: color } : s
     );
-    // Not calling setPresentation directly, rely on listener for UI update
     await apiUpdatePresentation(presentation.id, { slides: updatedSlides });
   };
 
@@ -351,7 +350,7 @@ export default function EditorPage() {
     if (presentationId && currentUser && isOnline) {
       updateUserCursorPosition(presentationId, currentUser.id, slideId, position);
     }
-  }, 100), [presentationId, currentUser, isOnline]); // 100ms throttle
+  }, 100), [presentationId, currentUser, isOnline]);
 
   const handleMouseMoveOnCanvas = (position: { x: number; y: number } | null) => {
     if (currentSlideId && position && currentUser) {
@@ -359,16 +358,33 @@ export default function EditorPage() {
     }
   };
   
-  useEffect(() => { // Cleanup locks on component unmount or user change
+  useEffect(() => { 
     return () => {
-        if (presentation && selectedElement && currentUser) {
-            if (selectedElement.lockedBy === currentUser.id) {
-                 apiReleaseLock(presentation.id, currentSlideId!, selectedElement.id, currentUser.id);
+        if (presentation && selectedElementId && currentUser && currentSlideId) {
+            const currentSelectedElement = presentation.slides.find(s => s.id === currentSlideId)?.elements.find(el => el.id === selectedElementId);
+            if (currentSelectedElement && currentSelectedElement.lockedBy === currentUser.id) {
+                 apiReleaseLock(presentation.id, currentSlideId, selectedElementId, currentUser.id);
             }
         }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [presentationId, currentSlideId, selectedElementId, currentUser]);
+  }, [presentationId, currentSlideId, selectedElementId, currentUser, presentation]);
+
+  const handleApplyAITextUpdate = (elementId: string, newContent: string) => {
+    if (selectedElement && selectedElement.id === elementId) {
+        handleUpdateElement({ id: elementId, content: newContent });
+        toast({title: "AI Update Applied", description: "Text element updated with AI suggestion."});
+    }
+  };
+
+  const handleApplyAISpeakerNotes = (notes: string) => {
+    if (presentation && currentSlideId) {
+        const updatedSlides = presentation.slides.map(s =>
+            s.id === currentSlideId ? { ...s, speakerNotes: notes } : s
+        );
+        apiUpdatePresentation(presentation.id, { slides: updatedSlides });
+        toast({title: "AI Notes Applied", description: "Speaker notes updated."});
+    }
+  };
 
 
   if (authLoading || isLoading) {
@@ -422,14 +438,14 @@ export default function EditorPage() {
           <input 
             type="text"
             value={presentation?.title || ''}
-            onChange={(e) => setPresentation(p => p ? {...p, title: e.target.value} : null)} // Local update for input field
+            onChange={(e) => setPresentation(p => p ? {...p, title: e.target.value} : null)} 
             onBlur={handleSavePresentation} 
             className="font-headline text-xl font-semibold leading-tight bg-transparent border-none focus:ring-0 p-0 w-full max-w-xs sm:max-w-md"
             disabled={isSaving}
           />
           <p className="text-xs text-muted-foreground">
-            {presentation?.version ? `Version ${presentation.version} - ` : ''}
-            Last server update: {presentation?.lastUpdatedAt ? new Date(presentation.lastUpdatedAt as Date).toLocaleTimeString() : 'Syncing...'}
+            {presentation?.version ? \`Version \${presentation.version} - \` : ''}
+            Last server update: {presentation?.lastUpdatedAt ? new Date((presentation.lastUpdatedAt as Timestamp).toDate()).toLocaleTimeString() : 'Syncing...'}
             {isSaving && <Loader2 className="inline-block ml-2 h-3 w-3 animate-spin" />}
           </p>
         </div>
@@ -480,7 +496,7 @@ export default function EditorPage() {
             activeCollaborators={presentation?.activeCollaborators || {}}
             currentUser={currentUser}
             onMouseMove={handleMouseMoveOnCanvas}
-            canvasBaseWidth={960} // Pass canvas dimensions for cursor calculations
+            canvasBaseWidth={960} 
             canvasBaseHeight={540}
         />
         
@@ -497,7 +513,13 @@ export default function EditorPage() {
             />
         )}
         {isRightPanelOpen === 'ai' && (
-          <AIAssistantPanel currentSlide={currentSlide} currentPresentation={presentation} />
+          <AIAssistantPanel 
+            currentSlide={currentSlide} 
+            currentPresentation={presentation}
+            selectedElement={selectedElement}
+            onApplyAITextUpdate={handleApplyAITextUpdate}
+            onApplyAISpeakerNotes={handleApplyAISpeakerNotes}
+          />
         )}
 
       </div>
@@ -505,18 +527,24 @@ export default function EditorPage() {
           <Sheet>
             <SheetTrigger asChild>
               <Button variant="outline" className="fixed bottom-4 right-4 z-50 shadow-lg rounded-full p-3 h-auto">
-                <Zap className="h-6 w-6 text-primary" />
+                <Sparkles className="h-6 w-6 text-primary" />
               </Button>
             </SheetTrigger>
-            <SheetContent side="bottom" className="h-[75vh]">
-              <SheetHeader>
+            <SheetContent side="bottom" className="h-[75vh] flex flex-col">
+              <SheetHeader className="pb-2">
                 <SheetTitle className="font-headline">AI Assistant</SheetTitle>
                 <SheetDescription>
                   Get design suggestions and smart tips for your presentation.
                 </SheetDescription>
               </SheetHeader>
-              <div className="py-4 h-[calc(100%-4rem)]"> 
-                 <AIAssistantPanel currentSlide={currentSlide} currentPresentation={presentation} />
+              <div className="flex-grow overflow-hidden"> 
+                 <AIAssistantPanel 
+                    currentSlide={currentSlide} 
+                    currentPresentation={presentation}
+                    selectedElement={selectedElement}
+                    onApplyAITextUpdate={handleApplyAITextUpdate}
+                    onApplyAISpeakerNotes={handleApplyAISpeakerNotes}
+                  />
               </div>
             </SheetContent>
           </Sheet>
@@ -524,3 +552,4 @@ export default function EditorPage() {
     </div>
   );
 }
+

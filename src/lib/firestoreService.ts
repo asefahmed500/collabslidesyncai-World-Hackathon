@@ -1,3 +1,4 @@
+
 import { db } from './firebaseConfig';
 import {
   collection,
@@ -264,7 +265,7 @@ export async function addSlideToPresentation(presentationId: string, newSlideDat
       elements: newSlideData.elements || [defaultElement],
       speakerNotes: newSlideData.speakerNotes || "",
       comments: newSlideData.comments || [],
-      thumbnailUrl: newSlideData.thumbnailUrl || \`https://placehold.co/160x90.png?text=S\${slideNumber}\`,
+      thumbnailUrl: newSlideData.thumbnailUrl || `https://placehold.co/160x90.png?text=S${slideNumber}`,
       backgroundColor: newSlideData.backgroundColor || '#FFFFFF',
       aiSuggestions: newSlideData.aiSuggestions || [],
     };
@@ -288,7 +289,7 @@ export async function updateElementInSlide(presentationId: string, slideId: stri
   await runTransaction(db, async (transaction) => {
     const presDoc = await transaction.get(presRef);
     if (!presDoc.exists()) {
-        throw new Error(\`Presentation with ID \${presentationId} not found.\`);
+        throw new Error(`Presentation with ID ${presentationId} not found.`);
     }
 
     const presentationData = presDoc.data() as Presentation;
@@ -317,7 +318,7 @@ export async function updateElementInSlide(presentationId: string, slideId: stri
           return el;
         });
         if (!elementFound && updatedElementPartial.id) { // Check if ID is defined before warning
-            console.warn(\`Element with ID \${updatedElementPartial.id} not found in slide \${slideId}\`);
+            console.warn(`Element with ID ${updatedElementPartial.id} not found in slide ${slideId}`);
         }
         return { ...s, elements: newElements };
       }
@@ -325,7 +326,7 @@ export async function updateElementInSlide(presentationId: string, slideId: stri
     });
 
     if (!slideFound) {
-        console.warn(\`Slide with ID \${slideId} not found in presentation \${presentationId}\`);
+        console.warn(`Slide with ID ${slideId} not found in presentation ${presentationId}`);
         return; // or throw error
     }
 
@@ -347,7 +348,7 @@ export async function addCommentToSlide(presentationId: string, slideId: string,
     if (slideIndex > -1) {
         const newComment: SlideComment = {
             ...comment,
-            id: \`comment-\${Date.now()}-\${Math.random().toString(36).substring(2, 9)}\`,
+            id: `comment-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
             createdAt: serverTimestamp() as Timestamp,
         };
         const updatedSlides = [...slides]; // Create a mutable copy
@@ -357,7 +358,7 @@ export async function addCommentToSlide(presentationId: string, slideId: string,
 
         transaction.update(presRef, { slides: updatedSlides, lastUpdatedAt: serverTimestamp() });
     } else {
-        console.warn(\`Slide with ID \${slideId} not found in presentation \${presentationId}\`);
+        console.warn(`Slide with ID ${slideId} not found in presentation ${presentationId}`);
     }
   });
 }
@@ -406,7 +407,7 @@ export async function updateUserProfile(userId: string, data: Partial<User>): Pr
 
 export async function updateUserPresence(presentationId: string, userId: string, userInfo: Pick<ActiveCollaboratorInfo, 'name' | 'profilePictureUrl' | 'color'>): Promise<void> {
   const presRef = doc(db, 'presentations', presentationId);
-  const collaboratorPath = \`activeCollaborators.\${userId}\`;
+  const collaboratorPath = `activeCollaborators.${userId}`;
   await updateDoc(presRef, {
     [collaboratorPath]: {
       ...userInfo,
@@ -420,7 +421,7 @@ export async function updateUserPresence(presentationId: string, userId: string,
 
 export async function removeUserPresence(presentationId: string, userId: string): Promise<void> {
   const presRef = doc(db, 'presentations', presentationId);
-  const collaboratorPath = \`activeCollaborators.\${userId}\`;
+  const collaboratorPath = `activeCollaborators.${userId}`;
   await updateDoc(presRef, {
     [collaboratorPath]: deleteField(),
     lastUpdatedAt: serverTimestamp()
@@ -429,8 +430,8 @@ export async function removeUserPresence(presentationId: string, userId: string)
 
 export async function updateUserCursorPosition(presentationId: string, userId: string, slideId: string, position: { x: number; y: number }): Promise<void> {
   const presRef = doc(db, 'presentations', presentationId);
-  const cursorPath = \`activeCollaborators.\${userId}.cursorPosition\`;
-  const lastSeenPath = \`activeCollaborators.\${userId}.lastSeen\`;
+  const cursorPath = `activeCollaborators.${userId}.cursorPosition`;
+  const lastSeenPath = `activeCollaborators.${userId}.lastSeen`;
   await updateDoc(presRef, {
     [cursorPath]: { slideId, ...position },
     [lastSeenPath]: serverTimestamp()
@@ -543,7 +544,7 @@ export async function releaseExpiredLocks(presentationId: string): Promise<void>
 
         if (locksReleased) {
           transaction.update(presRef, { slides: updatedSlides, lastUpdatedAt: serverTimestamp() });
-          console.log(\`Released expired locks for presentation \${presentationId}\`);
+          console.log(`Released expired locks for presentation ${presentationId}`);
         }
     });
   } catch (error) {
