@@ -25,6 +25,7 @@ import { ref, deleteObject } from 'firebase/storage';
 import type { Presentation, Slide, SlideElement, SlideComment, User, Team, ActiveCollaboratorInfo, TeamRole, TeamMember, TeamActivity, TeamActivityType, PresentationActivity, PresentationActivityType, PresentationAccessRole, Asset, AssetType } from '@/types';
 import { logTeamActivityInMongoDB } from './mongoTeamService'; 
 import { getUserByEmailFromMongoDB } from './mongoUserService';
+import { v4 as uuidv4 } from 'uuid';
 
 
 const USER_COLORS = [
@@ -56,18 +57,22 @@ const convertTimestamps = (data: any): any => {
   return converted;
 };
 
+const renumberSlides = (slides: Slide[]): Slide[] => {
+  return slides.map((slide, index) => ({ ...slide, slideNumber: index + 1 }));
+};
+
 const presentationsCollection = collection(db, 'presentations');
 const presentationActivitiesCollection = collection(db, 'presentationActivities');
 const assetsCollection = collection(db, 'assets'); 
 
 
 export async function createPresentation(userId: string, title: string, teamId?: string, description: string = ''): Promise<string> {
-  const initialSlideId = `slide-initial-${Date.now()}`;
+  const initialSlideId = uuidv4();
   const newSlide: Omit<Slide, 'presentationId'> = {
     id: initialSlideId,
     slideNumber: 1,
     elements: [{
-      id: `elem-${initialSlideId}-1`,
+      id: uuidv4(),
       type: 'text',
       content: `Welcome to '${title}'!`,
       position: { x: 50, y: 50 },
@@ -85,7 +90,7 @@ export async function createPresentation(userId: string, title: string, teamId?:
     title,
     description,
     creatorId: userId,
-    teamId: teamId || undefined, // Store undefined if no teamId
+    teamId: teamId || undefined, 
     access: { [userId]: 'owner' },
     settings: {
       isPublic: false,
@@ -116,11 +121,11 @@ export async function createPresentation(userId: string, title: string, teamId?:
 
 export async function getPresentationsForUser(userId: string, userTeamId?: string | null): Promise<Presentation[]> {
   const conditions = [
-    where('creatorId', '==', userId), // Created by user
-    where(`access.${userId}`, 'in', ['owner', 'editor', 'viewer']) // Explicitly shared with user
+    where('creatorId', '==', userId), 
+    where(`access.${userId}`, 'in', ['owner', 'editor', 'viewer']) 
   ];
   if (userTeamId) {
-    conditions.push(where('teamId', '==', userTeamId)); // Belongs to user's team
+    conditions.push(where('teamId', '==', userTeamId)); 
   }
   
   const q = query(presentationsCollection, or(...conditions), orderBy('lastUpdatedAt', 'desc'));
@@ -222,15 +227,20 @@ export async function addSlideToPresentation(presentationId: string, newSlideDat
   return await runTransaction(db, async (transaction) => {
     const presDoc = await transaction.get(presRef);
     if (!presDoc.exists()) throw new Error("Presentation not found");
-    const presentation = presDoc.data() as Presentation;
-    const slideId = `slide-${presentationId}-${Date.now()}`;
-    const slideNumber = (presentation.slides?.length || 0) + 1;
-    const defaultElementId = `elem-${slideId}-default-${Date.now()}`;
+    
+    const presentationData = presDoc.data() as Presentation;
+    let currentSlides = presentationData.slides || [];
+    
+    const slideId = uuidv4();
+    const slideNumber = currentSlides.length + 1;
+    const defaultElementId = uuidv4();
+    
     const defaultElement: SlideElement = {
       id: defaultElementId, type: 'text', content: `Slide ${slideNumber}`,
       position: { x: 50, y: 50 }, size: { width: 400, height: 50 },
       style: { fontFamily: 'Space Grotesk', fontSize: '24px', color: '#333333', backgroundColor: 'transparent' }, zIndex: 1,
     };
+    
     const newSlide: Slide = {
       id: slideId, presentationId: presentationId, slideNumber: slideNumber,
       elements: newSlideData.elements || [defaultElement],
@@ -238,11 +248,76 @@ export async function addSlideToPresentation(presentationId: string, newSlideDat
       thumbnailUrl: newSlideData.thumbnailUrl || `https://placehold.co/160x90.png?text=S${slideNumber}`,
       backgroundColor: newSlideData.backgroundColor || '#FFFFFF', aiSuggestions: newSlideData.aiSuggestions || [],
     };
-    const updatedSlides = arrayUnion(newSlide);
-    transaction.update(presRef, { slides: updatedSlides, lastUpdatedAt: serverTimestamp() });
-    return slideId;
+    
+    const updatedSlidesArray = [...currentSlides, newSlide];
+    const finalSlides = renumberSlides(updatedSlidesArray);
+    
+    transaction.update(presRef, { slides: finalSlides, lastUpdatedAt: serverTimestamp() });
+    return slideId; // Return the new slide's ID
   });
 }
+
+export async function deleteSlideFromPresentation(presentationId: string, slideIdToDelete: string): Promise<Slide[] | null> {
+  const presRef = doc(db, 'presentations', presentationId);
+  return await runTransaction(db, async (transaction) => {
+    const presDoc = await transaction.get(presRef);
+    if (!presDoc.exists()) throw new Error("Presentation not found");
+
+    const presentationData = presDoc.data() as Presentation;
+    let slides = presentationData.slides || [];
+    const initialLength = slides.length;
+
+    slides = slides.filter(s => s.id !== slideIdToDelete);
+
+    if (slides.length === initialLength) {
+        console.warn(`Slide ${slideIdToDelete} not found in presentation ${presentationId} for deletion.`);
+        return presentationData.slides; // Return original slides if no change
+    }
+
+    const updatedSlides = renumberSlides(slides);
+    transaction.update(presRef, { slides: updatedSlides, lastUpdatedAt: serverTimestamp() });
+    return updatedSlides;
+  });
+}
+
+export async function duplicateSlideInPresentation(presentationId: string, slideIdToDuplicate: string): Promise<{ newSlideId: string, updatedSlides: Slide[] } | null> {
+  const presRef = doc(db, 'presentations', presentationId);
+  return await runTransaction(db, async (transaction) => {
+    const presDoc = await transaction.get(presRef);
+    if (!presDoc.exists()) throw new Error("Presentation not found");
+
+    const presentationData = presDoc.data() as Presentation;
+    let slides = presentationData.slides || [];
+    const originalSlideIndex = slides.findIndex(s => s.id === slideIdToDuplicate);
+
+    if (originalSlideIndex === -1) {
+      console.warn(`Slide ${slideIdToDuplicate} not found in presentation ${presentationId} for duplication.`);
+      return null;
+    }
+
+    const originalSlide = slides[originalSlideIndex];
+    const newSlideId = uuidv4();
+    const duplicatedSlide: Slide = {
+      ...JSON.parse(JSON.stringify(originalSlide)), // Deep clone
+      id: newSlideId,
+      slideNumber: 0, // Will be renumbered
+      elements: originalSlide.elements.map(el => ({
+        ...JSON.parse(JSON.stringify(el)),
+        id: uuidv4(), // New ID for each element
+      })),
+      comments: [], // Comments are typically not duplicated
+      aiSuggestions: [], // AI suggestions are typically not duplicated
+      // Keep thumbnail and background color from original, or reset if desired
+    };
+
+    slides.splice(originalSlideIndex + 1, 0, duplicatedSlide);
+    const updatedSlides = renumberSlides(slides);
+
+    transaction.update(presRef, { slides: updatedSlides, lastUpdatedAt: serverTimestamp() });
+    return { newSlideId, updatedSlides };
+  });
+}
+
 
 export async function updateElementInSlide(presentationId: string, slideId: string, updatedElementPartial: Partial<SlideElement>): Promise<void> {
   if (!updatedElementPartial.id) return;
@@ -287,7 +362,7 @@ export async function addCommentToSlide(presentationId: string, slideId: string,
     const slides = (presentationData?.slides || []);
     const slideIndex = slides.findIndex(s => s.id === slideId);
     if (slideIndex > -1) {
-        const newComment: SlideComment = { ...comment, id: `comment-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`, createdAt: serverTimestamp() as Timestamp, };
+        const newComment: SlideComment = { ...comment, id: uuidv4(), createdAt: serverTimestamp() as Timestamp, };
         const updatedSlides = [...slides]; const targetSlide = {...updatedSlides[slideIndex]};
         targetSlide.comments = [...(targetSlide.comments || []), newComment];
         updatedSlides[slideIndex] = targetSlide;
@@ -408,8 +483,6 @@ export async function logPresentationActivity(
   presentationId: string, actorId: string, actionType: PresentationActivityType, details?: PresentationActivity['details']
 ): Promise<string> {
   let actorNameResolved = 'System/Guest';
-  // Actor name fetching for presentation activity can be added if needed,
-  // currently user names are denormalized into TeamActivity.
   
   const activityData: Omit<PresentationActivity, 'id'> = {
     presentationId, actorId, actorName: actorNameResolved, actionType, details: details || {}, createdAt: serverTimestamp() as Timestamp,
@@ -464,4 +537,5 @@ export async function getUserByEmail(email: string): Promise<User | null> {
 
 export { getNextUserColor };
 
-    
+// Helper to generate unique IDs for slides and elements
+export { uuidv4 };

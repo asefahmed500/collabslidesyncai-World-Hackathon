@@ -1,3 +1,4 @@
+
 "use client";
 
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,7 @@ import {
   Settings2, // AI settings maybe
   Lightbulb, // AI suggestions
   MessageSquare, // Comments
+  LayoutTemplate, // For templates
 } from "lucide-react";
 
 const editorTools = [
@@ -32,8 +34,9 @@ const editorTools = [
 const actionTools = [
   { id: "undo", label: "Undo", icon: Undo },
   { id: "redo", label: "Redo", icon: Redo },
-  { id: "duplicate", label: "Duplicate Slide", icon: Copy },
-  { id: "delete", label: "Delete Slide", icon: Trash2 },
+  // Duplicate and Delete slide actions are now on thumbnails
+  // { id: "duplicate", label: "Duplicate Slide", icon: Copy }, 
+  // { id: "delete", label: "Delete Slide", icon: Trash2 },
 ];
 
 const aiTools = [
@@ -45,9 +48,10 @@ const aiTools = [
 interface EditorToolbarProps {
   onToolSelect: (tool: string) => void;
   onAction: (action: string) => void;
+  onShowSlideTemplates: () => void; // New prop
 }
 
-export function EditorToolbar({ onToolSelect, onAction }: EditorToolbarProps) {
+export function EditorToolbar({ onToolSelect, onAction, onShowSlideTemplates }: EditorToolbarProps) {
   return (
     <TooltipProvider delayDuration={100}>
       <div className="bg-card border-b p-2 flex items-center space-x-1 shadow-sm sticky top-0 z-40">
@@ -66,6 +70,21 @@ export function EditorToolbar({ onToolSelect, onAction }: EditorToolbarProps) {
         ))}
 
         <Separator orientation="vertical" className="h-6 mx-2" />
+        
+        {/* Slide Templates Button */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="ghost" size="icon" onClick={onShowSlideTemplates} aria-label="Slide Templates">
+              <LayoutTemplate className="h-5 w-5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            <p>Slide Templates</p>
+          </TooltipContent>
+        </Tooltip>
+
+        <Separator orientation="vertical" className="h-6 mx-2" />
+
 
         {/* Action Tools */}
         {actionTools.map((tool) => (
@@ -118,3 +137,4 @@ export function EditorToolbar({ onToolSelect, onAction }: EditorToolbarProps) {
     </TooltipProvider>
   );
 }
+

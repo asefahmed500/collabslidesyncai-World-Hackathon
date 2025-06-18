@@ -14,8 +14,18 @@ import { CollaborationBar } from '@/components/editor/CollaborationBar';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import type { Presentation, Slide, SlideElement, SlideComment, ActiveCollaboratorInfo, User as AppUser } from '@/types';
-import { AlertTriangle, Home, RotateCcw, Save, Share2, Users, FileText, Loader2, Zap, WifiOff, ShieldAlert, Sparkles } from 'lucide-react';
+import { AlertTriangle, Home, RotateCcw, Save, Share2, Users, FileText, Loader2, Zap, WifiOff, ShieldAlert, Sparkles, LayoutTemplate, Trash2, Copy } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,6 +37,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { 
   updatePresentation as apiUpdatePresentation,
   addSlideToPresentation as apiAddSlide,
+  deleteSlideFromPresentation as apiDeleteSlide,
+  duplicateSlideInPresentation as apiDuplicateSlide,
   updateElementInSlide as apiUpdateElement, 
   addCommentToSlide as apiAddComment,
   resolveCommentOnSlide as apiResolveComment,
@@ -69,6 +81,7 @@ export default function EditorPage() {
   const [isPasswordPromptOpen, setIsPasswordPromptOpen] = useState(false);
   const [accessDenied, setAccessDenied] = useState(false);
   const [passwordVerifiedInSession, setPasswordVerifiedInSession] = useState(false);
+  const [slideToDelete, setSlideToDelete] = useState<Slide | null>(null);
 
   const unsubscribePresentationListener = useRef<(() => void) | null>(null);
   const presenceIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -105,8 +118,8 @@ export default function EditorPage() {
         setPasswordVerifiedInSession(sessionVerified);
         if (!sessionVerified) {
           setIsPasswordPromptOpen(true);
-          setIsLoading(false); // Stop loading to show prompt
-          return false; // Access pending password
+          setIsLoading(false); 
+          return false; 
         }
       }
       hasAccess = true;
@@ -119,7 +132,7 @@ export default function EditorPage() {
 
     if (hasAccess) {
       setAccessDenied(false);
-      if (user) { // Log view only if user is known (or guest after password)
+      if (user) { 
          logPresentationActivity(presData.id, user.id, 'presentation_viewed', { accessMethod });
       } else if (presData.settings.isPublic && !presData.settings.passwordProtected) {
          logPresentationActivity(presData.id, 'guest', 'presentation_viewed', { accessMethod: 'public_link_anonymous' });
@@ -128,19 +141,18 @@ export default function EditorPage() {
     } else {
       setAccessDenied(true);
       toast({ title: "Access Denied", description: "You don't have permission to view this presentation.", variant: "destructive" });
-      // router.push('/dashboard'); // Consider if immediate redirect is too jarring before page renders denied message
       return false;
     }
   }, [toast]);
 
 
   useEffect(() => {
-    if (!authLoading && !currentUser && !presentation?.settings.isPublic) { // if not public and no user, redirect
+    if (!authLoading && !currentUser && !presentation?.settings.isPublic) { 
       router.push('/login');
       return;
     }
 
-    if (presentationId && collaboratorColor && (currentUser || presentation?.settings.isPublic)) { // Proceed if user or public
+    if (presentationId && collaboratorColor && (currentUser || presentation?.settings.isPublic)) { 
       setIsLoading(true);
       
       const presRef = doc(db, 'presentations', presentationId);
@@ -173,19 +185,17 @@ export default function EditorPage() {
           const canView = await checkAccessAndLoad(presentationWithDefaults, currentUser);
 
           if (canView) {
-            if (presentationWithDefaults.slides.length > 0 && !currentSlideId) {
+            if (presentationWithDefaults.slides.length > 0 && (!currentSlideId || !presentationWithDefaults.slides.find(s => s.id === currentSlideId))) {
               setCurrentSlideId(presentationWithDefaults.slides[0].id);
             } else if (presentationWithDefaults.slides.length === 0) {
               setCurrentSlideId(null);
-            } else if (currentSlideId && !presentationWithDefaults.slides.find(s => s.id === currentSlideId)) {
-              setCurrentSlideId(presentationWithDefaults.slides[0]?.id || null);
               setSelectedElementId(null);
             }
           }
-          setIsLoading(false); // Access check might set this if password prompt is needed
+          setIsLoading(false);
         } else {
           toast({ title: "Error", description: "Presentation not found.", variant: "destructive" });
-          setAccessDenied(true); // Treat as access denied
+          setAccessDenied(true); 
           setIsLoading(false);
         }
       }, (error) => {
@@ -195,7 +205,7 @@ export default function EditorPage() {
         setIsLoading(false);
       });
 
-      if (currentUser) { // Only set up presence if logged in
+      if (currentUser) { 
         updateUserPresence(presentationId, currentUser.id, { 
           name: currentUser.name || 'Anonymous', 
           profilePictureUrl: currentUser.profilePictureUrl,
@@ -204,7 +214,7 @@ export default function EditorPage() {
 
         if (presenceIntervalRef.current) clearInterval(presenceIntervalRef.current);
         presenceIntervalRef.current = setInterval(() => {
-          if (currentUser) { // Check again inside interval
+          if (currentUser) { 
             updateUserPresence(presentationId, currentUser.id, { 
                 name: currentUser.name || 'Anonymous', 
                 profilePictureUrl: currentUser.profilePictureUrl,
@@ -254,6 +264,8 @@ export default function EditorPage() {
   const handleToolSelect = (tool: string) => {
     if (tool === 'ai-design' || tool === 'ai-content' || tool.startsWith('ai-')) {
       setIsRightPanelOpen('ai');
+    } else if (tool === 'templates') {
+      handleShowSlideTemplates();
     } else {
       setIsRightPanelOpen('properties'); 
       toast({ title: "Tool Selected", description: `Tool '${tool}' functionality pending implementation.`, duration: 2000});
@@ -305,8 +317,10 @@ export default function EditorPage() {
     if (!presentation || !currentUser) return;
     setIsSaving(true);
     try {
-      await apiAddSlide(presentation.id); 
+      const newSlideId = await apiAddSlide(presentation.id); 
       toast({ title: "Slide Added", description: "New slide created." });
+      setCurrentSlideId(newSlideId); // Select the new slide
+      setSelectedElementId(null);
     } catch (error) {
       console.error("Error adding slide:", error);
       toast({ title: "Error", description: "Could not add slide.", variant: "destructive" });
@@ -314,7 +328,70 @@ export default function EditorPage() {
       setIsSaving(false);
     }
   };
+
+  const handleDeleteSlide = async (slideIdToDelete: string) => {
+    if (!presentation || !currentUser) return;
+    const slide = presentation.slides.find(s => s.id === slideIdToDelete);
+    if (!slide) return;
+    setSlideToDelete(slide); // Open confirmation dialog
+  };
+
+  const confirmDeleteSlide = async () => {
+    if (!presentation || !slideToDelete || !currentUser) return;
+    setIsSaving(true);
+    try {
+      const updatedSlides = await apiDeleteSlide(presentation.id, slideToDelete.id);
+      if (updatedSlides) {
+        setPresentation(prev => prev ? { ...prev, slides: updatedSlides } : null);
+        toast({ title: "Slide Deleted", description: `Slide ${slideToDelete.slideNumber} has been removed.` });
+
+        if (currentSlideId === slideToDelete.id) {
+          if (updatedSlides.length > 0) {
+            const currentIndex = presentation.slides.findIndex(s => s.id === slideToDelete.id);
+            const nextSlideIndex = Math.min(currentIndex, updatedSlides.length - 1);
+            setCurrentSlideId(updatedSlides[nextSlideIndex >=0 ? nextSlideIndex : 0]?.id || null);
+          } else {
+            setCurrentSlideId(null);
+          }
+          setSelectedElementId(null);
+        }
+      } else {
+         toast({ title: "Error", description: "Slide not found or could not be deleted.", variant: "destructive" });
+      }
+    } catch (error) {
+      console.error("Error deleting slide:", error);
+      toast({ title: "Error", description: "Could not delete slide.", variant: "destructive" });
+    } finally {
+      setIsSaving(false);
+      setSlideToDelete(null);
+    }
+  };
   
+  const handleDuplicateSlide = async (slideIdToDuplicate: string) => {
+    if (!presentation || !currentUser) return;
+    setIsSaving(true);
+    try {
+      const result = await apiDuplicateSlide(presentation.id, slideIdToDuplicate);
+      if (result && result.newSlideId && result.updatedSlides) {
+        setPresentation(prev => prev ? { ...prev, slides: result.updatedSlides } : null);
+        toast({ title: "Slide Duplicated", description: "Slide has been duplicated." });
+        setCurrentSlideId(result.newSlideId); // Select the duplicated slide
+        setSelectedElementId(null);
+      } else {
+        toast({ title: "Error", description: "Could not duplicate slide.", variant: "destructive" });
+      }
+    } catch (error) {
+      console.error("Error duplicating slide:", error);
+      toast({ title: "Error", description: "Could not duplicate slide.", variant: "destructive" });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleShowSlideTemplates = () => {
+    toast({ title: "Coming Soon!", description: "Slide templates feature will be available in a future update." });
+  };
+
   const handleUpdateElement = useCallback(async (updatedElementPartial: Partial<SlideElement>) => {
     if (!presentation || !currentSlideId || !updatedElementPartial.id || !currentUser) return;
     
@@ -435,18 +512,16 @@ export default function EditorPage() {
     setPasswordVerifiedInSession(true);
     sessionStorage.setItem(`passwordVerified_${presentationId}`, 'true');
     setIsPasswordPromptOpen(false);
-    setIsLoading(true); // Briefly set loading to re-trigger access check if needed
-    // Re-check access or just allow rendering
+    setIsLoading(true); 
     if (presentation && currentUser) {
         logPresentationActivity(presentation.id, currentUser.id, 'presentation_viewed', { accessMethod: 'public_link_password' });
     } else if (presentation) {
         logPresentationActivity(presentation.id, 'guest_password_verified', 'presentation_viewed', { accessMethod: 'public_link_password' });
     }
-     // Re-fetch or re-validate presentation to ensure full load after password
     getPresentationById(presentationId).then(async (presData) => {
         if (presData) {
-            setPresentation(presData); // Update local state with full data
-            await checkAccessAndLoad(presData, currentUser); // Re-run access check
+            setPresentation(presData); 
+            await checkAccessAndLoad(presData, currentUser); 
             setIsLoading(false);
         }
     });
@@ -474,7 +549,6 @@ export default function EditorPage() {
                 onOpenChange={setIsPasswordPromptOpen}
                 onPasswordVerified={handlePasswordVerified}
             />
-            {/* Render a minimal page or loader while prompt is open */}
             <div className="flex flex-col items-center justify-center min-h-[calc(100vh-4rem)]">
                 <Loader2 className="w-12 h-12 animate-spin text-primary" />
                 <p className="mt-2 text-muted-foreground">Awaiting password...</p>
@@ -577,13 +651,19 @@ export default function EditorPage() {
   return (
     <div className="flex flex-col h-screen overflow-hidden">
       <EditorHeader />
-      <EditorToolbar onToolSelect={handleToolSelect} onAction={handleAction} />
+      <EditorToolbar 
+        onToolSelect={handleToolSelect} 
+        onAction={handleAction} 
+        onShowSlideTemplates={handleShowSlideTemplates}
+      />
       <div className="flex flex-grow overflow-hidden">
         <SlideThumbnailList
           slides={presentation?.slides || []}
           currentSlideId={currentSlideId}
           onSlideSelect={handleSlideSelect}
           onAddSlide={handleAddSlide}
+          onDeleteSlide={handleDeleteSlide}
+          onDuplicateSlide={handleDuplicateSlide}
           disabled={isSaving || !isOnline || !currentUser || (presentation?.creatorId !== currentUser.id && presentation?.access[currentUser.id] !== 'owner' && presentation?.access[currentUser.id] !== 'editor')}
         />
         <EditorCanvas 
@@ -637,6 +717,24 @@ export default function EditorPage() {
             onOpenChange={setIsPasswordPromptOpen}
             onPasswordVerified={handlePasswordVerified}
         />
+      )}
+      {slideToDelete && (
+        <AlertDialog open={!!slideToDelete} onOpenChange={(open) => !open && setSlideToDelete(null)}>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                <AlertDialogTitle className="flex items-center"><Trash2 className="mr-2 h-5 w-5 text-destructive"/>Delete Slide {slideToDelete.slideNumber}?</AlertDialogTitle>
+                <AlertDialogDescription>
+                    This action cannot be undone. This will permanently delete the slide and its content.
+                </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                <AlertDialogCancel onClick={() => setSlideToDelete(null)}>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={confirmDeleteSlide} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">
+                    Delete Slide
+                </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
       )}
         <div className="md:hidden"> 
           <Sheet>
