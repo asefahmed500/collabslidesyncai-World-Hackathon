@@ -24,7 +24,7 @@ import {
   Unsubscribe,
 } from 'firebase/firestore';
 import { ref, deleteObject } from 'firebase/storage';
-import type { Presentation, Slide, SlideElement, SlideComment, User, Team, ActiveCollaboratorInfo, TeamRole, TeamMember, TeamActivity, TeamActivityType, PresentationActivity, PresentationActivityType, PresentationAccessRole, Asset, AssetType, SlideElementType, Notification, NotificationType } from '@/types';
+import type { Presentation, Slide, SlideElement, SlideComment, User, Team, ActiveCollaboratorInfo, TeamRole, TeamMember, TeamActivity, TeamActivityType, PresentationActivity, PresentationActivityType, PresentationAccessRole, Asset, AssetType, SlideElementType, Notification, NotificationType as NotificationEnumType } from '@/types';
 import { logTeamActivityInMongoDB } from './mongoTeamService';
 import { getUserByEmailFromMongoDB } from './mongoUserService'; // Correctly points to MongoDB service
 import { v4 as uuidv4 } from 'uuid';
@@ -699,7 +699,7 @@ export async function deleteAsset(assetId: string, storagePath: string, teamId: 
 // --- Notification Management ---
 export async function createNotification(
   userId: string,
-  type: NotificationType,
+  type: NotificationEnumType,
   title: string,
   message: string,
   link?: string,
@@ -767,6 +767,13 @@ export async function getUserByEmail(email: string): Promise<User | null> {
     return getUserByEmailFromMongoDB(email);
 }
 
+export async function getAllPresentationsForAdmin(): Promise<Presentation[]> {
+  const q = query(presentationsCollection, orderBy('lastUpdatedAt', 'desc'));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(docSnap => ({ id: docSnap.id, ...convertTimestamps(docSnap.data()) } as Presentation));
+}
+
 
 export { getNextUserColor };
 export { uuidv4 };
+
