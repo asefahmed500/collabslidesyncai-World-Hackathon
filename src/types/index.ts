@@ -1,16 +1,17 @@
+
 import type { Timestamp } from 'firebase/firestore'; // Firestore Timestamp
 import type { Types } from 'mongoose'; // Mongoose ObjectId type
 
 export interface User {
   id: string; // This will be Firebase UID, which corresponds to _id in MongoDB schema after toString()
-  _id?: Types.ObjectId | string; // Mongoose _id
+  _id?: Types.ObjectId | string; // Mongoose _id. Mongoose documents have this, but our AppUser type primarily uses 'id'.
   name?: string | null;
   email?: string | null;
   emailVerified?: boolean; // From Firebase Auth, can be synced
   profilePictureUrl?: string | null;
-  teamId?: string;
-  role: 'owner' | 'admin' | 'editor' | 'viewer' | 'guest';
-  lastActive: Date | Timestamp; // Allow both for flexibility during transition if any
+  teamId?: string; // ID of the primary team the user belongs to, if any.
+  role: 'owner' | 'admin' | 'editor' | 'viewer' | 'guest'; // Role within their primary team or general app role.
+  lastActive: Date | Timestamp; 
   createdAt?: Date | Timestamp;
   updatedAt?: Date | Timestamp; // From Mongoose timestamps
   settings: {
@@ -18,11 +19,9 @@ export interface User {
     aiFeatures: boolean;
     notifications: boolean;
   };
-  isAppAdmin?: boolean;
-  // For social logins, Firebase UID is the primary link.
-  // Storing provider-specific IDs is optional but can be useful.
-  googleId?: string | null;
-  githubId?: string | null;
+  isAppAdmin?: boolean; // Global application admin status
+  googleId?: string | null; // UID from Google provider
+  githubId?: string | null; // UID from GitHub provider
   twoFactorEnabled?: boolean;
   // twoFactorSecret, backupCodes etc. would go here if 2FA is fully implemented
 }
@@ -30,22 +29,22 @@ export interface User {
 export type TeamRole = 'owner' | 'admin' | 'editor' | 'viewer';
 
 export interface TeamMember {
-  userId: string; // Firebase UID
+  // userId: string; // This was Firebase UID. For Mongoose subdocs, _id can be used or userId can be User.id
   role: TeamRole;
   joinedAt: Date | Timestamp;
-  addedBy: string;
-  name?: string;
-  email?: string;
-  profilePictureUrl?: string;
+  addedBy: string; // User.id of who added them
+  name?: string; // Denormalized from User profile for quick display
+  email?: string; // Denormalized
+  profilePictureUrl?: string; // Denormalized
 }
 
 export interface Team {
   id: string; // Mongoose _id.toString()
   _id?: Types.ObjectId | string;
   name: string;
-  ownerId: string;
-  members: {
-    [userId: string]: TeamMember; // userId here is Firebase UID
+  ownerId: string; // User.id (Firebase UID) of the team creator/owner
+  members: { // Mongoose Map: keys are User.id (Firebase UID)
+    [userId: string]: TeamMember; 
   };
   branding: {
     logoUrl?: string;
@@ -79,13 +78,13 @@ export interface SlideElement {
     borderColor?: string;
   };
   zIndex?: number;
-  lockedBy?: string | null;
+  lockedBy?: string | null; // User.id (Firebase UID)
   lockTimestamp?: Timestamp | null;
 }
 
 export interface SlideComment {
   id: string;
-  userId: string;
+  userId: string; // User.id (Firebase UID)
   userName: string;
   userAvatarUrl?: string;
   text: string;
@@ -106,28 +105,28 @@ export interface Slide {
 }
 
 export interface ActiveCollaboratorInfo {
-  id: string;
+  id: string; // User.id (Firebase UID)
   name: string;
   profilePictureUrl?: string;
   cursorPosition?: { slideId: string; x: number; y: number } | null;
   lastSeen: Timestamp; // Firestore Timestamp
   color: string;
-  email?: string;
+  email?: string; // Denormalized for display
 }
 
 export interface Presentation {
   id: string;
   title: string;
   description?: string;
-  creatorId: string;
-  teamId?: string;
-  access: {
+  creatorId: string; // User.id (Firebase UID)
+  teamId?: string; // Team.id
+  access: { // Keys are User.id (Firebase UID)
     [userId: string]: PresentationAccessRole;
   };
   settings: {
     isPublic: boolean;
     passwordProtected: boolean;
-    password?: string;
+    password?: string; // Hashed password if stored, or flag for check
     commentsAllowed: boolean;
   };
   thumbnailUrl?: string;
@@ -135,8 +134,8 @@ export interface Presentation {
   createdAt?: Timestamp; // Firestore Timestamp
   lastUpdatedAt: Timestamp; // Firestore Timestamp
   slides: Slide[];
-  activeCollaborators?: { [userId: string]: ActiveCollaboratorInfo };
-  collaborators?: User[];
+  activeCollaborators?: { [userId: string]: ActiveCollaboratorInfo }; // Keys are User.id (Firebase UID)
+  collaborators?: User[]; // Potentially populated array of full User objects for access list display
 }
 
 export type TeamActivityType =
@@ -153,7 +152,7 @@ export type TeamActivityType =
 export interface TeamActivity {
   id: string;
   teamId: string;
-  actorId: string;
+  actorId: string; // User.id (Firebase UID)
   actorName?: string;
   actionType: TeamActivityType;
   targetType?: 'user' | 'presentation' | 'team_profile' | 'asset';
@@ -180,10 +179,10 @@ export type PresentationActivityType =
 export interface PresentationActivity {
   id: string;
   presentationId: string;
-  actorId: string;
+  actorId: string; // User.id (Firebase UID) or 'system', 'guest'
   actorName?: string;
   actionType: PresentationActivityType;
-  targetUserId?: string;
+  targetUserId?: string; // User.id (Firebase UID) if action targets a user
   targetUserName?: string;
   details?: {
     oldRole?: PresentationAccessRole;
@@ -193,7 +192,7 @@ export interface PresentationActivity {
     newValue?: any;
     ipAddress?: string;
     userAgent?: string;
-    accessMethod?: 'direct' | 'public_link' | 'team_access' | 'public_link_password';
+    accessMethod?: 'direct' | 'public_link' | 'team_access' | 'public_link_password' | 'public_link_anonymous';
     [key: string]: any;
   };
   createdAt: Timestamp; // Firestore Timestamp
@@ -204,7 +203,7 @@ export type AssetType = 'image' | 'video' | 'audio' | 'pdf' | 'other';
 export interface Asset {
   id: string;
   teamId: string;
-  uploaderId: string;
+  uploaderId: string; // User.id (Firebase UID)
   uploaderName?: string;
   fileName: string;
   fileType: string; // MIME type
@@ -220,3 +219,5 @@ export interface Asset {
   createdAt: Timestamp; // Firestore Timestamp
   lastUpdatedAt?: Timestamp; // Firestore Timestamp
 }
+
+    

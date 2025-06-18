@@ -160,6 +160,7 @@ export async function handleSocialSignIn(firebaseUser: FirebaseUserType): Promis
         email: firebaseUser.email,
         profilePictureUrl: firebaseUser.photoURL,
         emailVerified: firebaseUser.emailVerified,
+        role: 'editor', // Default role for new social sign-ups
       };
       if (providerId === GoogleAuthProvider.PROVIDER_ID) {
         socialProfileData.googleId = firebaseUser.providerData.find(p => p.providerId === GoogleAuthProvider.PROVIDER_ID)?.uid;
@@ -172,9 +173,18 @@ export async function handleSocialSignIn(firebaseUser: FirebaseUserType): Promis
         return { success: false, message: "Failed to create user profile after social sign-in." };
       }
     } else {
-      // User exists, potentially update their profile with latest from provider if changed
-      // For simplicity, we'll just ensure they are active. More complex sync can be added.
-      await updateUserInMongoDB(appUser.id, { lastActive: new Date() });
+      // User exists, potentially update their profile with latest from provider if changed (e.g. profile picture)
+      const updates: Partial<AppUser> = { lastActive: new Date() };
+      if (firebaseUser.displayName && appUser.name !== firebaseUser.displayName) {
+        updates.name = firebaseUser.displayName;
+      }
+      if (firebaseUser.photoURL && appUser.profilePictureUrl !== firebaseUser.photoURL) {
+        updates.profilePictureUrl = firebaseUser.photoURL;
+      }
+      if (Object.keys(updates).length > 1) { // Only update if more than just lastActive changed
+        await updateUserInMongoDB(appUser.id, updates);
+        appUser = {...appUser, ...updates}; // Reflect updates locally
+      }
     }
     return { success: true, message: "Social sign-in successful.", userId: appUser.id, user: appUser };
   } catch (error: any) {
@@ -227,14 +237,16 @@ export async function updateUserProfileServer(userId: string, formData: FormData
 
   try {
     // Update Firebase Auth profile
-    await firebaseUpdateProfile(auth.currentUser, {
-      displayName: name || auth.currentUser.displayName,
-      photoURL: profilePictureUrl || auth.currentUser.photoURL,
-    });
+    if (name || profilePictureUrl) {
+        await firebaseUpdateProfile(auth.currentUser, {
+        displayName: name || auth.currentUser.displayName,
+        photoURL: profilePictureUrl || auth.currentUser.photoURL,
+        });
+    }
 
     // Update MongoDB profile
     const updatedUser = await updateUserInMongoDB(userId, updates);
-    revalidatePath('/dashboard/profile');
+    revalidatePath('/dashboard/profile'); // Revalidate if you have a profile page showing this
     return { success: true, message: 'Profile updated successfully.', user: updatedUser };
   } catch (error: any) {
     console.error('Error updating profile:', error);
@@ -279,6 +291,8 @@ export async function changePasswordServer(userId: string, formData: FormData): 
 // TODO: Implement 2FA setup/verification/disable actions
 export async function setupTwoFactorAuth(userId: string): Promise<AuthResponse> {
   // This would involve generating a secret, QR code, etc.
+  // Placeholder for now.
+  console.log('2FA setup action called for user:', userId);
   return { success: false, message: '2FA setup not yet implemented.' };
 }
 
@@ -287,9 +301,10 @@ export async function deleteUserAccountServer(userId: string): Promise<AuthRespo
     return { success: false, message: 'Unauthorized.' };
   }
   
-  // Add re-authentication step for sensitive operations like account deletion
-  // For example, prompt for password again. This is simplified here.
-  // const currentPassword = formData.get('currentPassword') as string; // Need to get this from client
+  // IMPORTANT: For actual account deletion, re-authentication is critical.
+  // The current implementation is simplified. A real app would pass a currentPassword
+  // or trigger a re-authentication flow on the client.
+  // const currentPassword = formData.get('currentPassword') as string; // Example
   // if (!currentPassword) return { success: false, message: 'Password required to delete account.' };
   // try {
   //   const credential = EmailAuthProvider.credential(auth.currentUser.email!, currentPassword);
@@ -298,20 +313,28 @@ export async function deleteUserAccountServer(userId: string): Promise<AuthRespo
   //   return { success: false, message: 'Re-authentication failed. Cannot delete account.', requiresReauth: true };
   // }
 
-
   try {
-    // Delete from MongoDB
+    // Delete from MongoDB FIRST
     await deleteUserFromMongoDB(userId);
-    // Delete from Firebase Auth (this is the irreversible step)
+    
+    // THEN Delete from Firebase Auth (this is the irreversible step for auth)
     await firebaseDeleteUser(auth.currentUser);
     
-    revalidatePath('/'); // Or user dashboard
+    // Revalidate relevant paths (e.g., home, admin users list if applicable)
+    revalidatePath('/'); 
     return { success: true, message: 'Account deleted successfully.' };
-  } catch (error: any) {
+  } catch (error: any)
+   {
     console.error('Error deleting account:', error);
      if (error.code === 'auth/requires-recent-login'){
+        // This error from firebaseDeleteUser means re-authentication is needed.
+        // You'd typically redirect the user to log in again.
         return { success: false, message: 'This operation is sensitive and requires recent authentication. Please log in again before retrying this request.', requiresReauth: true}
     }
+    // If MongoDB deletion failed but Firebase succeeded, or vice-versa, you might have an orphaned record.
+    // Consider more robust transaction handling or cleanup jobs for production.
     return { success: false, message: error.message || 'Failed to delete account.' };
   }
 }
+
+    
