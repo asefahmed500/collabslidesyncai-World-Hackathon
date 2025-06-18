@@ -105,6 +105,8 @@ export async function createPresentation(userId: string, title: string, teamId?:
     },
     thumbnailUrl: `https://placehold.co/320x180.png?text=${title.substring(0,10)}`,
     version: 1,
+    deleted: false,
+    deletedAt: null,
     createdAt: serverTimestamp() as Timestamp,
     lastUpdatedAt: serverTimestamp() as Timestamp,
     slides: [newSlide],
@@ -126,15 +128,17 @@ export async function createPresentation(userId: string, title: string, teamId?:
 }
 
 export async function getPresentationsForUser(userId: string, userTeamId?: string | null): Promise<Presentation[]> {
-  const conditions = [
+  const baseConditions = [ where('deleted', '==', false) ];
+  const userSpecificConditions = [
     where('creatorId', '==', userId),
     where(`access.${userId}`, 'in', ['owner', 'editor', 'viewer'])
   ];
   if (userTeamId) {
-    conditions.push(where('teamId', '==', userTeamId));
+    userSpecificConditions.push(where('teamId', '==', userTeamId));
   }
 
-  const q = query(presentationsCollection, or(...conditions), orderBy('lastUpdatedAt', 'desc'));
+  const q = query(presentationsCollection, ...baseConditions, or(...userSpecificConditions), orderBy('lastUpdatedAt', 'desc'));
+
 
   const snapshot = await getDocs(q);
   const presentationsMap = new Map<string, Presentation>();
@@ -155,10 +159,22 @@ export async function getPresentationById(presentationId: string): Promise<Prese
   const docRef = doc(db, 'presentations', presentationId);
   const docSnap = await getDoc(docRef);
   if (docSnap.exists()) {
+    const data = docSnap.data();
+    if (data.deleted) return null; // Do not return soft-deleted presentations by default
+    return { id: docSnap.id, ...convertTimestamps(data) } as Presentation;
+  }
+  return null;
+}
+// For admin or recovery purposes, allows fetching a presentation even if soft-deleted
+export async function getPresentationByIdIncludeDeleted(presentationId: string): Promise<Presentation | null> {
+  const docRef = doc(db, 'presentations', presentationId);
+  const docSnap = await getDoc(docRef);
+  if (docSnap.exists()) {
     return { id: docSnap.id, ...convertTimestamps(docSnap.data()) } as Presentation;
   }
   return null;
 }
+
 
 export async function updatePresentation(presentationId: string, data: Partial<Presentation>): Promise<void> {
   const docRef = doc(db, 'presentations', presentationId);
@@ -227,14 +243,54 @@ export async function updatePresentation(presentationId: string, data: Partial<P
 }
 
 export async function deletePresentation(presentationId: string, teamId?: string, actorId?: string): Promise<void> {
+  // Soft delete
   const docRef = doc(db, 'presentations', presentationId);
-  const pres = await getPresentationById(presentationId);
-  await deleteDoc(docRef);
-  if (teamId && actorId && pres) {
-     await logTeamActivityInMongoDB(teamId, actorId, 'presentation_deleted', { presentationTitle: pres.title }, 'presentation', presentationId);
+  const pres = await getPresentationByIdIncludeDeleted(presentationId); // Fetch even if already soft-deleted to get title
+  await updateDoc(docRef, {
+    deleted: true,
+    deletedAt: serverTimestamp(),
+    lastUpdatedAt: serverTimestamp()
+  });
+
+  if (actorId && pres) {
+    const activityDetails = { presentationTitle: pres.title };
+    await logPresentationActivity(presentationId, actorId, 'presentation_deleted', activityDetails);
+    if (teamId) {
+      await logTeamActivityInMongoDB(teamId, actorId, 'presentation_deleted', activityDetails, 'presentation', presentationId);
+    }
   }
-  if (actorId && pres){
-      await logPresentationActivity(presentationId, actorId, 'presentation_deleted', { presentationTitle: pres.title });
+}
+
+export async function restorePresentation(presentationId: string, actorId: string): Promise<void> {
+  const docRef = doc(db, 'presentations', presentationId);
+  await updateDoc(docRef, {
+    deleted: false,
+    deletedAt: null, // or deleteField() if you prefer to remove the field entirely
+    lastUpdatedAt: serverTimestamp()
+  });
+  const pres = await getPresentationByIdIncludeDeleted(presentationId);
+  if (pres) {
+      await logPresentationActivity(presentationId, actorId, 'presentation_restored', { presentationTitle: pres.title });
+      if (pres.teamId) {
+          await logTeamActivityInMongoDB(pres.teamId, actorId, 'presentation_restored', { presentationTitle: pres.title }, 'presentation', presentationId);
+      }
+  }
+}
+
+export async function permanentlyDeletePresentation(presentationId: string, actorId?: string): Promise<void> {
+  const docRef = doc(db, 'presentations', presentationId);
+  const pres = await getPresentationByIdIncludeDeleted(presentationId); // Get details before deleting
+  await deleteDoc(docRef);
+
+  // TODO: Delete associated assets from storage if any are directly tied (might be complex)
+  // TODO: Delete presentation activities related to this presentation
+
+  if (actorId && pres) {
+    const activityDetails = { presentationTitle: pres.title };
+    await logPresentationActivity(presentationId, actorId, 'presentation_permanently_deleted', activityDetails);
+    if (pres.teamId) {
+      await logTeamActivityInMongoDB(pres.teamId, actorId, 'presentation_permanently_deleted', activityDetails, 'presentation', presentationId);
+    }
   }
 }
 
@@ -245,6 +301,7 @@ export async function addSlideToPresentation(presentationId: string, newSlideDat
     if (!presDoc.exists()) throw new Error("Presentation not found");
 
     const presentationData = presDoc.data() as Presentation;
+    if (presentationData.deleted) throw new Error("Cannot modify a deleted presentation.");
     let currentSlides = presentationData.slides || [];
 
     const slideId = uuidv4();
@@ -281,6 +338,7 @@ export async function deleteSlideFromPresentation(presentationId: string, slideI
     if (!presDoc.exists()) throw new Error("Presentation not found");
 
     const presentationData = presDoc.data() as Presentation;
+    if (presentationData.deleted) throw new Error("Cannot modify a deleted presentation.");
     let slides = presentationData.slides || [];
     const initialLength = slides.length;
 
@@ -304,6 +362,7 @@ export async function duplicateSlideInPresentation(presentationId: string, slide
     if (!presDoc.exists()) throw new Error("Presentation not found");
 
     const presentationData = presDoc.data() as Presentation;
+    if (presentationData.deleted) throw new Error("Cannot modify a deleted presentation.");
     let slides = presentationData.slides || [];
     const originalSlideIndex = slides.findIndex(s => s.id === slideIdToDuplicate);
 
@@ -345,6 +404,7 @@ export async function moveSlideInPresentation(presentationId: string, slideId: s
     if (!presDoc.exists()) throw new Error("Presentation not found");
 
     const presentationData = presDoc.data() as Presentation;
+    if (presentationData.deleted) throw new Error("Cannot modify a deleted presentation.");
     let slides = [...(presentationData.slides || [])];
     const currentIndex = slides.findIndex(s => s.id === slideId);
 
@@ -385,6 +445,7 @@ export async function addElementToSlide(presentationId: string, slideId: string,
     const presDoc = await transaction.get(presRef);
     if (!presDoc.exists()) throw new Error("Presentation not found");
     const presentationData = presDoc.data() as Presentation;
+    if (presentationData.deleted) throw new Error("Cannot modify a deleted presentation.");
     const slides = presentationData.slides || [];
     const slideIndex = slides.findIndex(s => s.id === slideId);
 
@@ -406,6 +467,7 @@ export async function deleteElementFromSlide(presentationId: string, slideId: st
     const presDoc = await transaction.get(presRef);
     if (!presDoc.exists()) throw new Error("Presentation not found");
     const presentationData = presDoc.data() as Presentation;
+    if (presentationData.deleted) throw new Error("Cannot modify a deleted presentation.");
     const slides = presentationData.slides || [];
     const slideIndex = slides.findIndex(s => s.id === slideId);
 
@@ -427,7 +489,9 @@ export async function updateElementInSlide(presentationId: string, slideId: stri
   await runTransaction(db, async (transaction) => {
     const presDoc = await transaction.get(presRef);
     if (!presDoc.exists()) throw new Error(`Presentation ${presentationId} not found.`);
-    const presentation = presDoc.data() as Presentation; let slideFound = false;
+    const presentation = presDoc.data() as Presentation;
+    if (presentation.deleted) throw new Error("Cannot modify a deleted presentation.");
+    let slideFound = false;
     const updatedSlides = presentation.slides.map(s => {
       if (s.id === slideId) {
         slideFound = true; let elementFound = false;
@@ -478,6 +542,7 @@ export async function addCommentToSlide(presentationId: string, slideId: string,
     const presDoc = await transaction.get(presRef);
     if (!presDoc.exists()) throw new Error("Presentation not found");
     const presentationData = presDoc.data() as Presentation;
+    if (presentationData.deleted) throw new Error("Cannot add comments to a deleted presentation.");
     const slides = (presentationData?.slides || []);
     const slideIndex = slides.findIndex(s => s.id === slideId);
     if (slideIndex > -1) {
@@ -512,6 +577,7 @@ export async function resolveCommentOnSlide(presentationId: string, slideId: str
     const presDoc = await transaction.get(presRef);
     if (!presDoc.exists()) throw new Error("Presentation not found");
     const presentationData = presDoc.data() as Presentation;
+    if (presentationData.deleted) throw new Error("Cannot modify comments in a deleted presentation.");
     const slides = (presentationData?.slides || []);
     const slideIndex = slides.findIndex(s => s.id === slideId);
     if (slideIndex > -1) {
@@ -572,7 +638,9 @@ export async function acquireLock(presentationId: string, slideId: string, eleme
     await runTransaction(db, async (transaction) => {
         const presDoc = await transaction.get(presRef);
         if (!presDoc.exists()) throw new Error("Presentation not found for lock.");
-        const presentation = presDoc.data() as Presentation; let lockAcquired = false; let alreadyLockedByOther = false;
+        const presentation = presDoc.data() as Presentation;
+        if (presentation.deleted) throw new Error("Cannot lock elements in a deleted presentation.");
+        let lockAcquired = false; let alreadyLockedByOther = false;
         const updatedSlides = presentation.slides.map(s => {
           if (s.id === slideId) {
             return { ...s, elements: s.elements.map(el => {
@@ -601,6 +669,7 @@ export async function releaseLock(presentationId: string, slideId: string, eleme
      await runTransaction(db, async (transaction) => {
         const presDoc = await transaction.get(presRef); if (!presDoc.exists()) return;
         const presentation = presDoc.data() as Presentation;
+        // No need to check if presentation is deleted here, releasing lock is fine.
         const updatedSlides = presentation.slides.map(s => {
           if (s.id === slideId) {
             return { ...s, elements: s.elements.map(el => {
@@ -619,7 +688,9 @@ export async function releaseExpiredLocks(presentationId: string): Promise<void>
    try {
     await runTransaction(db, async (transaction) => {
         const presDoc = await transaction.get(presRef); if (!presDoc.exists()) return;
-        const presentation = presDoc.data() as Presentation; let locksReleased = false;
+        const presentation = presDoc.data() as Presentation;
+        if (presentation.deleted) return; // Don't bother with locks on deleted presentations
+        let locksReleased = false;
         const now = Date.now();
         const updatedSlides = presentation.slides.map(s => {
           let slideModified = false;
@@ -767,11 +838,17 @@ export async function getUserByEmail(email: string): Promise<User | null> {
     return getUserByEmailFromMongoDB(email);
 }
 
-export async function getAllPresentationsForAdmin(): Promise<Presentation[]> {
-  const q = query(presentationsCollection, orderBy('lastUpdatedAt', 'desc'));
+export async function getAllPresentationsForAdmin(includeDeleted = false): Promise<Presentation[]> {
+  let q;
+  if (includeDeleted) {
+    q = query(presentationsCollection, where('deleted', '==', true), orderBy('deletedAt', 'desc'));
+  } else {
+    q = query(presentationsCollection, where('deleted', '==', false), orderBy('lastUpdatedAt', 'desc'));
+  }
   const snapshot = await getDocs(q);
   return snapshot.docs.map(docSnap => ({ id: docSnap.id, ...convertTimestamps(docSnap.data()) } as Presentation));
 }
+
 
 export async function removeTeamIdFromPresentations(teamId: string): Promise<void> {
   const q = query(presentationsCollection, where('teamId', '==', teamId));

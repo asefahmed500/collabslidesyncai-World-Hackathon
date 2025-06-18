@@ -1,18 +1,25 @@
 
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import type { Presentation, User as AppUser } from '@/types';
-import { getAllPresentationsForAdmin, deletePresentation as apiDeletePresentation } from '@/lib/firestoreService'; 
+import { 
+  getAllPresentationsForAdmin, 
+  deletePresentation as apiSoftDeletePresentation, // Renamed for clarity
+  restorePresentation as apiRestorePresentation,
+  permanentlyDeletePresentation as apiPermanentlyDeletePresentation 
+} from '@/lib/firestoreService'; 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Loader2, FileText, Edit, Trash2, Eye, UserCircle, LinkIcon } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
+import { Loader2, FileText, Edit, Trash2, Eye, LinkIcon, Search, RotateCcw, AlertTriangle, Filter } from 'lucide-react';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
-import { useAuth } from '@/hooks/useAuth'; // To get current admin user for actions
+import { useAuth } from '@/hooks/useAuth'; 
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -26,41 +33,104 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
+type ActionType = 'delete' | 'restore' | 'permanentlyDelete';
+
 export default function AdminAllPresentationsPage() {
-  const [presentations, setPresentations] = useState<Presentation[]>([]);
+  const [allPresentations, setAllPresentations] = useState<Presentation[]>([]);
+  const [filteredPresentations, setFilteredPresentations] = useState<Presentation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
   const { currentUser } = useAuth();
   const router = useRouter();
-  const [presentationToDelete, setPresentationToDelete] = useState<Presentation | null>(null);
+  
+  const [searchTerm, setSearchTerm] = useState('');
+  const [ownerIdFilter, setOwnerIdFilter] = useState('');
+  const [teamIdFilter, setTeamIdFilter] = useState('');
+  const [showDeleted, setShowDeleted] = useState(false);
+
+  const [presentationToAction, setPresentationToAction] = useState<Presentation | null>(null);
+  const [actionType, setActionType] = useState<ActionType | null>(null);
+
+
+  const fetchPresentations = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const presentationsData = await getAllPresentationsForAdmin(showDeleted);
+      setAllPresentations(presentationsData);
+    } catch (error) {
+      console.error("Error fetching presentations:", error);
+      toast({ title: "Error", description: "Could not fetch presentations.", variant: "destructive" });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [toast, showDeleted]);
 
   useEffect(() => {
-    setIsLoading(true);
-    getAllPresentationsForAdmin()
-      .then(setPresentations)
-      .catch(error => {
-        console.error("Error fetching all presentations:", error);
-        toast({ title: "Error", description: "Could not fetch presentations.", variant: "destructive" });
-      })
-      .finally(() => setIsLoading(false));
-  }, [toast]);
+    fetchPresentations();
+  }, [fetchPresentations]);
 
-  const handleDeletePresentation = async () => {
-    if (!presentationToDelete || !currentUser || !currentUser.isAppAdmin) return;
+  useEffect(() => {
+    let tempPresentations = allPresentations;
+    if (searchTerm) {
+      tempPresentations = tempPresentations.filter(p => 
+        p.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (p.description && p.description.toLowerCase().includes(searchTerm.toLowerCase()))
+      );
+    }
+    if (ownerIdFilter) {
+      tempPresentations = tempPresentations.filter(p => p.creatorId.toLowerCase().includes(ownerIdFilter.toLowerCase()));
+    }
+    if (teamIdFilter) {
+      tempPresentations = tempPresentations.filter(p => p.teamId && p.teamId.toLowerCase().includes(teamIdFilter.toLowerCase()));
+    }
+    setFilteredPresentations(tempPresentations);
+  }, [searchTerm, ownerIdFilter, teamIdFilter, allPresentations]);
+
+
+  const handleActionConfirm = async () => {
+    if (!presentationToAction || !actionType || !currentUser || !currentUser.isAppAdmin) return;
+    
+    setIsLoading(true); // Use general loading state for simplicity
     try {
-      await apiDeletePresentation(presentationToDelete.id, presentationToDelete.teamId, currentUser.id);
-      toast({ title: "Presentation Deleted", description: `"${presentationToDelete.title}" has been removed.` });
-      setPresentations(prev => prev.filter(p => p.id !== presentationToDelete.id));
+      let message = "";
+      if (actionType === 'delete') {
+        await apiSoftDeletePresentation(presentationToAction.id, presentationToAction.teamId, currentUser.id);
+        message = `"${presentationToAction.title}" has been soft-deleted.`;
+      } else if (actionType === 'restore') {
+        await apiRestorePresentation(presentationToAction.id, currentUser.id);
+        message = `"${presentationToAction.title}" has been restored.`;
+      } else if (actionType === 'permanentlyDelete') {
+        await apiPermanentlyDeletePresentation(presentationToAction.id, currentUser.id);
+        message = `"${presentationToAction.title}" has been permanently deleted.`;
+      }
+      toast({ title: "Action Successful", description: message });
+      fetchPresentations(); // Re-fetch to update list
     } catch (error: any) {
-      console.error("Error deleting presentation by admin:", error);
-      toast({ title: "Error", description: error.message || "Could not delete presentation.", variant: "destructive" });
+      console.error(`Error performing ${actionType} on presentation:`, error);
+      toast({ title: "Error", description: error.message || `Could not perform ${actionType} action.`, variant: "destructive" });
     } finally {
-      setPresentationToDelete(null);
+      setPresentationToAction(null);
+      setActionType(null);
+      setIsLoading(false);
+    }
+  };
+  
+  const getDialogDetails = () => {
+    if (!presentationToAction || !actionType) return { title: "", description: "", actionText: "" };
+    switch (actionType) {
+      case 'delete':
+        return { title: `Soft Delete "${presentationToAction.title}"?`, description: "This will mark the presentation as deleted, hiding it from regular views. It can be restored later.", actionText: "Soft Delete" };
+      case 'restore':
+        return { title: `Restore "${presentationToAction.title}"?`, description: "This will make the presentation active and visible again.", actionText: "Restore" };
+      case 'permanentlyDelete':
+        return { title: `Permanently Delete "${presentationToAction.title}"?`, description: "This action cannot be undone. All data for this presentation will be permanently removed.", actionText: "Permanently Delete" };
+      default:
+        return { title: "", description: "", actionText: "" };
     }
   };
 
 
-  if (isLoading) {
+  if (isLoading && allPresentations.length === 0) { // Show loader only on initial load
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -71,12 +141,55 @@ export default function AdminAllPresentationsPage() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center"><FileText className="mr-2 h-5 w-5"/> All Presentations ({presentations.length})</CardTitle>
-        <CardDescription>Browse and manage all presentations in the system.</CardDescription>
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+                <CardTitle className="flex items-center"><FileText className="mr-2 h-5 w-5"/> 
+                {showDeleted ? "Deleted Presentations" : "All Active Presentations"} ({filteredPresentations.length})
+                </CardTitle>
+                <CardDescription>Browse and manage presentations in the system.</CardDescription>
+            </div>
+            <div className="flex items-center space-x-2">
+                <Label htmlFor="show-deleted-switch" className="text-sm font-medium">Show Deleted</Label>
+                <Switch
+                    id="show-deleted-switch"
+                    checked={showDeleted}
+                    onCheckedChange={setShowDeleted}
+                />
+            </div>
+        </div>
+         <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-1 border-t pt-4">
+            <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                    type="search"
+                    placeholder="Search by title, description..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-10"
+                />
+            </div>
+            <Input
+                type="text"
+                placeholder="Filter by Owner ID..."
+                value={ownerIdFilter}
+                onChange={(e) => setOwnerIdFilter(e.target.value)}
+            />
+            <Input
+                type="text"
+                placeholder="Filter by Team ID..."
+                value={teamIdFilter}
+                onChange={(e) => setTeamIdFilter(e.target.value)}
+            />
+            {/* Placeholder for date filters - more complex UI needed for date pickers */}
+        </div>
       </CardHeader>
       <CardContent>
-        {presentations.length === 0 ? (
-          <p className="text-muted-foreground text-center">No presentations found in the system.</p>
+        {isLoading && <div className="flex justify-center py-4"><Loader2 className="h-8 w-8 animate-spin text-primary"/></div>}
+        {!isLoading && filteredPresentations.length === 0 ? (
+          <p className="text-muted-foreground text-center py-6">
+            {searchTerm || ownerIdFilter || teamIdFilter ? "No presentations match your current filters." : 
+             showDeleted ? "No deleted presentations found." : "No active presentations found."}
+          </p>
         ) : (
           <Table>
             <TableHeader>
@@ -85,17 +198,18 @@ export default function AdminAllPresentationsPage() {
                 <TableHead>Creator ID</TableHead>
                 <TableHead>Team ID</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Last Updated</TableHead>
+                <TableHead>{showDeleted ? "Deleted At" : "Last Updated"}</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {presentations.map((pres) => (
-                <TableRow key={pres.id}>
+              {filteredPresentations.map((pres) => (
+                <TableRow key={pres.id} className={pres.deleted ? "opacity-60 bg-muted/30" : ""}>
                   <TableCell>
                      <Link href={`/editor/${pres.id}`} className="font-medium hover:text-primary hover:underline" title={pres.title}>
                         {pres.title.length > 30 ? `${pres.title.substring(0,27)}...` : pres.title}
                      </Link>
+                     {pres.deleted && <Badge variant="destructive" className="ml-2 text-xs">Deleted</Badge>}
                   </TableCell>
                   <TableCell className="font-mono text-xs">{pres.creatorId.substring(0,12)}...</TableCell>
                   <TableCell className="font-mono text-xs">{pres.teamId || 'N/A'}</TableCell>
@@ -103,19 +217,34 @@ export default function AdminAllPresentationsPage() {
                     {pres.settings.isPublic ? <Badge variant="secondary"><Eye className="mr-1 h-3 w-3"/>Public</Badge> : <Badge variant="outline">Private</Badge>}
                      {pres.settings.passwordProtected && <Badge variant="outline" className="ml-1">Pass</Badge>}
                   </TableCell>
-                  <TableCell>
-                    {pres.lastUpdatedAt ? format(new Date(pres.lastUpdatedAt.toDate ? pres.lastUpdatedAt.toDate() : pres.lastUpdatedAt), 'PPp') : 'N/A'}
+                  <TableCell className="text-xs">
+                    {showDeleted && pres.deletedAt ? format(new Date(pres.deletedAt.toDate ? pres.deletedAt.toDate() : pres.deletedAt), 'PPp') 
+                     : pres.lastUpdatedAt ? format(new Date(pres.lastUpdatedAt.toDate ? pres.lastUpdatedAt.toDate() : pres.lastUpdatedAt), 'PPp') 
+                     : 'N/A'}
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button variant="ghost" size="icon" asChild title="Open in Editor">
-                       <Link href={`/editor/${pres.id}`}><Edit className="h-4 w-4" /></Link>
-                    </Button>
-                    <Button variant="ghost" size="icon" asChild title="View Presentation">
-                        <Link href={`/present/${pres.id}`} target="_blank"><LinkIcon className="h-4 w-4" /></Link>
-                    </Button>
-                    <Button variant="ghost" size="icon" onClick={() => setPresentationToDelete(pres)} title="Delete Presentation">
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
+                    {showDeleted ? (
+                        <>
+                        <Button variant="ghost" size="sm" onClick={() => { setPresentationToAction(pres); setActionType('restore');}} title="Restore Presentation">
+                            <RotateCcw className="h-4 w-4 mr-1 text-green-600" /> Restore
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => { setPresentationToAction(pres); setActionType('permanentlyDelete');}} title="Permanently Delete">
+                            <Trash2 className="h-4 w-4 mr-1 text-destructive" /> Delete Forever
+                        </Button>
+                        </>
+                    ) : (
+                        <>
+                        <Button variant="ghost" size="icon" asChild title="Open in Editor">
+                           <Link href={`/editor/${pres.id}`}><Edit className="h-4 w-4" /></Link>
+                        </Button>
+                        <Button variant="ghost" size="icon" asChild title="View Presentation">
+                            <Link href={`/present/${pres.id}`} target="_blank"><LinkIcon className="h-4 w-4" /></Link>
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => { setPresentationToAction(pres); setActionType('delete');}} title="Soft Delete Presentation">
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                        </>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
@@ -123,19 +252,28 @@ export default function AdminAllPresentationsPage() {
           </Table>
         )}
       </CardContent>
-       {presentationToDelete && (
-        <AlertDialog open={!!presentationToDelete} onOpenChange={(open) => !open && setPresentationToDelete(null)}>
+       {presentationToAction && actionType && (
+        <AlertDialog open={!!presentationToAction} onOpenChange={(open) => !open && setPresentationToAction(null)}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle className="flex items-center"><Trash2 className="mr-2 h-5 w-5 text-destructive"/>Delete "{presentationToDelete.title}"?</AlertDialogTitle>
+              <AlertDialogTitle className="flex items-center">
+                {actionType === 'delete' && <Trash2 className="mr-2 h-5 w-5 text-destructive"/>}
+                {actionType === 'restore' && <RotateCcw className="mr-2 h-5 w-5 text-green-600"/>}
+                {actionType === 'permanentlyDelete' && <AlertTriangle className="mr-2 h-5 w-5 text-destructive"/>}
+                {getDialogDetails().title}
+              </AlertDialogTitle>
               <AlertDialogDescription>
-                This action cannot be undone. This will permanently delete the presentation from the system.
+                {getDialogDetails().description}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel onClick={() => setPresentationToDelete(null)}>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={handleDeletePresentation} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">
-                Confirm Delete
+              <AlertDialogCancel onClick={() => {setPresentationToAction(null); setActionType(null);}} disabled={isLoading}>Cancel</AlertDialogCancel>
+              <AlertDialogAction 
+                onClick={handleActionConfirm} 
+                disabled={isLoading}
+                className={actionType === 'delete' || actionType === 'permanentlyDelete' ? "bg-destructive hover:bg-destructive/90 text-destructive-foreground" : ""}
+              >
+                {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : getDialogDetails().actionText}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

@@ -147,6 +147,8 @@ export interface Presentation {
   lastUpdatedAt: FirestoreTimestamp;
   slides: Slide[];
   activeCollaborators?: { [userId: string]: ActiveCollaboratorInfo }; // Map of active users
+  deleted?: boolean; // For soft delete
+  deletedAt?: FirestoreTimestamp | null; // Timestamp of soft delete
 }
 
 export type TeamActivityType =
@@ -156,7 +158,9 @@ export type TeamActivityType =
   | 'member_role_changed'
   | 'team_profile_updated'
   | 'presentation_created'
-  | 'presentation_deleted'
+  | 'presentation_deleted' // This could now mean soft or permanent delete depending on context
+  | 'presentation_restored'
+  | 'presentation_permanently_deleted'
   | 'asset_uploaded'
   | 'asset_deleted';
 
@@ -197,7 +201,10 @@ export type PresentationActivityType =
   | 'element_updated'
   | 'element_deleted'
   | 'slide_background_updated'
-  | 'presentation_created';
+  | 'presentation_created'
+  | 'presentation_deleted' // Soft delete
+  | 'presentation_restored'
+  | 'presentation_permanently_deleted';
 
 
 export interface PresentationActivity {
