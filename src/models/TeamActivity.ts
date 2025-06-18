@@ -8,7 +8,7 @@ export interface TeamActivityDocument extends Omit<TeamActivityType, 'id' | 'cre
   createdAt: Date;
 }
 
-const TeamActivityDetailsSchema = new Schema(Schema.Types.Mixed, { _id: false });
+// Removed TeamActivityDetailsSchema as it's simplified below
 
 const TeamActivitySchema = new Schema<TeamActivityDocument>(
   {
@@ -27,7 +27,7 @@ const TeamActivitySchema = new Schema<TeamActivityDocument>(
     targetType: { type: String, enum: ['user', 'presentation', 'team_profile', 'asset'] },
     targetId: { type: String, index: true, sparse: true },
     targetName: { type: String },
-    details: { type: TeamActivityDetailsSchema, default: () => ({}) },
+    details: { type: Schema.Types.Mixed, default: () => ({}) }, // Simplified definition
   },
   {
     timestamps: { createdAt: true, updatedAt: false },
@@ -61,3 +61,4 @@ if (mongoose.models.TeamActivity) {
 }
 
 export default TeamActivityModel;
+
