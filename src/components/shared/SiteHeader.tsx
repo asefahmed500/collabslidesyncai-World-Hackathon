@@ -3,7 +3,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Zap, LayoutDashboard, UserCircle, LogOut, Settings, User, Users, ShieldCheck } from 'lucide-react';
+import { Zap, LayoutDashboard, UserCircle, LogOut, Settings, User, Users, ShieldCheck, LifeBuoy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
@@ -115,6 +115,10 @@ export function SiteHeader() {
                     <span>Admin Dashboard</span>
                   </DropdownMenuItem>
                 )}
+                 <DropdownMenuItem onClick={() => router.push('/dashboard/help')}>
+                  <LifeBuoy className="mr-2 h-4 w-4" />
+                  <span>Help Center</span>
+                </DropdownMenuItem>
                  <DropdownMenuItem disabled>
                   <Settings className="mr-2 h-4 w-4" />
                   <span>App Settings (soon)</span>
