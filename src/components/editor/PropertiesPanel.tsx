@@ -7,21 +7,21 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import type { SlideElement, Slide, SlideComment } from '@/types';
-import { Text, Image as ImageIcon, Shapes, MessageSquare, Send, Palette, UserCircleIcon, Lock } from 'lucide-react';
-import { useState, ChangeEvent } from 'react';
+import type { SlideElement, Slide, SlideComment, SlideElementStyle } from '@/types';
+import { Text, Image as ImageIcon, Shapes, MessageSquare, Send, Palette, UserCircleIcon, Lock, CaseSensitive, AlignCenter, AlignLeft, AlignRight, Bold, Italic, Underline, Trash2 } from 'lucide-react';
+import { useState, ChangeEvent, useEffect } from 'react';
 import { Textarea } from '../ui/textarea';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
-
 
 interface PropertiesPanelProps {
   selectedElement: SlideElement | null;
   currentSlide: Slide | null; 
   onUpdateElement: (updatedElementPartial: Partial<SlideElement>) => void;
+  onDeleteElement: (elementId: string) => void;
   onAddComment: (text: string) => void;
   onResolveComment: (commentId: string) => void;
   onUpdateSlideBackgroundColor: (color: string) => void;
-  disabled?: boolean; // General disable, e.g. saving, offline
+  disabled?: boolean; 
   currentUserId: string;
 }
 
@@ -29,6 +29,7 @@ export function PropertiesPanel({
   selectedElement,
   currentSlide,
   onUpdateElement,
+  onDeleteElement,
   onAddComment,
   onResolveComment,
   onUpdateSlideBackgroundColor,
@@ -36,6 +37,18 @@ export function PropertiesPanel({
   currentUserId,
 }: PropertiesPanelProps) {
   const [newComment, setNewComment] = useState("");
+  const [localStyle, setLocalStyle] = useState<SlideElementStyle | null>(null);
+  const [localContent, setLocalContent] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (selectedElement) {
+      setLocalStyle(selectedElement.style || {});
+      setLocalContent(selectedElement.content);
+    } else {
+      setLocalStyle(null);
+      setLocalContent(null);
+    }
+  }, [selectedElement]);
 
   const isElementLockedByOther = selectedElement?.lockedBy && selectedElement.lockedBy !== currentUserId;
   const effectiveDisabled = disabled || isElementLockedByOther;
@@ -45,17 +58,30 @@ export function PropertiesPanel({
     onUpdateElement({ id: selectedElement.id, [prop]: value });
   };
   
-  const handleStyleChange = (styleProp: keyof SlideElement['style'], value: any) => {
+  const handleStyleChange = (styleProp: keyof SlideElementStyle, value: any) => {
     if (!selectedElement || effectiveDisabled) return;
     const updatedStyle = { ...(selectedElement.style || {}), [styleProp]: value };
+    setLocalStyle(updatedStyle); // Update local state for immediate UI feedback
     onUpdateElement({ id: selectedElement.id, style: updatedStyle });
   };
+
+  const handleContentChange = (value: string) => {
+    if (!selectedElement || effectiveDisabled) return;
+    setLocalContent(value); // Update local state
+    onUpdateElement({ id: selectedElement.id, content: value });
+  }
   
   const handleCommentSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (disabled || !newComment.trim()) return; // Comments not affected by element lock
+    if (disabled || !newComment.trim()) return;
     onAddComment(newComment.trim());
     setNewComment("");
+  };
+
+  const handleDeleteSelectedElement = () => {
+    if (selectedElement && !effectiveDisabled) {
+        onDeleteElement(selectedElement.id);
+    }
   };
 
   const renderElementProperties = () => {
@@ -77,7 +103,7 @@ export function PropertiesPanel({
                                     value={currentSlide?.backgroundColor || '#FFFFFF'}
                                     onChange={(e) => currentSlide && onUpdateSlideBackgroundColor(e.target.value)}
                                     className="mt-1 h-10 p-1"
-                                    disabled={disabled || !currentSlide} // Slide bg not affected by element lock
+                                    disabled={disabled || !currentSlide}
                                 />
                             </div>
                         </AccordionContent>
@@ -87,38 +113,72 @@ export function PropertiesPanel({
             </div>
         );
     }
-
+    
     const currentProps = selectedElement; 
-    const currentStyle = selectedElement.style || {};
+    const currentStyle = localStyle || selectedElement.style || {}; // Use localStyle for immediate feedback
 
     return (
       <div className="space-y-4 p-4">
-        <h3 className="font-semibold text-lg flex items-center">
-          {selectedElement.type === 'text' && <Text className="mr-2 h-5 w-5" />}
-          {selectedElement.type === 'image' && <ImageIcon className="mr-2 h-5 w-5" />}
-          {selectedElement.type === 'shape' && <Shapes className="mr-2 h-5 w-5" />}
-          Properties: 
-          <span className="font-mono text-sm ml-2 bg-muted px-1.5 py-0.5 rounded">{selectedElement.id.slice(0,8)}...</span>
-          {isElementLockedByOther && <Lock title="Locked by another user" className="ml-2 h-4 w-4 text-destructive" />}
-        </h3>
+        <div className="flex items-center justify-between">
+            <h3 className="font-semibold text-lg flex items-center">
+            {selectedElement.type === 'text' && <Text className="mr-2 h-5 w-5" />}
+            {selectedElement.type === 'image' && <ImageIcon className="mr-2 h-5 w-5" />}
+            {selectedElement.type === 'shape' && <Shapes className="mr-2 h-5 w-5" />}
+            {selectedElement.type === 'chart' && <Text className="mr-2 h-5 w-5" />}
+            {selectedElement.type === 'icon' && <Text className="mr-2 h-5 w-5" />}
+            Properties
+            {isElementLockedByOther && <Lock title="Locked by another user" className="ml-2 h-4 w-4 text-destructive" />}
+            </h3>
+            <Button variant="ghost" size="icon" onClick={handleDeleteSelectedElement} disabled={effectiveDisabled} title="Delete Element">
+                <Trash2 className="h-4 w-4 text-destructive"/>
+            </Button>
+        </div>
+        <p className="text-xs text-muted-foreground -mt-3">ID: <span className="font-mono">{selectedElement.id.slice(0,8)}...</span></p>
 
-        <Accordion type="multiple" defaultValue={['appearance', 'layout']} className="w-full">
+
+        <Accordion type="multiple" defaultValue={['content', 'appearance', 'layout']} className="w-full">
+          {selectedElement.type === 'text' && (
+            <AccordionItem value="content">
+                <AccordionTrigger className="text-base">Content</AccordionTrigger>
+                <AccordionContent className="space-y-3 pt-2">
+                     <div>
+                        <Label htmlFor="content">Text</Label>
+                        <Textarea
+                        id="content"
+                        value={localContent || ''}
+                        onChange={(e: ChangeEvent<HTMLTextAreaElement>) => handleContentChange(e.target.value)}
+                        className="mt-1"
+                        rows={4}
+                        disabled={effectiveDisabled}
+                        />
+                    </div>
+                </AccordionContent>
+            </AccordionItem>
+          )}
+           {selectedElement.type === 'image' && (
+             <AccordionItem value="content">
+                <AccordionTrigger className="text-base">Image Source</AccordionTrigger>
+                <AccordionContent className="space-y-3 pt-2">
+                    <div>
+                    <Label htmlFor="imageUrl">Image URL</Label>
+                    <Input
+                        id="imageUrl"
+                        value={localContent || ''}
+                        onChange={(e: ChangeEvent<HTMLInputElement>) => handleContentChange(e.target.value)}
+                        className="mt-1"
+                        placeholder="https://example.com/image.png"
+                        disabled={effectiveDisabled}
+                    />
+                    </div>
+                </AccordionContent>
+             </AccordionItem>
+          )}
+
           <AccordionItem value="appearance">
             <AccordionTrigger className="text-base">Appearance</AccordionTrigger>
             <AccordionContent className="space-y-3 pt-2">
               {selectedElement.type === 'text' && (
                 <>
-                  <div>
-                    <Label htmlFor="content">Text Content</Label>
-                    <Textarea
-                      id="content"
-                      value={currentProps.content || ''}
-                      onChange={(e: ChangeEvent<HTMLTextAreaElement>) => handleInputChange('content', e.target.value)}
-                      className="mt-1"
-                      rows={3}
-                      disabled={effectiveDisabled}
-                    />
-                  </div>
                   <div>
                     <Label htmlFor="fontFamily">Font Family</Label>
                     <Select value={currentStyle.fontFamily || 'PT Sans'} onValueChange={(val) => handleStyleChange('fontFamily', val)} disabled={effectiveDisabled}>
@@ -132,61 +192,80 @@ export function PropertiesPanel({
                         <SelectItem value="Verdana">Verdana</SelectItem>
                         <SelectItem value="Georgia">Georgia</SelectItem>
                         <SelectItem value="Courier New">Courier New</SelectItem>
-                        <SelectItem value="Lucida Console">Lucida Console</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
-                  <div>
-                    <Label htmlFor="fontSize">Font Size (px)</Label>
-                    <Input
-                      id="fontSize"
-                      type="number"
-                      value={parseInt(String(currentStyle.fontSize || '16').replace('px',''))}
-                      onChange={(e) => handleStyleChange('fontSize', `${e.target.value}px`)}
-                      className="mt-1"
-                      disabled={effectiveDisabled}
-                      min="1"
-                    />
-                  </div>
-                   <div>
-                      <Label htmlFor="color">Text Color</Label>
-                      <Input
-                        id="color"
-                        type="color"
-                        value={currentStyle.color || '#000000'}
-                        onChange={(e) => handleStyleChange('color', e.target.value)}
-                        className="mt-1 h-10 p-1"
-                        disabled={effectiveDisabled}
-                      />
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                        <Label htmlFor="fontSize">Font Size (px)</Label>
+                        <Input id="fontSize" type="number" value={parseInt(String(currentStyle.fontSize || '16').replace('px',''))} onChange={(e) => handleStyleChange('fontSize', `${e.target.value}px`)} className="mt-1" disabled={effectiveDisabled} min="1"/>
                     </div>
+                    <div>
+                      <Label htmlFor="color">Text Color</Label>
+                      <Input id="color" type="color" value={currentStyle.color || '#000000'} onChange={(e) => handleStyleChange('color', e.target.value)} className="mt-1 h-10 p-1" disabled={effectiveDisabled} />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Text Alignment</Label>
+                    <div className="flex gap-1">
+                        {(['left', 'center', 'right'] as const).map(align => (
+                            <Button key={align} variant={currentStyle.textAlign === align ? "secondary" : "outline"} size="icon" onClick={() => handleStyleChange('textAlign', align)} disabled={effectiveDisabled} title={`Align ${align}`}>
+                                {align === 'left' && <AlignLeft/>} {align === 'center' && <AlignCenter/>} {align === 'right' && <AlignRight/>}
+                            </Button>
+                        ))}
+                    </div>
+                  </div>
+                   <div className="space-y-1">
+                    <Label>Text Style</Label>
+                    <div className="flex gap-1">
+                        <Button variant={currentStyle.fontWeight === 'bold' ? "secondary" : "outline"} size="icon" onClick={() => handleStyleChange('fontWeight', currentStyle.fontWeight === 'bold' ? 'normal' : 'bold')} disabled={effectiveDisabled} title="Bold">
+                            <Bold/>
+                        </Button>
+                         <Button variant={currentStyle.fontStyle === 'italic' ? "secondary" : "outline"} size="icon" onClick={() => handleStyleChange('fontStyle', currentStyle.fontStyle === 'italic' ? 'normal' : 'italic')} disabled={effectiveDisabled} title="Italic">
+                            <Italic/>
+                        </Button>
+                         <Button variant={currentStyle.textDecoration === 'underline' ? "secondary" : "outline"} size="icon" onClick={() => handleStyleChange('textDecoration', currentStyle.textDecoration === 'underline' ? 'none' : 'underline')} disabled={effectiveDisabled} title="Underline">
+                            <Underline/>
+                        </Button>
+                    </div>
+                  </div>
                 </>
               )}
-              {(selectedElement.type === 'shape' || selectedElement.type === 'text') && ( 
+              {(selectedElement.type === 'shape' || selectedElement.type === 'text' || selectedElement.type === 'icon') && ( 
                 <div>
-                  <Label htmlFor="backgroundColor">Background Color</Label>
+                  <Label htmlFor="backgroundColor">Fill / Background Color</Label>
                   <Input
                     id="backgroundColor"
                     type="color"
-                    value={currentStyle.backgroundColor || (selectedElement.type === 'shape' ? '#CCCCCC' : '#FFFFFF00') } 
+                    value={currentStyle.backgroundColor || (selectedElement.type === 'shape' ? '#CCCCCC' : '#00000000') } 
                     onChange={(e) => handleStyleChange('backgroundColor', e.target.value)}
                     className="mt-1 h-10 p-1"
                     disabled={effectiveDisabled}
                   />
                 </div>
               )}
-               {selectedElement.type === 'image' && (
-                <div>
-                  <Label htmlFor="imageUrl">Image URL</Label>
-                  <Input
-                    id="imageUrl"
-                    value={currentProps.content || ''}
-                    onChange={(e: ChangeEvent<HTMLInputElement>) => handleInputChange('content', e.target.value)}
-                    className="mt-1"
-                    placeholder="https://example.com/image.png"
-                    disabled={effectiveDisabled}
-                  />
-                </div>
+              {selectedElement.type === 'shape' && (
+                <>
+                    <div>
+                        <Label htmlFor="borderColor">Border Color</Label>
+                        <Input id="borderColor" type="color" value={currentStyle.borderColor || '#000000'} onChange={(e) => handleStyleChange('borderColor', e.target.value)} className="mt-1 h-10 p-1" disabled={effectiveDisabled} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                            <Label htmlFor="borderWidth">Border Width (px)</Label>
+                            <Input id="borderWidth" type="number" value={currentStyle.borderWidth || 1} onChange={(e) => handleStyleChange('borderWidth', parseInt(e.target.value))} className="mt-1" disabled={effectiveDisabled} min="0"/>
+                        </div>
+                        <div>
+                            <Label htmlFor="borderRadius">Border Radius (px)</Label>
+                            <Input id="borderRadius" type="number" value={currentStyle.borderRadius || 0} onChange={(e) => handleStyleChange('borderRadius', parseInt(e.target.value))} className="mt-1" disabled={effectiveDisabled} min="0"/>
+                        </div>
+                    </div>
+                 </>
               )}
+               <div>
+                    <Label htmlFor="opacity">Opacity (0-1)</Label>
+                    <Input id="opacity" type="number" value={currentStyle.opacity === undefined ? 1 : currentStyle.opacity} onChange={(e) => handleStyleChange('opacity', parseFloat(e.target.value))} className="mt-1" disabled={effectiveDisabled} min="0" max="1" step="0.1"/>
+                </div>
             </AccordionContent>
           </AccordionItem>
 
@@ -194,11 +273,11 @@ export function PropertiesPanel({
             <AccordionTrigger className="text-base">Layout & Position</AccordionTrigger>
             <AccordionContent className="space-y-3 pt-2 grid grid-cols-2 gap-3">
               <div>
-                <Label htmlFor="posX">Position X (px)</Label>
+                <Label htmlFor="posX">X (px)</Label>
                 <Input id="posX" type="number" value={currentProps.position?.x || 0} onChange={(e) => handleInputChange('position', { ...currentProps.position, x: parseInt(e.target.value) })} className="mt-1" disabled={effectiveDisabled} />
               </div>
               <div>
-                <Label htmlFor="posY">Position Y (px)</Label>
+                <Label htmlFor="posY">Y (px)</Label>
                 <Input id="posY" type="number" value={currentProps.position?.y || 0} onChange={(e) => handleInputChange('position', { ...currentProps.position, y: parseInt(e.target.value) })} className="mt-1" disabled={effectiveDisabled} />
               </div>
               <div>
@@ -210,23 +289,27 @@ export function PropertiesPanel({
                 <Input id="height" type="number" value={currentProps.size?.height || 100} onChange={(e) => handleInputChange('size', { ...currentProps.size, height: parseInt(e.target.value) })} className="mt-1" disabled={effectiveDisabled} min="10" />
               </div>
                <div>
-                <Label htmlFor="zIndex">Stack Order (z-index)</Label>
+                <Label htmlFor="zIndex">Stack Order (z)</Label>
                 <Input id="zIndex" type="number" value={currentProps.zIndex || 0} onChange={(e) => handleInputChange('zIndex', parseInt(e.target.value))} className="mt-1" disabled={effectiveDisabled} />
+              </div>
+               <div>
+                <Label htmlFor="rotation">Rotation (&deg;)</Label>
+                <Input id="rotation" type="number" value={currentProps.rotation || 0} onChange={(e) => handleInputChange('rotation', parseInt(e.target.value))} className="mt-1" disabled={effectiveDisabled} />
               </div>
             </AccordionContent>
           </AccordionItem>
-           <AccordionItem value="slideAppearance">
-            <AccordionTrigger className="text-base">Slide Appearance</AccordionTrigger>
+           <AccordionItem value="slideAppearanceGlobal">
+            <AccordionTrigger className="text-base">Slide Background</AccordionTrigger>
             <AccordionContent className="space-y-3 pt-2">
                 <div>
-                    <Label htmlFor="slideBackgroundColorPanel">Slide Background Color</Label>
+                    <Label htmlFor="slideBackgroundColorPanel">Color</Label>
                     <Input
                         id="slideBackgroundColorPanel"
                         type="color"
                         value={currentSlide?.backgroundColor || '#FFFFFF'}
                         onChange={(e) => currentSlide && onUpdateSlideBackgroundColor(e.target.value)}
                         className="mt-1 h-10 p-1"
-                        disabled={disabled || !currentSlide} // Not affected by element lock
+                        disabled={disabled || !currentSlide} 
                     />
                 </div>
             </AccordionContent>
@@ -290,7 +373,7 @@ export function PropertiesPanel({
   }
 
   return (
-    <div className="bg-card border-l w-80 h-full flex flex-col shadow-md">
+    <div className="bg-card border-l w-80 md:w-96 h-full flex flex-col shadow-md">
       <ScrollArea className="flex-grow"> 
         {renderElementProperties()}
         {currentSlide && renderSlideComments()} 

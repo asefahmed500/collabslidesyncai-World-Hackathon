@@ -60,25 +60,37 @@ export interface Team {
   lastUpdatedAt?: Date; // Mongoose timestamp
 }
 
-export type SlideElementType = 'text' | 'image' | 'shape' | 'chart';
+export type SlideElementType = 'text' | 'image' | 'shape' | 'chart' | 'icon'; // Added icon
 export type PresentationAccessRole = 'owner' | 'editor' | 'viewer';
+
+export interface SlideElementStyle {
+  color?: string; // Text color for text, border color for shapes (optional)
+  fontFamily?: string;
+  fontSize?: string; // e.g., "16px"
+  backgroundColor?: string; // Fill color for shapes, background for text box
+  borderColor?: string; // Specifically for shape borders
+  textAlign?: 'left' | 'center' | 'right';
+  fontWeight?: 'normal' | 'bold';
+  fontStyle?: 'normal' | 'italic';
+  textDecoration?: 'none' | 'underline' | 'line-through';
+  opacity?: number; // 0 to 1
+  // For shapes
+  shapeType?: 'rectangle' | 'circle' | 'triangle'; // if element.type === 'shape'
+  borderWidth?: number; // in px
+  borderRadius?: number; // in px
+}
 
 export interface SlideElement {
   id: string;
   type: SlideElementType;
-  content: any;
+  content: any; // Text string, image URL, shape type, chart data config, icon name/svg
   position: { x: number; y: number };
   size: { width: number; height: number };
-  style: {
-    color?: string;
-    fontFamily?: string;
-    fontSize?: string;
-    backgroundColor?: string;
-    borderColor?: string;
-  };
+  style: SlideElementStyle;
   zIndex?: number;
   lockedBy?: string | null;
   lockTimestamp?: FirestoreTimestamp | null; // Firestore specific, may need adjustment if elements move to Mongo
+  rotation?: number; // In degrees, optional
 }
 
 export interface SlideComment {
@@ -180,7 +192,13 @@ export type PresentationActivityType =
   | 'password_removed'
   | 'collaborator_added'
   | 'collaborator_removed'
-  | 'collaborator_role_changed';
+  | 'collaborator_role_changed'
+  | 'element_added'
+  | 'element_updated'
+  | 'element_deleted'
+  | 'slide_background_updated'
+  | 'presentation_created';
+
 
 export interface PresentationActivity {
   id: string;
@@ -199,6 +217,9 @@ export interface PresentationActivity {
     ipAddress?: string;
     userAgent?: string;
     accessMethod?: 'direct' | 'public_link' | 'team_access' | 'public_link_password' | 'public_link_anonymous';
+    elementType?: SlideElementType;
+    elementId?: string;
+    changedProperty?: string; // e.g. 'position', 'style.color'
     [key: string]: any;
   };
   createdAt: FirestoreTimestamp; // Firestore specific
@@ -225,5 +246,3 @@ export interface Asset {
   createdAt: FirestoreTimestamp; // Firestore specific
   lastUpdatedAt?: FirestoreTimestamp; // Firestore specific
 }
-
-    

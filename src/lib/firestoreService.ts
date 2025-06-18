@@ -22,7 +22,7 @@ import {
   or
 } from 'firebase/firestore';
 import { ref, deleteObject } from 'firebase/storage';
-import type { Presentation, Slide, SlideElement, SlideComment, User, Team, ActiveCollaboratorInfo, TeamRole, TeamMember, TeamActivity, TeamActivityType, PresentationActivity, PresentationActivityType, PresentationAccessRole, Asset, AssetType } from '@/types';
+import type { Presentation, Slide, SlideElement, SlideComment, User, Team, ActiveCollaboratorInfo, TeamRole, TeamMember, TeamActivity, TeamActivityType, PresentationActivity, PresentationActivityType, PresentationAccessRole, Asset, AssetType, SlideElementType } from '@/types';
 import { logTeamActivityInMongoDB } from './mongoTeamService'; 
 import { getUserByEmailFromMongoDB } from './mongoUserService';
 import { v4 as uuidv4 } from 'uuid';
@@ -77,8 +77,9 @@ export async function createPresentation(userId: string, title: string, teamId?:
       content: `Welcome to '${title}'!`,
       position: { x: 50, y: 50 },
       size: { width: 700, height: 100 },
-      style: { fontFamily: 'Space Grotesk', fontSize: '36px', color: '#333333', backgroundColor: 'transparent' },
+      style: { fontFamily: 'Space Grotesk', fontSize: '36px', color: '#333333', backgroundColor: 'transparent', textAlign: 'left', fontWeight: 'bold' },
       zIndex: 1,
+      rotation: 0,
     }],
     speakerNotes: "",
     comments: [],
@@ -191,11 +192,21 @@ export async function updatePresentation(presentationId: string, data: Partial<P
             zIndex: el.zIndex === undefined ? 0 : el.zIndex,
             lockedBy: el.lockedBy || null,
             lockTimestamp: el.lockTimestamp || null,
+            rotation: el.rotation || 0,
             style: {
                 fontFamily: el.style?.fontFamily || 'PT Sans',
                 fontSize: el.style?.fontSize || '16px',
                 color: el.style?.color || '#000000',
                 backgroundColor: el.style?.backgroundColor || 'transparent',
+                textAlign: el.style?.textAlign || 'left',
+                fontWeight: el.style?.fontWeight || 'normal',
+                fontStyle: el.style?.fontStyle || 'normal',
+                textDecoration: el.style?.textDecoration || 'none',
+                opacity: el.style?.opacity === undefined ? 1 : el.style.opacity,
+                shapeType: el.style?.shapeType || 'rectangle',
+                borderColor: el.style?.borderColor,
+                borderWidth: el.style?.borderWidth,
+                borderRadius: el.style?.borderRadius,
                 ...el.style,
             }
           }))
@@ -232,20 +243,20 @@ export async function addSlideToPresentation(presentationId: string, newSlideDat
     let currentSlides = presentationData.slides || [];
     
     const slideId = uuidv4();
-    const slideNumber = currentSlides.length + 1; // Temp number, will be re-numbered
+    const slideNumber = currentSlides.length + 1; 
     const defaultElementId = uuidv4();
     
     const defaultElement: SlideElement = {
       id: defaultElementId, type: 'text', content: `Slide ${slideNumber}`,
       position: { x: 50, y: 50 }, size: { width: 400, height: 50 },
-      style: { fontFamily: 'Space Grotesk', fontSize: '24px', color: '#333333', backgroundColor: 'transparent' }, zIndex: 1,
+      style: { fontFamily: 'Space Grotesk', fontSize: '24px', color: '#333333', backgroundColor: 'transparent', textAlign: 'left' }, zIndex: 1, rotation: 0,
     };
     
     const newSlide: Slide = {
-      id: slideId, presentationId: presentationId, slideNumber: slideNumber, // placeholder
+      id: slideId, presentationId: presentationId, slideNumber: slideNumber, 
       elements: newSlideData.elements || [defaultElement],
       speakerNotes: newSlideData.speakerNotes || "", comments: newSlideData.comments || [],
-      thumbnailUrl: newSlideData.thumbnailUrl || `https://placehold.co/160x90.png?text=New`,
+      thumbnailUrl: newSlideData.thumbnailUrl || `https://placehold.co/160x90.png?text=S${slideNumber}`,
       backgroundColor: newSlideData.backgroundColor || '#FFFFFF', aiSuggestions: newSlideData.aiSuggestions || [],
     };
     
@@ -253,7 +264,7 @@ export async function addSlideToPresentation(presentationId: string, newSlideDat
     const finalSlides = renumberSlides(updatedSlidesArray);
     
     transaction.update(presRef, { slides: finalSlides, lastUpdatedAt: serverTimestamp() });
-    return slideId; // Return the new slide's ID
+    return slideId; 
   });
 }
 
@@ -271,7 +282,7 @@ export async function deleteSlideFromPresentation(presentationId: string, slideI
 
     if (slides.length === initialLength) {
         console.warn(`Slide ${slideIdToDelete} not found in presentation ${presentationId} for deletion.`);
-        return presentationData.slides; // Return original slides if no change
+        return presentationData.slides; 
     }
 
     const updatedSlides = renumberSlides(slides);
@@ -297,21 +308,18 @@ export async function duplicateSlideInPresentation(presentationId: string, slide
 
     const originalSlide = slides[originalSlideIndex];
     const newSlideId = uuidv4();
-    // Deep clone the slide and its elements, generating new IDs for elements
     const duplicatedElements = originalSlide.elements.map(el => ({
-      ...JSON.parse(JSON.stringify(el)), // Deep clone element
-      id: uuidv4(), // New unique ID for each duplicated element
+      ...JSON.parse(JSON.stringify(el)), 
+      id: uuidv4(), 
     }));
 
     const duplicatedSlide: Slide = {
-      ...JSON.parse(JSON.stringify(originalSlide)), // Deep clone original slide
-      id: newSlideId, // New unique ID for the duplicated slide
-      slideNumber: 0, // Will be renumbered
+      ...JSON.parse(JSON.stringify(originalSlide)), 
+      id: newSlideId, 
+      slideNumber: 0, 
       elements: duplicatedElements,
-      comments: [], // Comments are typically not duplicated
-      aiSuggestions: [], // AI suggestions are typically not duplicated
-      // Keep thumbnail and background color from original, or reset if desired
-      // For thumbnail, maybe add a "(Copy)" or generate a new placeholder
+      comments: [], 
+      aiSuggestions: [], 
       thumbnailUrl: originalSlide.thumbnailUrl ? `${originalSlide.thumbnailUrl.split('?')[0]}?text=Copy` : `https://placehold.co/160x90.png?text=Copy`,
     };
 
@@ -330,7 +338,7 @@ export async function moveSlideInPresentation(presentationId: string, slideId: s
     if (!presDoc.exists()) throw new Error("Presentation not found");
 
     const presentationData = presDoc.data() as Presentation;
-    let slides = [...(presentationData.slides || [])]; // Create a mutable copy
+    let slides = [...(presentationData.slides || [])]; 
     const currentIndex = slides.findIndex(s => s.id === slideId);
 
     if (currentIndex === -1) {
@@ -347,13 +355,56 @@ export async function moveSlideInPresentation(presentationId: string, slideId: s
       slides[currentIndex] = slides[currentIndex + 1];
       slides[currentIndex + 1] = temp;
     } else {
-      // Cannot move further, return original slides
       return presentationData.slides;
     }
 
     const updatedSlides = renumberSlides(slides);
     transaction.update(presRef, { slides: updatedSlides, lastUpdatedAt: serverTimestamp() });
     return updatedSlides;
+  });
+}
+
+export async function addElementToSlide(presentationId: string, slideId: string, elementData: Omit<SlideElement, 'id'>): Promise<string> {
+  const presRef = doc(db, 'presentations', presentationId);
+  const newElementId = uuidv4();
+  const newElement: SlideElement = { ...elementData, id: newElementId };
+
+  await runTransaction(db, async (transaction) => {
+    const presDoc = await transaction.get(presRef);
+    if (!presDoc.exists()) throw new Error("Presentation not found");
+    const presentationData = presDoc.data() as Presentation;
+    const slides = presentationData.slides || [];
+    const slideIndex = slides.findIndex(s => s.id === slideId);
+
+    if (slideIndex === -1) throw new Error("Slide not found");
+
+    const updatedSlides = [...slides];
+    const targetSlide = { ...updatedSlides[slideIndex] };
+    targetSlide.elements = [...(targetSlide.elements || []), newElement];
+    updatedSlides[slideIndex] = targetSlide;
+
+    transaction.update(presRef, { slides: updatedSlides, lastUpdatedAt: serverTimestamp() });
+  });
+  return newElementId;
+}
+
+export async function deleteElementFromSlide(presentationId: string, slideId: string, elementId: string): Promise<void> {
+  const presRef = doc(db, 'presentations', presentationId);
+  await runTransaction(db, async (transaction) => {
+    const presDoc = await transaction.get(presRef);
+    if (!presDoc.exists()) throw new Error("Presentation not found");
+    const presentationData = presDoc.data() as Presentation;
+    const slides = presentationData.slides || [];
+    const slideIndex = slides.findIndex(s => s.id === slideId);
+
+    if (slideIndex === -1) throw new Error("Slide not found");
+    
+    const updatedSlides = [...slides];
+    const targetSlide = { ...updatedSlides[slideIndex] };
+    targetSlide.elements = (targetSlide.elements || []).filter(el => el.id !== elementId);
+    updatedSlides[slideIndex] = targetSlide;
+    
+    transaction.update(presRef, { slides: updatedSlides, lastUpdatedAt: serverTimestamp() });
   });
 }
 
@@ -378,8 +429,15 @@ export async function updateElementInSlide(presentationId: string, slideId: stri
                 fontSize: updatedElementPartial.style?.fontSize || el.style?.fontSize || '16px',
                 color: updatedElementPartial.style?.color || el.style?.color || '#000000',
                 backgroundColor: updatedElementPartial.style?.backgroundColor || el.style?.backgroundColor || 'transparent',
+                textAlign: updatedElementPartial.style?.textAlign || el.style?.textAlign || 'left',
+                fontWeight: updatedElementPartial.style?.fontWeight || el.style?.fontWeight || 'normal',
+                fontStyle: updatedElementPartial.style?.fontStyle || el.style?.fontStyle || 'normal',
+                textDecoration: updatedElementPartial.style?.textDecoration || el.style?.textDecoration || 'none',
+                opacity: updatedElementPartial.style?.opacity === undefined ? (el.style?.opacity === undefined ? 1 : el.style.opacity) : updatedElementPartial.style.opacity,
+                shapeType: updatedElementPartial.style?.shapeType || el.style?.shapeType || 'rectangle',
               },
               zIndex: updatedElementPartial.zIndex === undefined ? (el.zIndex === undefined ? 0 : el.zIndex) : updatedElementPartial.zIndex,
+              rotation: updatedElementPartial.rotation === undefined ? (el.rotation === undefined ? 0 : el.rotation) : updatedElementPartial.rotation,
             };
           } return el;
         });
@@ -429,11 +487,18 @@ export async function resolveCommentOnSlide(presentationId: string, slideId: str
 
 export async function updateUserPresence(presentationId: string, userId: string, userInfo: Pick<ActiveCollaboratorInfo, 'name' | 'profilePictureUrl' | 'color' | 'email'>): Promise<void> {
   const presRef = doc(db, 'presentations', presentationId);
+  const dataToSet: ActiveCollaboratorInfo = {
+    ...userInfo,
+    id: userId,
+    lastSeen: serverTimestamp() as Timestamp,
+    cursorPosition: null, // Initialize cursorPosition as null
+  };
   await updateDoc(presRef, {
-    [`activeCollaborators.${userId}`]: { ...userInfo, id: userId, lastSeen: serverTimestamp(), cursorPosition: null, },
+    [`activeCollaborators.${userId}`]: dataToSet,
     lastUpdatedAt: serverTimestamp()
   });
 }
+
 
 export async function removeUserPresence(presentationId: string, userId: string): Promise<void> {
   const presRef = doc(db, 'presentations', presentationId);
@@ -575,6 +640,4 @@ export async function getUserByEmail(email: string): Promise<User | null> {
 }
 
 export { getNextUserColor };
-
-// Helper to generate unique IDs for slides and elements
 export { uuidv4 };

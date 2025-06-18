@@ -13,7 +13,7 @@ import { AIAssistantPanel } from '@/components/editor/AIAssistantPanel';
 import { CollaborationBar } from '@/components/editor/CollaborationBar';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
-import type { Presentation, Slide, SlideElement, SlideComment, ActiveCollaboratorInfo, User as AppUser } from '@/types';
+import type { Presentation, Slide, SlideElement, SlideComment, ActiveCollaboratorInfo, User as AppUser, SlideElementType } from '@/types';
 import { AlertTriangle, Home, RotateCcw, Save, Share2, Users, FileText, Loader2, Zap, WifiOff, ShieldAlert, Sparkles, LayoutTemplate, Trash2, Copy } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -41,6 +41,8 @@ import {
   duplicateSlideInPresentation as apiDuplicateSlide,
   moveSlideInPresentation as apiMoveSlide,
   updateElementInSlide as apiUpdateElement, 
+  addElementToSlide as apiAddElementToSlide,
+  deleteElementFromSlide as apiDeleteElementFromSlide,
   addCommentToSlide as apiAddComment,
   resolveCommentOnSlide as apiResolveComment,
   updateUserPresence,
@@ -52,13 +54,13 @@ import {
   getNextUserColor,
   logPresentationActivity,
   getPresentationById,
+  uuidv4,
 } from '@/lib/firestoreService';
 import { doc, onSnapshot, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebaseConfig';
 import { throttle } from 'lodash'; 
 import { ShareDialog } from '@/components/editor/ShareDialog';
 import { PasswordPromptDialog } from '@/components/editor/PasswordPromptDialog';
-
 
 const LOCK_CHECK_INTERVAL = 15000; 
 
@@ -77,6 +79,7 @@ export default function EditorPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [isOnline, setIsOnline] = useState(true); 
   const [collaboratorColor, setCollaboratorColor] = useState<string>('');
+  const [selectedTool, setSelectedTool] = useState<string | null>(null);
 
   const [isShareDialogOpen, setIsShareDialogOpen] = useState(false);
   const [isPasswordPromptOpen, setIsPasswordPromptOpen] = useState(false);
@@ -84,7 +87,6 @@ export default function EditorPage() {
   const [passwordVerifiedInSession, setPasswordVerifiedInSession] = useState(false);
   const [slideToDelete, setSlideToDelete] = useState<Slide | null>(null);
   const [showTemplatesDialog, setShowTemplatesDialog] = useState(false);
-
 
   const unsubscribePresentationListener = useRef<(() => void) | null>(null);
   const presenceIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -173,11 +175,21 @@ export default function EditorPage() {
                 zIndex: el.zIndex === undefined ? 0 : el.zIndex,
                 lockedBy: el.lockedBy || null,
                 lockTimestamp: el.lockTimestamp || null,
+                rotation: el.rotation || 0,
                 style: {
                   fontFamily: el.style?.fontFamily || 'PT Sans',
                   fontSize: el.style?.fontSize || '16px',
                   color: el.style?.color || '#000000',
                   backgroundColor: el.style?.backgroundColor || 'transparent',
+                  textAlign: el.style?.textAlign || 'left',
+                  fontWeight: el.style?.fontWeight || 'normal',
+                  fontStyle: el.style?.fontStyle || 'normal',
+                  textDecoration: el.style?.textDecoration || 'none',
+                  opacity: el.style?.opacity === undefined ? 1 : el.style.opacity,
+                  shapeType: el.style?.shapeType || 'rectangle',
+                  borderColor: el.style?.borderColor,
+                  borderWidth: el.style?.borderWidth,
+                  borderRadius: el.style?.borderRadius,
                   ...el.style,
                 }
               }))
@@ -213,6 +225,7 @@ export default function EditorPage() {
           name: currentUser.name || 'Anonymous', 
           profilePictureUrl: currentUser.profilePictureUrl,
           color: collaboratorColor,
+          email: currentUser.email || undefined,
         });
 
         if (presenceIntervalRef.current) clearInterval(presenceIntervalRef.current);
@@ -221,7 +234,8 @@ export default function EditorPage() {
             updateUserPresence(presentationId, currentUser.id, { 
                 name: currentUser.name || 'Anonymous', 
                 profilePictureUrl: currentUser.profilePictureUrl,
-                color: collaboratorColor
+                color: collaboratorColor,
+                email: currentUser.email || undefined,
             });
           }
         }, 30000); 
@@ -264,14 +278,14 @@ export default function EditorPage() {
   const currentSlide = presentation?.slides.find(s => s.id === currentSlideId) || null;
   const selectedElement = currentSlide?.elements.find(el => el.id === selectedElementId) || null;
 
-  const handleToolSelect = (tool: string) => {
-    if (tool === 'ai-design' || tool === 'ai-content' || tool.startsWith('ai-')) {
+  const handleToolSelect = (tool: string | null) => {
+    setSelectedTool(tool); // Manage selected tool state
+    if (tool === 'ai-design' || tool === 'ai-content' || (tool && tool.startsWith('ai-'))) {
       setIsRightPanelOpen('ai');
     } else if (tool === 'templates') {
       handleShowSlideTemplates();
-    } else {
-      setIsRightPanelOpen('properties'); 
-      toast({ title: "Tool Selected", description: `Tool '${tool}' functionality pending implementation.`, duration: 2000});
+    } else if (tool !== null) { // If a drawing tool is selected, ensure properties panel is open
+      setIsRightPanelOpen('properties');
     }
   };
 
@@ -280,6 +294,8 @@ export default function EditorPage() {
        setIsRightPanelOpen(isRightPanelOpen === 'properties' ? null : 'properties'); 
     } else if (action === 'share') {
       setIsShareDialogOpen(true);
+    } else if (action === 'undo' || action === 'redo') {
+        toast({ title: "Coming Soon!", description: `${action.charAt(0).toUpperCase() + action.slice(1)} functionality is under development.`, duration: 2000 });
     } else {
       toast({ title: "Action Triggered", description: `Action '${action}' functionality pending implementation.`, duration: 2000 });
     }
@@ -291,6 +307,7 @@ export default function EditorPage() {
     }
     setCurrentSlideId(slideId);
     setSelectedElementId(null); 
+    setSelectedTool(null); // Deselect tool when changing slide
   }, [presentationId, currentSlideId, selectedElement, currentUser]);
 
   const handleElementSelect = useCallback(async (elementId: string | null) => {
@@ -304,6 +321,7 @@ export default function EditorPage() {
     }
     
     setSelectedElementId(elementId);
+    setSelectedTool(null); // Deselect any active drawing tool when an element is selected
 
     if (elementId) {
         const success = await apiAcquireLock(presentationId, currentSlideId, elementId, currentUser.id);
@@ -322,7 +340,7 @@ export default function EditorPage() {
     try {
       const newSlideId = await apiAddSlide(presentation.id); 
       toast({ title: "Slide Added", description: "New slide created." });
-      setCurrentSlideId(newSlideId); // Select the new slide
+      setCurrentSlideId(newSlideId); 
       setSelectedElementId(null);
     } catch (error) {
       console.error("Error adding slide:", error);
@@ -332,11 +350,11 @@ export default function EditorPage() {
     }
   };
 
-  const handleDeleteSlide = (slideIdToDelete: string) => { // No async here, just sets state
+  const handleDeleteSlide = (slideIdToDelete: string) => {
     if (!presentation || !currentUser) return;
     const slide = presentation.slides.find(s => s.id === slideIdToDelete);
     if (!slide) return;
-    setSlideToDelete(slide); // Open confirmation dialog
+    setSlideToDelete(slide); 
   };
 
   const confirmDeleteSlide = async () => {
@@ -345,13 +363,11 @@ export default function EditorPage() {
     try {
       const updatedSlides = await apiDeleteSlide(presentation.id, slideToDelete.id);
       if (updatedSlides) {
-        // setPresentation(prev => prev ? { ...prev, slides: updatedSlides } : null); // Handled by listener
         toast({ title: "Slide Deleted", description: `Slide ${slideToDelete.slideNumber} has been removed.` });
-
         if (currentSlideId === slideToDelete.id) {
           if (updatedSlides.length > 0) {
-            const currentIndex = presentation.slides.findIndex(s => s.id === slideToDelete.id); // Use pre-delete index
-            const nextSlideIndex = Math.min(Math.max(0, currentIndex -1), updatedSlides.length - 1); // Select previous or first if no prev
+            const currentIndex = presentation.slides.findIndex(s => s.id === slideToDelete.id); 
+            const nextSlideIndex = Math.max(0, Math.min(currentIndex -1, updatedSlides.length - 1)); 
             setCurrentSlideId(updatedSlides[nextSlideIndex]?.id || null);
           } else {
             setCurrentSlideId(null);
@@ -375,9 +391,9 @@ export default function EditorPage() {
     setIsSaving(true);
     try {
       const result = await apiDuplicateSlide(presentation.id, slideIdToDuplicate);
-      if (result && result.newSlideId) { // Listener will update slides
+      if (result && result.newSlideId) { 
         toast({ title: "Slide Duplicated", description: "Slide has been duplicated." });
-        setCurrentSlideId(result.newSlideId); // Select the duplicated slide
+        setCurrentSlideId(result.newSlideId); 
         setSelectedElementId(null);
       } else {
         toast({ title: "Error", description: "Could not duplicate slide.", variant: "destructive" });
@@ -396,7 +412,6 @@ export default function EditorPage() {
     try {
       const updatedSlides = await apiMoveSlide(presentation.id, slideId, direction);
       if (updatedSlides) {
-        // setPresentation(prev => prev ? { ...prev, slides: updatedSlides } : null); // Handled by listener
         toast({ title: "Slide Moved", description: "Slide order updated."});
       } else {
         toast({ title: "Error", description: "Could not move slide or no change made.", variant: "default" });
@@ -409,10 +424,82 @@ export default function EditorPage() {
     }
   };
 
-
   const handleShowSlideTemplates = () => {
     setShowTemplatesDialog(true);
   };
+
+  const handleAddElement = async (position: {x: number, y: number}) => {
+    if (!presentation || !currentSlideId || !selectedTool || !currentUser) return;
+    if (selectedTool.startsWith('ai-')) return; // AI tools don't add elements directly on canvas click
+
+    const newElementId = uuidv4();
+    let newElementPartial: Omit<SlideElement, 'id'> = {
+        type: 'text' as SlideElementType, // default
+        content: '',
+        position,
+        size: { width: 150, height: 50 },
+        style: { fontFamily: 'PT Sans', fontSize: '16px', color: '#333333', backgroundColor: '#00000000', textAlign: 'left', opacity: 1 },
+        zIndex: (currentSlide?.elements.length || 0) + 1,
+        rotation: 0,
+    };
+
+    if (selectedTool === 'text') {
+        newElementPartial.type = 'text';
+        newElementPartial.content = 'New Text';
+        newElementPartial.size = { width: 200, height: 40 };
+    } else if (selectedTool === 'image') {
+        newElementPartial.type = 'image';
+        newElementPartial.content = 'https://placehold.co/300x200.png?text=New+Image'; // Placeholder URL
+        newElementPartial.size = { width: 300, height: 200 };
+    } else if (selectedTool === 'shape-rectangle') {
+        newElementPartial.type = 'shape';
+        newElementPartial.style = { ...newElementPartial.style, shapeType: 'rectangle', backgroundColor: '#CCCCCC', borderColor: '#666666', borderWidth: 1 };
+    } else if (selectedTool === 'shape-circle') {
+        newElementPartial.type = 'shape';
+        newElementPartial.style = { ...newElementPartial.style, shapeType: 'circle', backgroundColor: '#CCCCCC', borderColor: '#666666', borderWidth: 1 };
+        newElementPartial.size = { width: 100, height: 100 }; // Circles are often square
+    } else if (selectedTool === 'chart') {
+        newElementPartial.type = 'chart';
+        newElementPartial.content = { type: 'bar', data: {} }; // Placeholder
+        newElementPartial.size = { width: 400, height: 300 };
+    } else if (selectedTool === 'icon') {
+        newElementPartial.type = 'icon';
+        newElementPartial.content = 'smile'; // Placeholder icon name
+        newElementPartial.size = { width: 50, height: 50 };
+         newElementPartial.style = { ...newElementPartial.style, color: '#333333' }; // Default icon color
+    } else {
+        return; // Unknown tool
+    }
+    
+    try {
+        await apiAddElementToSlide(presentation.id, currentSlideId, newElementPartial);
+        handleElementSelect(newElementId); // Select the newly added element
+        logPresentationActivity(presentation.id, currentUser.id, 'element_added', { elementType: newElementPartial.type, elementId: newElementId });
+    } catch (error) {
+        console.error("Error adding element:", error);
+        toast({ title: "Error Adding Element", description: "Could not add the element.", variant: "destructive" });
+    }
+    setSelectedTool(null); // Deselect tool after adding element
+  };
+
+  const handleDeleteElement = async (elementId: string) => {
+    if (!presentation || !currentSlideId || !currentUser) return;
+     const elementToDelete = currentSlide?.elements.find(el => el.id === elementId);
+    if (!elementToDelete) return;
+
+    try {
+        await apiDeleteElementFromSlide(presentation.id, currentSlideId, elementId);
+        toast({ title: "Element Deleted" });
+        if (selectedElementId === elementId) {
+            setSelectedElementId(null);
+        }
+        logPresentationActivity(presentation.id, currentUser.id, 'element_deleted', { elementType: elementToDelete.type, elementId });
+    } catch (error) {
+        console.error("Error deleting element:", error);
+        toast({ title: "Error Deleting Element", variant: "destructive" });
+    }
+  };
+
 
   const handleUpdateElement = useCallback(async (updatedElementPartial: Partial<SlideElement>) => {
     if (!presentation || !currentSlideId || !updatedElementPartial.id || !currentUser) return;
@@ -425,6 +512,7 @@ export default function EditorPage() {
     }
     try {
       await apiUpdateElement(presentation.id, currentSlideId, updatedElementPartial);
+      // Optionally add activity log here if needed for specific property changes
     } catch (error) {
       console.error("Error updating element:", error);
       toast({ title: "Sync Error", description: "Could not save element change.", variant: "destructive" });
@@ -467,13 +555,14 @@ export default function EditorPage() {
   };
   
   const handleSavePresentationTitle = async () => {
-    if (!presentation) return;
+    if (!presentation || !currentUser) return;
     setIsSaving(true);
     try {
       await apiUpdatePresentation(presentation.id, { 
         title: presentation.title, 
       });
       toast({ title: "Presentation Title Saved", description: "Your title change has been saved."});
+      logPresentationActivity(presentation.id, currentUser.id, 'sharing_settings_updated', { changedProperty: 'title' });
     } catch (error) {
       console.error("Error saving presentation title:", error);
       toast({ title: "Save Error", description: "Could not save presentation title.", variant: "destructive" });
@@ -483,11 +572,17 @@ export default function EditorPage() {
   };
   
   const handleUpdateSlideBackgroundColor = async (color: string) => {
-    if (!presentation || !currentSlideId) return;
+    if (!presentation || !currentSlideId || !currentUser) return;
     const updatedSlides = presentation.slides.map(s => 
         s.id === currentSlideId ? { ...s, backgroundColor: color } : s
     );
-    await apiUpdatePresentation(presentation.id, { slides: updatedSlides });
+    try {
+        await apiUpdatePresentation(presentation.id, { slides: updatedSlides });
+        logPresentationActivity(presentation.id, currentUser.id, 'slide_background_updated', { slideId: currentSlideId, newColor: color });
+    } catch (e) {
+        console.error("Error updating slide background:", e);
+        toast({title: "Error", description: "Could not update slide background.", variant: "destructive"})
+    }
   };
 
   const throttledUpdateCursor = useCallback(throttle((slideId: string, position: {x: number, y: number}) => {
@@ -677,6 +772,7 @@ export default function EditorPage() {
         onToolSelect={handleToolSelect} 
         onAction={handleAction} 
         onShowSlideTemplates={handleShowSlideTemplates}
+        selectedTool={selectedTool}
       />
       <div className="flex flex-grow overflow-hidden">
         <SlideThumbnailList
@@ -692,6 +788,7 @@ export default function EditorPage() {
         <EditorCanvas 
             slide={currentSlide} 
             onElementSelect={handleElementSelect} 
+            onCanvasClickToAddElement={handleAddElement}
             selectedElementId={selectedElementId} 
             onUpdateElement={handleUpdateElement} 
             disabled={isSaving || !isOnline || !currentUser || (presentation?.creatorId !== currentUser.id && presentation?.access[currentUser.id] !== 'owner' && presentation?.access[currentUser.id] !== 'editor')}
@@ -700,6 +797,7 @@ export default function EditorPage() {
             onMouseMove={handleMouseMoveOnCanvas}
             canvasBaseWidth={960} 
             canvasBaseHeight={540}
+            selectedTool={selectedTool}
         />
         
         {isRightPanelOpen === 'properties' && currentSlide && currentUser && (
@@ -707,10 +805,11 @@ export default function EditorPage() {
               selectedElement={selectedElement}
               currentSlide={currentSlide}
               onUpdateElement={handleUpdateElement}
+              onDeleteElement={handleDeleteElement}
               onAddComment={handleAddComment}
               onResolveComment={handleResolveComment}
               onUpdateSlideBackgroundColor={handleUpdateSlideBackgroundColor}
-              disabled={isSaving || !isOnline || (selectedElement?.lockedBy !== null && selectedElement?.lockedBy !== currentUser.id) || (presentation?.creatorId !== currentUser.id && presentation?.access[currentUser.id] !== 'owner' && presentation?.access[currentUser.id] !== 'editor')}
+              disabled={isSaving || !isOnline || (presentation?.creatorId !== currentUser.id && presentation?.access[currentUser.id] !== 'owner' && presentation?.access[currentUser.id] !== 'editor')}
               currentUserId={currentUser.id}
             />
         )}
