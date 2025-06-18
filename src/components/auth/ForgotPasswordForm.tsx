@@ -6,7 +6,7 @@ import { useForm } from "react-hook-form";
 import * as z from "zod";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useFormStatus } from "react-dom";
+import { useFormStatus, useFormState } from "react-dom"; // Changed from React.useActionState
 import React, { useEffect } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -22,7 +22,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { Zap, Mail, Send } from "lucide-react";
-import { sendPasswordResetEmail, AuthResponse } from "@/app/(auth)/actions";
+import { sendPasswordReset, AuthResponse } from "@/app/(auth)/actions"; // Updated action name
 
 const formSchema = z.object({
   email: z.string().email({ message: "Please enter a valid email address." }),
@@ -41,7 +41,7 @@ export function ForgotPasswordForm() {
   const router = useRouter();
   const { toast } = useToast();
 
-  const [formState, formAction] = React.useActionState<AuthResponse, FormData>(sendPasswordResetEmail, {
+  const [formState, formAction] = useFormState<AuthResponse, FormData>(sendPasswordReset, { // Updated action name
     success: false,
     message: "",
   });
@@ -60,8 +60,7 @@ export function ForgotPasswordForm() {
           title: "Password Reset Email Sent",
           description: formState.message,
         });
-        // Optionally redirect or clear form
-        // router.push("/login"); 
+        form.reset(); // Clear form on success
       } else {
         toast({
           title: "Error",
@@ -70,7 +69,7 @@ export function ForgotPasswordForm() {
         });
       }
     }
-  }, [formState, toast, router]);
+  }, [formState, toast, form]);
 
   return (
     <Card className="w-full max-w-md shadow-xl">
@@ -83,7 +82,12 @@ export function ForgotPasswordForm() {
       </CardHeader>
       <CardContent>
         <Form {...form}>
-          <form action={formAction} onSubmit={form.handleSubmit(() => form.control._formAction(formAction))} className="space-y-6">
+          {/* 
+            The form.handleSubmit wrapper is usually for client-side validation before calling formAction.
+            Since useFormState handles server-side responses, direct formAction is fine.
+            However, to ensure client-side validation fires, we can keep it.
+          */}
+          <form action={formAction} onSubmit={form.handleSubmit(() => form.control._formAction(form.getValues() as any))} className="space-y-6">
             <FormField
               control={form.control}
               name="email"
@@ -102,10 +106,7 @@ export function ForgotPasswordForm() {
             />
             <SubmitButton />
             {formState?.message && !formState.success && (
-              <p className="text-sm font-medium text-destructive pt-2">{formState.message}</p>
-            )}
-            {formState?.message && formState.success && (
-              <p className="text-sm font-medium text-green-600 pt-2">{formState.message}</p>
+              <p className="text-sm font-medium text-destructive pt-2 text-center">{formState.message}</p>
             )}
           </form>
         </Form>

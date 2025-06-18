@@ -1,44 +1,56 @@
-import type { Timestamp } from 'firebase/firestore';
+import type { Timestamp } from 'firebase/firestore'; // Firestore Timestamp
+import type { Types } from 'mongoose'; // Mongoose ObjectId type
 
 export interface User {
-  id: string;
+  id: string; // This will be Firebase UID, which corresponds to _id in MongoDB schema after toString()
+  _id?: Types.ObjectId | string; // Mongoose _id
   name?: string | null;
   email?: string | null;
+  emailVerified?: boolean; // From Firebase Auth, can be synced
   profilePictureUrl?: string | null;
-  teamId?: string; 
-  role: 'owner' | 'admin' | 'editor' | 'viewer' | 'guest'; 
-  lastActive: Date | Timestamp;
+  teamId?: string;
+  role: 'owner' | 'admin' | 'editor' | 'viewer' | 'guest';
+  lastActive: Date | Timestamp; // Allow both for flexibility during transition if any
   createdAt?: Date | Timestamp;
+  updatedAt?: Date | Timestamp; // From Mongoose timestamps
   settings: {
     darkMode: boolean;
     aiFeatures: boolean;
     notifications: boolean;
   };
-  isAppAdmin?: boolean; 
+  isAppAdmin?: boolean;
+  // For social logins, Firebase UID is the primary link.
+  // Storing provider-specific IDs is optional but can be useful.
+  googleId?: string | null;
+  githubId?: string | null;
+  twoFactorEnabled?: boolean;
+  // twoFactorSecret, backupCodes etc. would go here if 2FA is fully implemented
 }
 
 export type TeamRole = 'owner' | 'admin' | 'editor' | 'viewer';
 
 export interface TeamMember {
+  userId: string; // Firebase UID
   role: TeamRole;
-  joinedAt: Timestamp;
-  addedBy: string; 
-  name?: string; 
-  email?: string; 
-  profilePictureUrl?: string; 
+  joinedAt: Date | Timestamp;
+  addedBy: string;
+  name?: string;
+  email?: string;
+  profilePictureUrl?: string;
 }
 
 export interface Team {
-  id: string;
+  id: string; // Mongoose _id.toString()
+  _id?: Types.ObjectId | string;
   name: string;
-  ownerId: string; 
+  ownerId: string;
   members: {
-    [userId: string]: TeamMember;
+    [userId: string]: TeamMember; // userId here is Firebase UID
   };
   branding: {
     logoUrl?: string;
-    primaryColor?: string; 
-    secondaryColor?: string; 
+    primaryColor?: string;
+    secondaryColor?: string;
     fontPrimary?: string;
     fontSecondary?: string;
   };
@@ -46,8 +58,8 @@ export interface Team {
     allowGuestEdits: boolean;
     aiFeaturesEnabled: boolean;
   };
-  createdAt: Timestamp;
-  lastUpdatedAt?: Timestamp;
+  createdAt?: Date | Timestamp;
+  lastUpdatedAt?: Date | Timestamp;
 }
 
 export type SlideElementType = 'text' | 'image' | 'shape' | 'chart';
@@ -77,7 +89,7 @@ export interface SlideComment {
   userName: string;
   userAvatarUrl?: string;
   text: string;
-  createdAt: Timestamp;
+  createdAt: Timestamp; // Firestore Timestamp
   resolved: boolean;
 }
 
@@ -98,9 +110,9 @@ export interface ActiveCollaboratorInfo {
   name: string;
   profilePictureUrl?: string;
   cursorPosition?: { slideId: string; x: number; y: number } | null;
-  lastSeen: Timestamp;
+  lastSeen: Timestamp; // Firestore Timestamp
   color: string;
-  email?: string; // Added email for ShareDialog collaborator list
+  email?: string;
 }
 
 export interface Presentation {
@@ -115,16 +127,16 @@ export interface Presentation {
   settings: {
     isPublic: boolean;
     passwordProtected: boolean;
-    password?: string; 
+    password?: string;
     commentsAllowed: boolean;
   };
   thumbnailUrl?: string;
   version: number;
-  createdAt?: Timestamp;
-  lastUpdatedAt: Timestamp;
+  createdAt?: Timestamp; // Firestore Timestamp
+  lastUpdatedAt: Timestamp; // Firestore Timestamp
   slides: Slide[];
   activeCollaborators?: { [userId: string]: ActiveCollaboratorInfo };
-  collaborators?: User[]; // For PresentationCard, if needed for simpler display
+  collaborators?: User[];
 }
 
 export type TeamActivityType =
@@ -133,30 +145,32 @@ export type TeamActivityType =
   | 'member_removed'
   | 'member_role_changed'
   | 'team_profile_updated'
-  | 'presentation_created' 
-  | 'presentation_deleted'; 
+  | 'presentation_created'
+  | 'presentation_deleted'
+  | 'asset_uploaded'
+  | 'asset_deleted';
 
 export interface TeamActivity {
   id: string;
   teamId: string;
-  actorId: string; 
-  actorName?: string; 
+  actorId: string;
+  actorName?: string;
   actionType: TeamActivityType;
-  targetType?: 'user' | 'presentation' | 'team_profile';
-  targetId?: string; 
-  targetName?: string; 
+  targetType?: 'user' | 'presentation' | 'team_profile' | 'asset';
+  targetId?: string;
+  targetName?: string;
   details?: {
     oldRole?: TeamRole;
     newRole?: TeamRole;
-    changedFields?: string[]; 
+    changedFields?: string[];
     [key: string]: any;
   };
-  createdAt: Timestamp;
+  createdAt: Timestamp; // Firestore Timestamp
 }
 
 export type PresentationActivityType =
   | 'presentation_viewed'
-  | 'sharing_settings_updated' 
+  | 'sharing_settings_updated'
   | 'password_set'
   | 'password_removed'
   | 'collaborator_added'
@@ -166,23 +180,23 @@ export type PresentationActivityType =
 export interface PresentationActivity {
   id: string;
   presentationId: string;
-  actorId: string; 
-  actorName?: string; 
+  actorId: string;
+  actorName?: string;
   actionType: PresentationActivityType;
-  targetUserId?: string; 
-  targetUserName?: string; 
+  targetUserId?: string;
+  targetUserName?: string;
   details?: {
     oldRole?: PresentationAccessRole;
     newRole?: PresentationAccessRole;
-    changedSetting?: keyof Presentation['settings']; 
+    changedSetting?: keyof Presentation['settings'];
     oldValue?: any;
     newValue?: any;
-    ipAddress?: string; 
-    userAgent?: string; 
+    ipAddress?: string;
+    userAgent?: string;
     accessMethod?: 'direct' | 'public_link' | 'team_access' | 'public_link_password';
     [key: string]: any;
   };
-  createdAt: Timestamp;
+  createdAt: Timestamp; // Firestore Timestamp
 }
 
 export type AssetType = 'image' | 'video' | 'audio' | 'pdf' | 'other';
@@ -191,18 +205,18 @@ export interface Asset {
   id: string;
   teamId: string;
   uploaderId: string;
-  uploaderName?: string; // Denormalized for convenience
+  uploaderName?: string;
   fileName: string;
   fileType: string; // MIME type
-  assetType: AssetType; // Categorized type
-  storagePath: string; // Full path in Firebase Storage
+  assetType: AssetType;
+  storagePath: string;
   downloadURL: string;
   size: number; // in bytes
-  thumbnailURL?: string; // Optional, e.g., for images or video stills
-  dimensions?: { width: number; height: number }; // For images
+  thumbnailURL?: string;
+  dimensions?: { width: number; height: number };
   duration?: number; // For audio/video in seconds
   tags?: string[];
   description?: string;
-  createdAt: Timestamp;
-  lastUpdatedAt?: Timestamp;
+  createdAt: Timestamp; // Firestore Timestamp
+  lastUpdatedAt?: Timestamp; // Firestore Timestamp
 }

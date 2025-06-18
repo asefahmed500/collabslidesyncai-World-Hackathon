@@ -1,14 +1,17 @@
 
 import mongoose, { Schema, Document, Model } from 'mongoose';
-import type { User as UserType } from '@/types'; // Using existing TypeScript type
+import type { User as UserType } from '@/types';
 
-// Interface for Mongoose Document (extends your existing UserType)
-export interface UserDocument extends Omit<UserType, 'id' | 'lastActive' | 'createdAt' | 'role'>, Document {
-  _id: mongoose.Types.ObjectId; // Mongoose uses _id
-  id?: string; // Keep id for virtual getter
-  role: 'owner' | 'admin' | 'editor' | 'viewer' | 'guest'; // Ensure role is one of these strings
+export interface UserDocument extends Omit<UserType, 'id' | 'lastActive' | 'createdAt' | 'updatedAt' | 'role' | '_id'>, Document {
+  _id: string; // Firebase UID will be used as _id
+  role: 'owner' | 'admin' | 'editor' | 'viewer' | 'guest';
   lastActive: Date;
-  createdAt?: Date;
+  createdAt?: Date; // Mongoose timestamp
+  updatedAt?: Date; // Mongoose timestamp
+  googleId?: string | null;
+  githubId?: string | null;
+  emailVerified?: boolean;
+  twoFactorEnabled?: boolean;
 }
 
 const UserSettingsSchema = new Schema({
@@ -19,32 +22,46 @@ const UserSettingsSchema = new Schema({
 
 const UserSchema = new Schema<UserDocument>(
   {
+    _id: { type: String, required: true }, // Using Firebase UID as the document _id
     name: { type: String, trim: true },
-    email: { type: String, unique: true, lowercase: true, trim: true, sparse: true }, // sparse for optional unique
+    email: { type: String, unique: true, lowercase: true, trim: true, sparse: true },
+    emailVerified: { type: Boolean, default: false },
     profilePictureUrl: { type: String, trim: true },
-    teamId: { type: String, index: true, sparse: true }, // Mongoose ObjectId could be used if Team is also a Mongoose model
-    role: { type: String, enum: ['owner', 'admin', 'editor', 'viewer', 'guest'], required: true },
+    teamId: { type: String, index: true, sparse: true },
+    role: { type: String, enum: ['owner', 'admin', 'editor', 'viewer', 'guest'], required: true, default: 'editor' },
     lastActive: { type: Date, default: Date.now },
-    settings: { type: UserSettingsSchema, default: () => ({}) },
+    settings: { type: UserSettingsSchema, default: () => ({ darkMode: false, aiFeatures: true, notifications: true }) },
     isAppAdmin: { type: Boolean, default: false },
+    googleId: { type: String, sparse: true, unique: true, default: null },
+    githubId: { type: String, sparse: true, unique: true, default: null },
+    twoFactorEnabled: { type: Boolean, default: false },
   },
   {
     timestamps: true, // Adds createdAt and updatedAt automatically
-    toJSON: { virtuals: true }, // Ensure virtuals are included in toJSON
-    toObject: { virtuals: true }, // Ensure virtuals are included in toObject
+    toJSON: { 
+      virtuals: true,
+      transform: function(doc, ret) {
+        ret.id = ret._id; // Map _id to id
+        delete ret._id;
+        delete ret.__v;
+      }
+    },
+    toObject: { 
+      virtuals: true,
+      transform: function(doc, ret) {
+        ret.id = ret._id; // Map _id to id
+        delete ret._id;
+        delete ret.__v;
+      }
+    },
+    _id: false, // Important: Disable Mongoose's default _id generation since we use Firebase UID
   }
 );
 
-// Firebase UID is often stored as the primary key in User collection,
-// or you can map it to _id. Here we assume _id is the Mongoose primary key.
-// If you want to query by Firebase UID and it's not _id, add an index for it.
-
-// Virtual for 'id' to match TypeScript type if needed (maps to _id.toString())
 UserSchema.virtual('id').get(function (this: UserDocument) {
-  return this._id.toHexString();
+  return this._id;
 });
 
-// Check if the model already exists before compiling it
 let UserModel: Model<UserDocument>;
 if (mongoose.models.User) {
   UserModel = mongoose.model<UserDocument>('User');

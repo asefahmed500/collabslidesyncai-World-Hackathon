@@ -3,10 +3,11 @@
 
 import { useState, useEffect, useContext, createContext, ReactNode } from 'react';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
-import { auth, db } from '@/lib/firebaseConfig';
+import { auth } from '@/lib/firebaseConfig';
 import type { User as AppUser } from '@/types';
-import { doc, getDoc, onSnapshot } from 'firebase/firestore';
-import { mapFirebaseUserToAppUser } from '@/lib/authService';
+import { getUserFromMongoDB, createUserInMongoDB } from '@/lib/mongoUserService'; // Use MongoDB service
+import { GoogleAuthProvider, GithubAuthProvider } from 'firebase/auth';
+
 
 interface AuthContextType {
   currentUser: AppUser | null;
@@ -22,36 +23,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setFirebaseUser(user);
-      if (user) {
-        const userDocRef = doc(db, "users", user.uid);
-        const unsubProfile = onSnapshot(userDocRef, (docSnap) => {
-          if (docSnap.exists()) {
-            const userData = docSnap.data();
-            setCurrentUser({
-              id: user.uid,
-              name: userData.name || user.displayName || 'User',
-              email: userData.email || user.email || '',
-              profilePictureUrl: userData.profilePictureUrl || user.photoURL || `https://placehold.co/100x100.png?text=${(userData.name || user.displayName || 'U').charAt(0).toUpperCase()}`,
-              role: userData.role || 'editor',
-              lastActive: userData.lastActive?.toDate() || new Date(),
-              settings: userData.settings || { darkMode: false, aiFeatures: true, notifications: true },
-              teamId: userData.teamId,
-              isAppAdmin: userData.isAppAdmin || false, // Fetch isAppAdmin
-            });
-          } else {
-            const basicUser = mapFirebaseUserToAppUser(user);
-            setCurrentUser({...basicUser, isAppAdmin: false });
+    const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
+      setFirebaseUser(fbUser);
+      if (fbUser) {
+        setLoading(true); // Set loading true while fetching/creating MongoDB profile
+        try {
+          let appUser = await getUserFromMongoDB(fbUser.uid);
+          
+          if (!appUser) {
+            // If user doesn't exist in MongoDB (e.g., first social sign-in), create them.
+            console.log(`User ${fbUser.uid} not found in MongoDB, creating profile...`);
+            const providerId = fbUser.providerData[0]?.providerId;
+            const socialProfileData: Partial<AppUser> = {
+              name: fbUser.displayName,
+              email: fbUser.email,
+              profilePictureUrl: fbUser.photoURL,
+              emailVerified: fbUser.emailVerified,
+              role: 'editor', // Default role for new social sign ups
+            };
+            if (providerId === GoogleAuthProvider.PROVIDER_ID) {
+              socialProfileData.googleId = fbUser.providerData.find(p => p.providerId === GoogleAuthProvider.PROVIDER_ID)?.uid;
+            } else if (providerId === GithubAuthProvider.PROVIDER_ID) {
+              socialProfileData.githubId = fbUser.providerData.find(p => p.providerId === GithubAuthProvider.PROVIDER_ID)?.uid;
+            }
+            appUser = await createUserInMongoDB(fbUser, socialProfileData);
+            if (!appUser) {
+                 console.error("Failed to create MongoDB user profile for new social login user:", fbUser.uid);
+                 // Decide how to handle this - sign out Firebase user? Show error?
+                 // For now, we'll set currentUser to null and Firebase might sign them out or keep them in a limbo.
+                 setCurrentUser(null);
+            }
           }
-          setLoading(false);
-        }, (error) => {
-          console.error("Error fetching user profile:", error);
-          const basicUser = mapFirebaseUserToAppUser(user);
-          setCurrentUser({...basicUser, isAppAdmin: false });
-          setLoading(false);
-        });
-        return () => unsubProfile();
+          setCurrentUser(appUser);
+        } catch (error) {
+            console.error("Error fetching or creating user profile from MongoDB:", error);
+            setCurrentUser(null); // Error state, no app user
+        } finally {
+            setLoading(false);
+        }
       } else {
         setCurrentUser(null);
         setLoading(false);
