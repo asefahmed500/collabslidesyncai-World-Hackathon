@@ -12,7 +12,7 @@ import { doc, onSnapshot, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebaseConfig';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, AlertTriangle, ShieldAlert, EyeOff, Home, ChevronLeft, ChevronRight, Expand, Minimize, NotepadText, X } from 'lucide-react';
+import { Loader2, AlertTriangle, ShieldAlert, EyeOff, Home, ChevronLeft, ChevronRight, Expand, Minimize, NotepadText, X, ShieldX } from 'lucide-react';
 import { PasswordPromptDialog } from '@/components/editor/PasswordPromptDialog'; // Reusing for consistency
 import { cn } from '@/lib/utils';
 
@@ -89,6 +89,7 @@ export default function PresentationViewPage() {
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [accessDenied, setAccessDenied] = useState(false);
+  const [isTakenDown, setIsTakenDown] = useState(false);
   const [isPasswordPromptOpen, setIsPasswordPromptOpen] = useState(false);
   const [passwordVerifiedInSession, setPasswordVerifiedInSession] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -122,6 +123,14 @@ export default function PresentationViewPage() {
 
 
   const checkAccessAndLoad = useCallback(async (presData: Presentation) => {
+    if (presData.moderationStatus === 'taken_down' && (!currentUser || !currentUser.isAppAdmin)) {
+        setIsTakenDown(true);
+        setAccessDenied(true); // Access denied if taken down for non-admins
+        toast({ title: "Presentation Unavailable", description: "This presentation is currently unavailable.", variant: "destructive" });
+        return false;
+    }
+    setIsTakenDown(false);
+
     let hasAccess = false;
     if (presData.settings.isPublic) {
       if (presData.settings.passwordProtected) {
@@ -138,19 +147,17 @@ export default function PresentationViewPage() {
       if (presData.creatorId === currentUser.id || (presData.access && presData.access[currentUser.id])) {
         hasAccess = true;
       } else if (presData.teamId && presData.teamId === currentUser.teamId) {
-         // Assuming team members get at least viewer access by default
-         // More granular team roles for presentations could be added to `presentation.access`
          hasAccess = true;
       }
     }
 
-    if (hasAccess) {
+    if (hasAccess || (currentUser && currentUser.isAppAdmin)) { // Platform Admins can always access (unless taken_down by another admin, then they still see it but get a special message)
       setAccessDenied(false);
       return true;
     } else {
       setAccessDenied(true);
       setIsLoading(false);
-      if (!presData.settings.isPublic) { // Only toast if not public, to avoid annoying for password prompt cases
+      if (!presData.settings.isPublic) { 
         toast({ title: "Access Denied", description: "You don't have permission to view this presentation.", variant: "destructive" });
       }
       return false;
@@ -158,7 +165,7 @@ export default function PresentationViewPage() {
   }, [currentUser, toast]);
 
   useEffect(() => {
-    if (authLoading) return; // Wait for auth state to resolve
+    if (authLoading) return; 
 
     if (!presentationId) {
       setAccessDenied(true);
@@ -167,9 +174,8 @@ export default function PresentationViewPage() {
       return;
     }
 
-    // If already password verified, proceed to load
     if (passwordVerifiedInSession || (presentation && !presentation.settings.passwordProtected)) {
-      setIsPasswordPromptOpen(false); // Ensure prompt is closed if verification happened
+      setIsPasswordPromptOpen(false); 
     }
 
 
@@ -178,17 +184,24 @@ export default function PresentationViewPage() {
     unsubscribePresentationListener.current = onSnapshot(presRef, async (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data() as Omit<Presentation, 'id'>;
-        const currentPresData = { id: docSnap.id, ...data } as Presentation;
+        const currentPresData = { 
+            id: docSnap.id, 
+            ...data, 
+            moderationStatus: data.moderationStatus || 'active', // Ensure moderationStatus default
+        } as Presentation;
         setPresentation(currentPresData);
         
-        // Initial access check or re-check if not password verified
         if (!passwordVerifiedInSession && currentPresData.settings.isPublic && currentPresData.settings.passwordProtected) {
            const canView = await checkAccessAndLoad(currentPresData);
            if (!canView && isPasswordPromptOpen) { /* Stay on prompt */ }
-           else if (!canView) { setIsLoading(false); } // If prompt not open and still no access
-           else { setIsLoading(false); } // Access granted
+           else if (!canView) { setIsLoading(false); } 
+           else { setIsLoading(false); } 
         } else if (passwordVerifiedInSession || !currentPresData.settings.isPublic || !currentPresData.settings.passwordProtected) {
-           await checkAccessAndLoad(currentPresData); // Standard check or re-check if public status changed
+           const accessGranted = await checkAccessAndLoad(currentPresData);
+           if (accessGranted && currentPresData.moderationStatus === 'taken_down' && (!currentUser || !currentUser.isAppAdmin)) {
+                // This condition should be caught by checkAccessAndLoad's first check
+                setIsTakenDown(true);
+           }
            setIsLoading(false);
         }
 
@@ -209,6 +222,7 @@ export default function PresentationViewPage() {
         unsubscribePresentationListener.current();
       }
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [presentationId, authLoading, checkAccessAndLoad, passwordVerifiedInSession, toast]);
   
 
@@ -216,7 +230,6 @@ export default function PresentationViewPage() {
     setPasswordVerifiedInSession(true);
     sessionStorage.setItem(`passwordVerified_${presentationId}`, 'true');
     setIsPasswordPromptOpen(false);
-    // Data loading and access check will re-trigger due to useEffect dependency on passwordVerifiedInSession
   };
 
   const nextSlide = useCallback(() => {
@@ -233,7 +246,7 @@ export default function PresentationViewPage() {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (isPasswordPromptOpen) return; // Don't navigate while prompt is open
+      if (isPasswordPromptOpen) return; 
       if (event.key === 'ArrowRight' || event.key === ' ' || event.key === 'PageDown') {
         nextSlide();
       } else if (event.key === 'ArrowLeft' || event.key === 'PageUp') {
@@ -280,7 +293,7 @@ export default function PresentationViewPage() {
             isOpen={isPasswordPromptOpen}
             onOpenChange={(open) => {
                 setIsPasswordPromptOpen(open);
-                if (!open && !passwordVerifiedInSession) router.push('/dashboard'); // Go back if prompt closed without verification
+                if (!open && !passwordVerifiedInSession) router.push('/dashboard'); 
             }}
             onPasswordVerified={handlePasswordVerified}
         />
@@ -289,6 +302,19 @@ export default function PresentationViewPage() {
     );
   }
   
+  if (isTakenDown) {
+     return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-background text-center p-4">
+        <ShieldX className="w-16 h-16 text-destructive mb-4" />
+        <h1 className="font-headline text-3xl mb-2">Presentation Unavailable</h1>
+        <p className="text-muted-foreground mb-6">This presentation has been taken down by an administrator.</p>
+        <Button onClick={() => router.push('/dashboard')} variant="outline">
+          <Home className="mr-2 h-4 w-4" /> Go to Dashboard
+        </Button>
+      </div>
+    );
+  }
+
   if (accessDenied || !presentation) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-background text-center p-4">
@@ -398,3 +424,4 @@ export default function PresentationViewPage() {
   );
 }
 
+    

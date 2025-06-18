@@ -2,21 +2,24 @@
 "use client";
 
 import { useEffect, useState, useCallback } from 'react';
-import type { Presentation, User as AppUser } from '@/types';
+import type { Presentation, PresentationModerationStatus } from '@/types';
 import { 
   getAllPresentationsForAdmin, 
-  deletePresentation as apiSoftDeletePresentation, // Renamed for clarity
+  deletePresentation as apiSoftDeletePresentation,
   restorePresentation as apiRestorePresentation,
-  permanentlyDeletePresentation as apiPermanentlyDeletePresentation 
+  permanentlyDeletePresentation as apiPermanentlyDeletePresentation,
+  updatePresentationModerationStatus // New service
 } from '@/lib/firestoreService'; 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { Loader2, FileText, Edit, Trash2, Eye, LinkIcon, Search, RotateCcw, AlertTriangle, Filter } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Loader2, FileText, Edit, Trash2, Eye, LinkIcon, Search, RotateCcw, AlertTriangle, ShieldCheck, ShieldX, ShieldQuestion } from 'lucide-react';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth'; 
@@ -31,9 +34,12 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 
-type ActionType = 'delete' | 'restore' | 'permanentlyDelete';
+
+type ActionType = 'delete' | 'restore' | 'permanentlyDelete' | 'changeModeration';
 
 export default function AdminAllPresentationsPage() {
   const [allPresentations, setAllPresentations] = useState<Presentation[]>([]);
@@ -50,6 +56,9 @@ export default function AdminAllPresentationsPage() {
 
   const [presentationToAction, setPresentationToAction] = useState<Presentation | null>(null);
   const [actionType, setActionType] = useState<ActionType | null>(null);
+  const [isModerationDialogOpen, setIsModerationDialogOpen] = useState(false);
+  const [currentModerationStatus, setCurrentModerationStatus] = useState<PresentationModerationStatus>('active');
+  const [moderationNotes, setModerationNotes] = useState('');
 
 
   const fetchPresentations = useCallback(async () => {
@@ -90,7 +99,7 @@ export default function AdminAllPresentationsPage() {
   const handleActionConfirm = async () => {
     if (!presentationToAction || !actionType || !currentUser || !currentUser.isAppAdmin) return;
     
-    setIsLoading(true); // Use general loading state for simplicity
+    setIsLoading(true); 
     try {
       let message = "";
       if (actionType === 'delete') {
@@ -104,7 +113,7 @@ export default function AdminAllPresentationsPage() {
         message = `"${presentationToAction.title}" has been permanently deleted.`;
       }
       toast({ title: "Action Successful", description: message });
-      fetchPresentations(); // Re-fetch to update list
+      fetchPresentations(); 
     } catch (error: any) {
       console.error(`Error performing ${actionType} on presentation:`, error);
       toast({ title: "Error", description: error.message || `Could not perform ${actionType} action.`, variant: "destructive" });
@@ -114,7 +123,30 @@ export default function AdminAllPresentationsPage() {
       setIsLoading(false);
     }
   };
+
+  const handleChangeModerationStatus = async () => {
+    if (!presentationToAction || !currentUser || !currentUser.isAppAdmin) return;
+    setIsLoading(true);
+    try {
+      await updatePresentationModerationStatus(presentationToAction.id, currentModerationStatus, currentUser.id, moderationNotes);
+      toast({ title: "Moderation Status Updated", description: `Status for "${presentationToAction.title}" changed to ${currentModerationStatus}.` });
+      setIsModerationDialogOpen(false);
+      fetchPresentations(); // Refresh list
+    } catch (error: any) {
+      console.error("Error updating moderation status:", error);
+      toast({ title: "Error", description: error.message || "Could not update moderation status.", variant: "destructive" });
+    } finally {
+      setIsLoading(false);
+    }
+  };
   
+  const openModerationDialog = (pres: Presentation) => {
+    setPresentationToAction(pres);
+    setCurrentModerationStatus(pres.moderationStatus || 'active');
+    setModerationNotes(pres.moderationNotes || '');
+    setIsModerationDialogOpen(true);
+  };
+
   const getDialogDetails = () => {
     if (!presentationToAction || !actionType) return { title: "", description: "", actionText: "" };
     switch (actionType) {
@@ -130,13 +162,22 @@ export default function AdminAllPresentationsPage() {
   };
 
 
-  if (isLoading && allPresentations.length === 0) { // Show loader only on initial load
+  if (isLoading && allPresentations.length === 0) { 
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
       </div>
     );
   }
+
+  const getModerationStatusBadge = (status: PresentationModerationStatus) => {
+    switch (status) {
+      case 'active': return <Badge variant="secondary" className="bg-green-100 text-green-700 border-green-300"><ShieldCheck className="mr-1 h-3 w-3"/>Active</Badge>;
+      case 'under_review': return <Badge variant="outline" className="bg-yellow-100 text-yellow-700 border-yellow-400"><ShieldQuestion className="mr-1 h-3 w-3"/>Under Review</Badge>;
+      case 'taken_down': return <Badge variant="destructive"><ShieldX className="mr-1 h-3 w-3"/>Taken Down</Badge>;
+      default: return <Badge variant="outline">Unknown</Badge>;
+    }
+  };
 
   return (
     <Card>
@@ -146,14 +187,17 @@ export default function AdminAllPresentationsPage() {
                 <CardTitle className="flex items-center"><FileText className="mr-2 h-5 w-5"/> 
                 {showDeleted ? "Deleted Presentations" : "All Active Presentations"} ({filteredPresentations.length})
                 </CardTitle>
-                <CardDescription>Browse and manage presentations in the system.</CardDescription>
+                <CardDescription>Browse and manage presentations in the system. Use filters to narrow down results.</CardDescription>
             </div>
             <div className="flex items-center space-x-2">
                 <Label htmlFor="show-deleted-switch" className="text-sm font-medium">Show Deleted</Label>
                 <Switch
                     id="show-deleted-switch"
                     checked={showDeleted}
-                    onCheckedChange={setShowDeleted}
+                    onCheckedChange={(checked) => {
+                        setShowDeleted(checked);
+                        // Fetching will be triggered by useEffect dependency on showDeleted
+                    }}
                 />
             </div>
         </div>
@@ -180,7 +224,6 @@ export default function AdminAllPresentationsPage() {
                 value={teamIdFilter}
                 onChange={(e) => setTeamIdFilter(e.target.value)}
             />
-            {/* Placeholder for date filters - more complex UI needed for date pickers */}
         </div>
       </CardHeader>
       <CardContent>
@@ -197,14 +240,15 @@ export default function AdminAllPresentationsPage() {
                 <TableHead>Title</TableHead>
                 <TableHead>Creator ID</TableHead>
                 <TableHead>Team ID</TableHead>
-                <TableHead>Status</TableHead>
+                <TableHead>Access</TableHead>
+                <TableHead>Moderation</TableHead>
                 <TableHead>{showDeleted ? "Deleted At" : "Last Updated"}</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredPresentations.map((pres) => (
-                <TableRow key={pres.id} className={pres.deleted ? "opacity-60 bg-muted/30" : ""}>
+                <TableRow key={pres.id} className={pres.deleted ? "opacity-60 bg-muted/30" : pres.moderationStatus === 'taken_down' ? 'opacity-50 bg-red-50' : ''}>
                   <TableCell>
                      <Link href={`/editor/${pres.id}`} className="font-medium hover:text-primary hover:underline" title={pres.title}>
                         {pres.title.length > 30 ? `${pres.title.substring(0,27)}...` : pres.title}
@@ -217,12 +261,13 @@ export default function AdminAllPresentationsPage() {
                     {pres.settings.isPublic ? <Badge variant="secondary"><Eye className="mr-1 h-3 w-3"/>Public</Badge> : <Badge variant="outline">Private</Badge>}
                      {pres.settings.passwordProtected && <Badge variant="outline" className="ml-1">Pass</Badge>}
                   </TableCell>
+                  <TableCell>{getModerationStatusBadge(pres.moderationStatus || 'active')}</TableCell>
                   <TableCell className="text-xs">
                     {showDeleted && pres.deletedAt ? format(new Date(pres.deletedAt.toDate ? pres.deletedAt.toDate() : pres.deletedAt), 'PPp') 
                      : pres.lastUpdatedAt ? format(new Date(pres.lastUpdatedAt.toDate ? pres.lastUpdatedAt.toDate() : pres.lastUpdatedAt), 'PPp') 
                      : 'N/A'}
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-right space-x-1">
                     {showDeleted ? (
                         <>
                         <Button variant="ghost" size="sm" onClick={() => { setPresentationToAction(pres); setActionType('restore');}} title="Restore Presentation">
@@ -240,6 +285,9 @@ export default function AdminAllPresentationsPage() {
                         <Button variant="ghost" size="icon" asChild title="View Presentation">
                             <Link href={`/present/${pres.id}`} target="_blank"><LinkIcon className="h-4 w-4" /></Link>
                         </Button>
+                        <Button variant="ghost" size="icon" onClick={() => openModerationDialog(pres)} title="Change Moderation Status">
+                          <ShieldCheck className="h-4 w-4 text-blue-600" />
+                        </Button>
                         <Button variant="ghost" size="icon" onClick={() => { setPresentationToAction(pres); setActionType('delete');}} title="Soft Delete Presentation">
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
@@ -252,7 +300,7 @@ export default function AdminAllPresentationsPage() {
           </Table>
         )}
       </CardContent>
-       {presentationToAction && actionType && (
+       {presentationToAction && (actionType === 'delete' || actionType === 'restore' || actionType === 'permanentlyDelete') && (
         <AlertDialog open={!!presentationToAction} onOpenChange={(open) => !open && setPresentationToAction(null)}>
           <AlertDialogContent>
             <AlertDialogHeader>
@@ -279,6 +327,47 @@ export default function AdminAllPresentationsPage() {
           </AlertDialogContent>
         </AlertDialog>
       )}
+      <Dialog open={isModerationDialogOpen} onOpenChange={setIsModerationDialogOpen}>
+        <DialogContent>
+            <DialogHeader>
+                <DialogTitle>Change Moderation Status for "{presentationToAction?.title}"</DialogTitle>
+                <DialogDescription>Select a new status and add notes if necessary.</DialogDescription>
+            </DialogHeader>
+            <div className="py-4 space-y-4">
+                <div>
+                    <Label htmlFor="moderationStatusSelect">Status</Label>
+                    <Select value={currentModerationStatus} onValueChange={(value) => setCurrentModerationStatus(value as PresentationModerationStatus)}>
+                        <SelectTrigger id="moderationStatusSelect">
+                            <SelectValue placeholder="Select status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="active">Active</SelectItem>
+                            <SelectItem value="under_review">Under Review</SelectItem>
+                            <SelectItem value="taken_down">Taken Down</SelectItem>
+                        </SelectContent>
+                    </Select>
+                </div>
+                <div>
+                    <Label htmlFor="moderationNotesText">Notes (Optional)</Label>
+                    <Textarea 
+                        id="moderationNotesText"
+                        value={moderationNotes}
+                        onChange={(e) => setModerationNotes(e.target.value)}
+                        placeholder="Reason for status change, details..."
+                        rows={3}
+                    />
+                </div>
+            </div>
+            <DialogFooter>
+                <Button variant="outline" onClick={() => setIsModerationDialogOpen(false)} disabled={isLoading}>Cancel</Button>
+                <Button onClick={handleChangeModerationStatus} disabled={isLoading}>
+                     {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : "Save Status"}
+                </Button>
+            </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
+
+    

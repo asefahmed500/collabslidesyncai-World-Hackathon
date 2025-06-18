@@ -64,6 +64,7 @@ export interface Team {
 
 export type SlideElementType = 'text' | 'image' | 'shape' | 'chart' | 'icon';
 export type PresentationAccessRole = 'owner' | 'editor' | 'viewer';
+export type PresentationModerationStatus = 'active' | 'under_review' | 'taken_down';
 
 export interface SlideElementStyle {
   color?: string;
@@ -149,6 +150,8 @@ export interface Presentation {
   activeCollaborators?: { [userId: string]: ActiveCollaboratorInfo }; // Map of active users
   deleted?: boolean; // For soft delete
   deletedAt?: FirestoreTimestamp | null; // Timestamp of soft delete
+  moderationStatus: PresentationModerationStatus; // New field
+  moderationNotes?: string; // Optional notes related to moderation
 }
 
 export type TeamActivityType =
@@ -161,6 +164,7 @@ export type TeamActivityType =
   | 'presentation_deleted' // This could now mean soft or permanent delete depending on context
   | 'presentation_restored'
   | 'presentation_permanently_deleted'
+  | 'presentation_status_changed' // For moderation status changes
   | 'asset_uploaded'
   | 'asset_deleted';
 
@@ -184,6 +188,9 @@ export interface TeamActivity {
     presentationTitle?: string;
     fileName?: string;
     assetType?: AssetType;
+    oldStatus?: PresentationModerationStatus;
+    newStatus?: PresentationModerationStatus;
+    moderationNotes?: string;
     [key: string]: any;
   };
   createdAt: Date;
@@ -204,7 +211,8 @@ export type PresentationActivityType =
   | 'presentation_created'
   | 'presentation_deleted' // Soft delete
   | 'presentation_restored'
-  | 'presentation_permanently_deleted';
+  | 'presentation_permanently_deleted'
+  | 'moderation_status_changed';
 
 
 export interface PresentationActivity {
@@ -227,6 +235,9 @@ export interface PresentationActivity {
     elementType?: SlideElementType;
     elementId?: string;
     changedProperty?: string;
+    oldStatus?: PresentationModerationStatus;
+    newStatus?: PresentationModerationStatus;
+    moderationNotes?: string;
     [key: string]: any;
   };
   createdAt: FirestoreTimestamp;
@@ -260,6 +271,7 @@ export type NotificationType =
   | 'comment_mention' // For @mentions, future enhancement
   | 'presentation_shared'
   | 'ai_suggestion_ready' // Placeholder
+  | 'moderation_update' // For moderation status changes
   | 'generic_info'; // For general app info/updates
 
 export interface Notification {
@@ -276,3 +288,6 @@ export interface Notification {
   actorName?: string; // Name of the actor (optional)
   actorProfilePictureUrl?: string; // Profile picture of the actor (optional)
 }
+
+
+    

@@ -14,7 +14,7 @@ import { CollaborationBar } from '@/components/editor/CollaborationBar';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import type { Presentation, Slide, SlideElement, SlideComment, ActiveCollaboratorInfo, User as AppUser, SlideElementType, PresentationActivity } from '@/types';
-import { AlertTriangle, Home, RotateCcw, Save, Share2, Users, FileText, Loader2, Zap, WifiOff, ShieldAlert, Sparkles, LayoutTemplate, Trash2, Copy } from 'lucide-react';
+import { AlertTriangle, Home, RotateCcw, Save, Share2, Users, FileText, Loader2, Zap, WifiOff, ShieldAlert, Sparkles, LayoutTemplate, Trash2, Copy, ShieldX } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
   AlertDialog,
@@ -53,7 +53,8 @@ import {
   releaseExpiredLocks,
   getNextUserColor,
   logPresentationActivity,
-  getPresentationById,
+  getPresentationById, // Using this for normal user access
+  getPresentationByIdAdmin, // Admins might need to see full data even if taken down
   uuidv4,
 } from '@/lib/firestoreService';
 import { doc, onSnapshot, Timestamp } from 'firebase/firestore';
@@ -85,6 +86,7 @@ export default function EditorPage() {
   const [isShareDialogOpen, setIsShareDialogOpen] = useState(false);
   const [isPasswordPromptOpen, setIsPasswordPromptOpen] = useState(false);
   const [accessDenied, setAccessDenied] = useState(false);
+  const [isTakenDown, setIsTakenDown] = useState(false);
   const [passwordVerifiedInSession, setPasswordVerifiedInSession] = useState(false);
   const [slideToDelete, setSlideToDelete] = useState<Slide | null>(null);
   const [showTemplatesDialog, setShowTemplatesDialog] = useState(false);
@@ -114,6 +116,14 @@ export default function EditorPage() {
   }, [currentUser]);
 
   const checkAccessAndLoad = useCallback(async (presData: Presentation, user: AppUser | null) => {
+    if (presData.moderationStatus === 'taken_down' && (!user || !user.isAppAdmin)) {
+        setIsTakenDown(true);
+        setAccessDenied(true); // Access denied if taken down for non-admins
+        toast({ title: "Presentation Unavailable", description: "This presentation is currently unavailable.", variant: "destructive" });
+        return false;
+    }
+    setIsTakenDown(false);
+
     let hasAccess = false;
     let accessMethod: PresentationActivity['details']['accessMethod'] = 'direct';
 
@@ -134,24 +144,22 @@ export default function EditorPage() {
         hasAccess = true;
         accessMethod = presData.teamId === user.teamId && presData.creatorId !== user.id ? 'team_access' : 'direct';
       } else if (presData.teamId && presData.teamId === user.teamId) {
-         // Check if user is part of the team, assumes basic view access for team members
-         // For more granular control, team role checks against presentation access map might be needed
          hasAccess = true;
          accessMethod = 'team_access';
       }
     }
 
-    if (hasAccess) {
+    if (hasAccess || (user && user.isAppAdmin)) { // Platform Admins can always access (unless taken down and they are not admin)
       setAccessDenied(false);
-      if (user) {
+      if (user && !(user.isAppAdmin && presData.creatorId !== user.id)) { // Don't log admin views as 'presentation_viewed' by default unless they are a collaborator
          logPresentationActivity(presData.id, user.id, 'presentation_viewed', { accessMethod });
-      } else if (presData.settings.isPublic && !presData.settings.passwordProtected) {
+      } else if (presData.settings.isPublic && !presData.settings.passwordProtected && !user) { // Log anonymous public views
          logPresentationActivity(presData.id, 'guest', 'presentation_viewed', { accessMethod: 'public_link_anonymous' });
       }
       return true;
     } else {
       setAccessDenied(true);
-      toast({ title: "Access Denied", description: "You don't have permission to view this presentation.", variant: "destructive" });
+      toast({ title: "Access Denied", description: "You don't have permission to view or edit this presentation.", variant: "destructive" });
       return false;
     }
   }, [toast]);
@@ -173,6 +181,7 @@ export default function EditorPage() {
           const presentationWithDefaults: Presentation = {
             id: docSnap.id,
             ...data,
+            moderationStatus: data.moderationStatus || 'active',
             slides: (data.slides || []).map(slide => ({
               ...slide,
               backgroundColor: slide.backgroundColor || '#FFFFFF',
@@ -353,9 +362,9 @@ export default function EditorPage() {
       setCurrentSlideId(newSlideId);
       setSelectedElementId(null);
       logPresentationActivity(presentation.id, currentUser.id, 'element_added', { elementType: 'slide', elementId: newSlideId });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error adding slide:", error);
-      toast({ title: "Error", description: "Could not add slide.", variant: "destructive" });
+      toast({ title: "Error", description: error.message || "Could not add slide.", variant: "destructive" });
     } finally {
       setIsSaving(false);
     }
@@ -389,9 +398,9 @@ export default function EditorPage() {
       } else {
          toast({ title: "Error", description: "Slide not found or could not be deleted.", variant: "destructive" });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error deleting slide:", error);
-      toast({ title: "Error", description: "Could not delete slide.", variant: "destructive" });
+      toast({ title: "Error", description: error.message || "Could not delete slide.", variant: "destructive" });
     } finally {
       setIsSaving(false);
       setSlideToDelete(null);
@@ -411,9 +420,9 @@ export default function EditorPage() {
       } else {
         toast({ title: "Error", description: "Could not duplicate slide.", variant: "destructive" });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error duplicating slide:", error);
-      toast({ title: "Error", description: "Could not duplicate slide.", variant: "destructive" });
+      toast({ title: "Error", description: error.message || "Could not duplicate slide.", variant: "destructive" });
     } finally {
       setIsSaving(false);
     }
@@ -430,9 +439,9 @@ export default function EditorPage() {
       } else {
         toast({ title: "Error", description: "Could not move slide or no change made.", variant: "default" });
       }
-    } catch (error) {
+    } catch (error: any) {
        console.error("Error moving slide:", error);
-       toast({ title: "Error Moving Slide", description: "Could not move slide.", variant: "destructive"});
+       toast({ title: "Error Moving Slide", description: error.message || "Could not move slide.", variant: "destructive"});
     } finally {
        setIsSaving(false);
     }
@@ -489,9 +498,9 @@ export default function EditorPage() {
         const newElementId = await apiAddElementToSlide(presentation.id, currentSlideId, newElementPartial);
         await handleElementSelect(newElementId); // Acquire lock on the new element
         logPresentationActivity(presentation.id, currentUser.id, 'element_added', { elementType: newElementPartial.type, elementId: newElementId });
-    } catch (error) {
+    } catch (error: any) {
         console.error("Error adding element:", error);
-        toast({ title: "Error Adding Element", description: "Could not add the element.", variant: "destructive" });
+        toast({ title: "Error Adding Element", description: error.message || "Could not add the element.", variant: "destructive" });
     }
     setSelectedTool(null);
   };
@@ -515,9 +524,9 @@ export default function EditorPage() {
         if (selectedElementId === elementId) {
             setSelectedElementId(null); // Deselect
         }
-    } catch (error) {
+    } catch (error: any) {
         console.error("Error deleting element:", error);
-        toast({ title: "Error Deleting Element", variant: "destructive" });
+        toast({ title: "Error Deleting Element", description: error.message || "Could not delete element.", variant: "destructive" });
     }
   };
 
@@ -527,7 +536,6 @@ export default function EditorPage() {
 
     const targetElement = presentation.slides.find(s => s.id === currentSlideId)?.elements.find(el => el.id === updatedElementPartial.id);
     if (targetElement && targetElement.lockedBy && targetElement.lockedBy !== currentUser.id) {
-        // This check is also in apiUpdateElement, but good to have client-side too.
         const locker = presentation.activeCollaborators?.[targetElement.lockedBy!]?.name || "another user";
         toast({ title: "Update Failed", description: `Element is locked by ${locker}.`, variant: "destructive" });
         return;
@@ -554,9 +562,9 @@ export default function EditorPage() {
     try {
       await apiAddComment(presentation.id, currentSlideId, newCommentData);
       toast({ title: "Comment Added"});
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error adding comment:", error);
-      toast({ title: "Error", description: "Could not post comment.", variant: "destructive" });
+      toast({ title: "Error", description: error.message || "Could not post comment.", variant: "destructive" });
     } finally {
       setIsSaving(false);
     }
@@ -568,9 +576,9 @@ export default function EditorPage() {
     try {
       await apiResolveComment(presentation.id, currentSlideId, commentId);
       toast({ title: "Comment Resolved"});
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error resolving comment:", error);
-      toast({ title: "Error", description: "Could not resolve comment.", variant: "destructive" });
+      toast({ title: "Error", description: error.message || "Could not resolve comment.", variant: "destructive" });
     } finally {
       setIsSaving(false);
     }
@@ -585,9 +593,9 @@ export default function EditorPage() {
       });
       toast({ title: "Presentation Title Saved", description: "Your title change has been saved."});
       logPresentationActivity(presentation.id, currentUser.id, 'sharing_settings_updated', { changedProperty: 'title' });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving presentation title:", error);
-      toast({ title: "Save Error", description: "Could not save presentation title.", variant: "destructive" });
+      toast({ title: "Save Error", description: error.message || "Could not save presentation title.", variant: "destructive" });
     } finally {
       setIsSaving(false);
     }
@@ -601,9 +609,9 @@ export default function EditorPage() {
     try {
         await apiUpdatePresentation(presentation.id, { slides: updatedSlides });
         logPresentationActivity(presentation.id, currentUser.id, 'slide_background_updated', { slideId: currentSlideId, newColor: color });
-    } catch (e) {
+    } catch (e: any) {
         console.error("Error updating slide background:", e);
-        toast({title: "Error", description: "Could not update slide background.", variant: "destructive"})
+        toast({title: "Error", description: e.message || "Could not update slide background.", variant: "destructive"})
     }
   };
 
@@ -620,14 +628,14 @@ export default function EditorPage() {
   };
 
   const handleApplyAITextUpdate = (elementId: string, newContent: string) => {
-    if (selectedElement && selectedElement.id === elementId && onApplyAITextUpdate) { // onApplyAITextUpdate is a local var here, should be handleUpdateElement
+    if (selectedElement && selectedElement.id === elementId) { 
         handleUpdateElement({ id: elementId, content: newContent });
         toast({title: "AI Update Applied", description: "Text element updated with AI suggestion."});
     }
   };
 
   const handleApplyAISpeakerNotes = (notes: string) => {
-    if (presentation && currentSlideId && onApplyAISpeakerNotes) { // onApplyAISpeakerNotes is local var
+    if (presentation && currentSlideId) { 
         const updatedSlides = presentation.slides.map(s =>
             s.id === currentSlideId ? { ...s, speakerNotes: notes } : s
         );
@@ -636,24 +644,24 @@ export default function EditorPage() {
     }
   };
 
-  const handlePasswordVerified = () => {
+  const handlePasswordVerified = async () => {
     setPasswordVerifiedInSession(true);
     sessionStorage.setItem(`passwordVerified_${presentationId}`, 'true');
     setIsPasswordPromptOpen(false);
     setIsLoading(true); // Trigger re-evaluation of access and data loading
-    if (presentation && currentUser) { // Log access after successful password verification
-        logPresentationActivity(presentation.id, currentUser.id, 'presentation_viewed', { accessMethod: 'public_link_password' });
-    } else if (presentation) { // For guest users
-        logPresentationActivity(presentation.id, 'guest_password_verified', 'presentation_viewed', { accessMethod: 'public_link_password' });
+    
+    const presDataToLog = presentation || await getPresentationByIdAdmin(presentationId); // Ensure we have presentation data
+
+    if (presDataToLog && currentUser) { 
+        logPresentationActivity(presDataToLog.id, currentUser.id, 'presentation_viewed', { accessMethod: 'public_link_password' });
+    } else if (presDataToLog) { 
+        logPresentationActivity(presDataToLog.id, 'guest_password_verified', 'presentation_viewed', { accessMethod: 'public_link_password' });
     }
+    
     // Re-fetch or re-evaluate access based on presentation data already loaded or to be reloaded by listener
-    getPresentationById(presentationId).then(async (presData) => {
-        if (presData) {
-            setPresentation(presData); // Ensure local state is up-to-date
-            await checkAccessAndLoad(presData, currentUser); // Re-check access
-            setIsLoading(false);
-        }
-    });
+    // The onSnapshot listener should re-evaluate access if presentation data changes or if passwordVerifiedInSession changes.
+    // No explicit fetch needed here as the listener should pick up.
+    setIsLoading(false); // Allow UI to proceed
   };
 
   if (authLoading || isLoading) {
@@ -683,6 +691,22 @@ export default function EditorPage() {
                 <p className="mt-2 text-muted-foreground">Awaiting password...</p>
             </div>
         </>
+    );
+  }
+
+  if (isTakenDown) {
+     return (
+      <div className="flex flex-col items-center justify-center min-h-screen">
+        <SiteHeader />
+        <div className="flex-grow flex flex-col items-center justify-center text-center p-8">
+            <ShieldX className="w-16 h-16 text-destructive mb-4" />
+            <h1 className="font-headline text-3xl mb-2">Presentation Unavailable</h1>
+            <p className="text-muted-foreground mb-6">This presentation has been taken down by an administrator.</p>
+            <Button onClick={() => router.push('/dashboard')}>
+                <Home className="mr-2 h-4 w-4" /> Go to Dashboard
+            </Button>
+        </div>
+      </div>
     );
   }
 
@@ -910,3 +934,5 @@ export default function EditorPage() {
     </div>
   );
 }
+
+    

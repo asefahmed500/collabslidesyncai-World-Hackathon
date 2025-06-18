@@ -24,7 +24,7 @@ import {
   Unsubscribe,
 } from 'firebase/firestore';
 import { ref, deleteObject } from 'firebase/storage';
-import type { Presentation, Slide, SlideElement, SlideComment, User, Team, ActiveCollaboratorInfo, TeamRole, TeamMember, TeamActivity, TeamActivityType, PresentationActivity, PresentationActivityType, PresentationAccessRole, Asset, AssetType, SlideElementType, Notification, NotificationType as NotificationEnumType } from '@/types';
+import type { Presentation, Slide, SlideElement, SlideComment, User, Team, ActiveCollaboratorInfo, TeamRole, TeamMember, TeamActivity, TeamActivityType, PresentationActivity, PresentationActivityType, PresentationAccessRole, Asset, AssetType, SlideElementType, Notification, NotificationType as NotificationEnumType, PresentationModerationStatus } from '@/types';
 import { logTeamActivityInMongoDB } from './mongoTeamService';
 import { getUserByEmailFromMongoDB } from './mongoUserService'; // Correctly points to MongoDB service
 import { v4 as uuidv4 } from 'uuid';
@@ -107,6 +107,8 @@ export async function createPresentation(userId: string, title: string, teamId?:
     version: 1,
     deleted: false,
     deletedAt: null,
+    moderationStatus: 'active', // Initialize moderation status
+    moderationNotes: '',
     createdAt: serverTimestamp() as Timestamp,
     lastUpdatedAt: serverTimestamp() as Timestamp,
     slides: [newSlide],
@@ -128,7 +130,10 @@ export async function createPresentation(userId: string, title: string, teamId?:
 }
 
 export async function getPresentationsForUser(userId: string, userTeamId?: string | null): Promise<Presentation[]> {
-  const baseConditions = [ where('deleted', '==', false) ];
+  const baseConditions = [ 
+    where('deleted', '==', false),
+    where('moderationStatus', '!=', 'taken_down') // Exclude taken_down presentations from normal user view
+  ];
   const userSpecificConditions = [
     where('creatorId', '==', userId),
     where(`access.${userId}`, 'in', ['owner', 'editor', 'viewer'])
@@ -159,14 +164,28 @@ export async function getPresentationById(presentationId: string): Promise<Prese
   const docRef = doc(db, 'presentations', presentationId);
   const docSnap = await getDoc(docRef);
   if (docSnap.exists()) {
-    const data = docSnap.data();
-    if (data.deleted) return null; // Do not return soft-deleted presentations by default
+    const data = docSnap.data() as Presentation;
+    if (data.deleted) return null; // Do not return soft-deleted presentations
+    // For normal users, also check moderation status before returning
+    // Admins might use a different function to bypass this
+    if (data.moderationStatus === 'taken_down') {
+        // Return a minimal object or null to indicate it's taken down
+        return {
+            id: docSnap.id,
+            title: data.title,
+            moderationStatus: 'taken_down',
+            creatorId: data.creatorId,
+            settings: { isPublic: false, passwordProtected: false, commentsAllowed: false },
+            slides: [], // No content for taken down items
+        } as Presentation;
+    }
     return { id: docSnap.id, ...convertTimestamps(data) } as Presentation;
   }
   return null;
 }
-// For admin or recovery purposes, allows fetching a presentation even if soft-deleted
-export async function getPresentationByIdIncludeDeleted(presentationId: string): Promise<Presentation | null> {
+
+// For admin or recovery purposes, allows fetching a presentation even if soft-deleted or taken down
+export async function getPresentationByIdAdmin(presentationId: string): Promise<Presentation | null> {
   const docRef = doc(db, 'presentations', presentationId);
   const docSnap = await getDoc(docRef);
   if (docSnap.exists()) {
@@ -245,7 +264,7 @@ export async function updatePresentation(presentationId: string, data: Partial<P
 export async function deletePresentation(presentationId: string, teamId?: string, actorId?: string): Promise<void> {
   // Soft delete
   const docRef = doc(db, 'presentations', presentationId);
-  const pres = await getPresentationByIdIncludeDeleted(presentationId); // Fetch even if already soft-deleted to get title
+  const pres = await getPresentationByIdAdmin(presentationId); // Fetch even if already soft-deleted to get title
   await updateDoc(docRef, {
     deleted: true,
     deletedAt: serverTimestamp(),
@@ -265,10 +284,12 @@ export async function restorePresentation(presentationId: string, actorId: strin
   const docRef = doc(db, 'presentations', presentationId);
   await updateDoc(docRef, {
     deleted: false,
-    deletedAt: null, // or deleteField() if you prefer to remove the field entirely
-    lastUpdatedAt: serverTimestamp()
+    deletedAt: deleteField(), 
+    lastUpdatedAt: serverTimestamp(),
+    moderationStatus: 'active', // Also restore moderation status if it was taken down due to deletion
+    moderationNotes: 'Presentation restored from deletion.'
   });
-  const pres = await getPresentationByIdIncludeDeleted(presentationId);
+  const pres = await getPresentationByIdAdmin(presentationId);
   if (pres) {
       await logPresentationActivity(presentationId, actorId, 'presentation_restored', { presentationTitle: pres.title });
       if (pres.teamId) {
@@ -279,7 +300,7 @@ export async function restorePresentation(presentationId: string, actorId: strin
 
 export async function permanentlyDeletePresentation(presentationId: string, actorId?: string): Promise<void> {
   const docRef = doc(db, 'presentations', presentationId);
-  const pres = await getPresentationByIdIncludeDeleted(presentationId); // Get details before deleting
+  const pres = await getPresentationByIdAdmin(presentationId); // Get details before deleting
   await deleteDoc(docRef);
 
   // TODO: Delete associated assets from storage if any are directly tied (might be complex)
@@ -294,6 +315,39 @@ export async function permanentlyDeletePresentation(presentationId: string, acto
   }
 }
 
+export async function updatePresentationModerationStatus(
+  presentationId: string,
+  status: PresentationModerationStatus,
+  actorId: string,
+  notes?: string
+): Promise<void> {
+  const docRef = doc(db, 'presentations', presentationId);
+  const pres = await getPresentationByIdAdmin(presentationId);
+  if (!pres) throw new Error("Presentation not found to update moderation status.");
+
+  const oldStatus = pres.moderationStatus;
+  await updateDoc(docRef, {
+    moderationStatus: status,
+    moderationNotes: notes || (status === 'active' ? 'Moderation status reset to active.' : ''), // Clear notes if reactivated without new ones
+    lastUpdatedAt: serverTimestamp()
+  });
+  await logPresentationActivity(presentationId, actorId, 'moderation_status_changed', {
+    presentationTitle: pres.title,
+    oldStatus: oldStatus,
+    newStatus: status,
+    moderationNotes: notes
+  });
+  if (pres.teamId) {
+     await logTeamActivityInMongoDB(pres.teamId, actorId, 'presentation_status_changed', {
+        presentationTitle: pres.title,
+        oldStatus: oldStatus,
+        newStatus: status,
+        moderationNotes: notes
+    }, 'presentation', presentationId);
+  }
+}
+
+
 export async function addSlideToPresentation(presentationId: string, newSlideData: Partial<Omit<Slide, 'id' | 'presentationId' | 'slideNumber'>> = {}): Promise<string> {
   const presRef = doc(db, 'presentations', presentationId);
   return await runTransaction(db, async (transaction) => {
@@ -301,7 +355,7 @@ export async function addSlideToPresentation(presentationId: string, newSlideDat
     if (!presDoc.exists()) throw new Error("Presentation not found");
 
     const presentationData = presDoc.data() as Presentation;
-    if (presentationData.deleted) throw new Error("Cannot modify a deleted presentation.");
+    if (presentationData.deleted || presentationData.moderationStatus === 'taken_down') throw new Error("Cannot modify this presentation.");
     let currentSlides = presentationData.slides || [];
 
     const slideId = uuidv4();
@@ -338,7 +392,7 @@ export async function deleteSlideFromPresentation(presentationId: string, slideI
     if (!presDoc.exists()) throw new Error("Presentation not found");
 
     const presentationData = presDoc.data() as Presentation;
-    if (presentationData.deleted) throw new Error("Cannot modify a deleted presentation.");
+    if (presentationData.deleted || presentationData.moderationStatus === 'taken_down') throw new Error("Cannot modify this presentation.");
     let slides = presentationData.slides || [];
     const initialLength = slides.length;
 
@@ -362,7 +416,7 @@ export async function duplicateSlideInPresentation(presentationId: string, slide
     if (!presDoc.exists()) throw new Error("Presentation not found");
 
     const presentationData = presDoc.data() as Presentation;
-    if (presentationData.deleted) throw new Error("Cannot modify a deleted presentation.");
+    if (presentationData.deleted || presentationData.moderationStatus === 'taken_down') throw new Error("Cannot modify this presentation.");
     let slides = presentationData.slides || [];
     const originalSlideIndex = slides.findIndex(s => s.id === slideIdToDuplicate);
 
@@ -404,7 +458,7 @@ export async function moveSlideInPresentation(presentationId: string, slideId: s
     if (!presDoc.exists()) throw new Error("Presentation not found");
 
     const presentationData = presDoc.data() as Presentation;
-    if (presentationData.deleted) throw new Error("Cannot modify a deleted presentation.");
+    if (presentationData.deleted || presentationData.moderationStatus === 'taken_down') throw new Error("Cannot modify this presentation.");
     let slides = [...(presentationData.slides || [])];
     const currentIndex = slides.findIndex(s => s.id === slideId);
 
@@ -445,7 +499,7 @@ export async function addElementToSlide(presentationId: string, slideId: string,
     const presDoc = await transaction.get(presRef);
     if (!presDoc.exists()) throw new Error("Presentation not found");
     const presentationData = presDoc.data() as Presentation;
-    if (presentationData.deleted) throw new Error("Cannot modify a deleted presentation.");
+    if (presentationData.deleted || presentationData.moderationStatus === 'taken_down') throw new Error("Cannot modify this presentation.");
     const slides = presentationData.slides || [];
     const slideIndex = slides.findIndex(s => s.id === slideId);
 
@@ -467,7 +521,7 @@ export async function deleteElementFromSlide(presentationId: string, slideId: st
     const presDoc = await transaction.get(presRef);
     if (!presDoc.exists()) throw new Error("Presentation not found");
     const presentationData = presDoc.data() as Presentation;
-    if (presentationData.deleted) throw new Error("Cannot modify a deleted presentation.");
+    if (presentationData.deleted || presentationData.moderationStatus === 'taken_down') throw new Error("Cannot modify this presentation.");
     const slides = presentationData.slides || [];
     const slideIndex = slides.findIndex(s => s.id === slideId);
 
@@ -490,7 +544,7 @@ export async function updateElementInSlide(presentationId: string, slideId: stri
     const presDoc = await transaction.get(presRef);
     if (!presDoc.exists()) throw new Error(`Presentation ${presentationId} not found.`);
     const presentation = presDoc.data() as Presentation;
-    if (presentation.deleted) throw new Error("Cannot modify a deleted presentation.");
+    if (presentation.deleted || presentation.moderationStatus === 'taken_down') throw new Error("Cannot modify this presentation.");
     let slideFound = false;
     const updatedSlides = presentation.slides.map(s => {
       if (s.id === slideId) {
@@ -542,7 +596,7 @@ export async function addCommentToSlide(presentationId: string, slideId: string,
     const presDoc = await transaction.get(presRef);
     if (!presDoc.exists()) throw new Error("Presentation not found");
     const presentationData = presDoc.data() as Presentation;
-    if (presentationData.deleted) throw new Error("Cannot add comments to a deleted presentation.");
+    if (presentationData.deleted || presentationData.moderationStatus === 'taken_down') throw new Error("Cannot add comments to this presentation.");
     const slides = (presentationData?.slides || []);
     const slideIndex = slides.findIndex(s => s.id === slideId);
     if (slideIndex > -1) {
@@ -577,7 +631,7 @@ export async function resolveCommentOnSlide(presentationId: string, slideId: str
     const presDoc = await transaction.get(presRef);
     if (!presDoc.exists()) throw new Error("Presentation not found");
     const presentationData = presDoc.data() as Presentation;
-    if (presentationData.deleted) throw new Error("Cannot modify comments in a deleted presentation.");
+    if (presentationData.deleted || presentationData.moderationStatus === 'taken_down') throw new Error("Cannot modify comments in this presentation.");
     const slides = (presentationData?.slides || []);
     const slideIndex = slides.findIndex(s => s.id === slideId);
     if (slideIndex > -1) {
@@ -639,7 +693,7 @@ export async function acquireLock(presentationId: string, slideId: string, eleme
         const presDoc = await transaction.get(presRef);
         if (!presDoc.exists()) throw new Error("Presentation not found for lock.");
         const presentation = presDoc.data() as Presentation;
-        if (presentation.deleted) throw new Error("Cannot lock elements in a deleted presentation.");
+        if (presentation.deleted || presentation.moderationStatus === 'taken_down') throw new Error("Cannot lock elements in this presentation.");
         let lockAcquired = false; let alreadyLockedByOther = false;
         const updatedSlides = presentation.slides.map(s => {
           if (s.id === slideId) {
@@ -689,7 +743,7 @@ export async function releaseExpiredLocks(presentationId: string): Promise<void>
     await runTransaction(db, async (transaction) => {
         const presDoc = await transaction.get(presRef); if (!presDoc.exists()) return;
         const presentation = presDoc.data() as Presentation;
-        if (presentation.deleted) return; // Don't bother with locks on deleted presentations
+        if (presentation.deleted || presentation.moderationStatus === 'taken_down') return;
         let locksReleased = false;
         const now = Date.now();
         const updatedSlides = presentation.slides.map(s => {
@@ -843,6 +897,8 @@ export async function getAllPresentationsForAdmin(includeDeleted = false): Promi
   if (includeDeleted) {
     q = query(presentationsCollection, where('deleted', '==', true), orderBy('deletedAt', 'desc'));
   } else {
+    // When not including deleted, also filter out 'taken_down' for the general admin view
+    // A specific function or parameter could be added if admins need to see 'taken_down' separately from 'deleted'.
     q = query(presentationsCollection, where('deleted', '==', false), orderBy('lastUpdatedAt', 'desc'));
   }
   const snapshot = await getDocs(q);
@@ -869,3 +925,6 @@ export async function removeTeamIdFromPresentations(teamId: string): Promise<voi
 
 export { getNextUserColor };
 export { uuidv4 };
+
+
+    

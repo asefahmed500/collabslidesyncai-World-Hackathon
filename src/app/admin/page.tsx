@@ -2,7 +2,7 @@
 "use client";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { BarChart, Users, Shield, CreditCard, Activity, FileText } from "lucide-react";
+import { BarChart, Users, Shield, CreditCard, Activity, FileText, ShieldAlertIcon } from "lucide-react";
 import Link from "next/link";
 
 export default function AdminDashboardPage() {
@@ -54,6 +54,21 @@ export default function AdminDashboardPage() {
               <div className="text-2xl font-bold">Manage Presentations</div>
               <p className="text-xs text-muted-foreground">
                 View and manage all presentations in the system.
+              </p>
+            </CardContent>
+          </Card>
+        </Link>
+        
+        <Link href="/admin/moderation" passHref>
+          <Card className="hover:shadow-lg transition-shadow cursor-pointer">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Content Moderation</CardTitle>
+              <ShieldAlertIcon className="h-5 w-5 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">Review Content</div>
+              <p className="text-xs text-muted-foreground">
+                (Manage flagged content - Placeholder)
               </p>
             </CardContent>
           </Card>
@@ -122,3 +137,5 @@ export default function AdminDashboardPage() {
     </div>
   );
 }
+
+    
