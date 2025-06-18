@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect } from 'react';
@@ -18,7 +19,7 @@ export default function AdminLayout({
 
   useEffect(() => {
     if (!loading && (!currentUser || !currentUser.isAppAdmin)) {
-      router.push('/dashboard'); // Or a dedicated "access denied" page
+      router.push('/dashboard'); // Redirect non-admins or unauthenticated users
     }
   }, [currentUser, loading, router]);
 
@@ -32,6 +33,8 @@ export default function AdminLayout({
   }
 
   if (!currentUser || !currentUser.isAppAdmin) {
+    // This block handles users who are definitively not admins or not logged in
+    // after the loading phase.
     return (
        <div className="flex min-h-screen flex-col items-center justify-center p-6 text-center">
         <ShieldAlert className="h-16 w-16 text-destructive mb-4" />
@@ -42,6 +45,7 @@ export default function AdminLayout({
     );
   }
 
+  // If execution reaches here, user is authenticated and is an admin.
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
