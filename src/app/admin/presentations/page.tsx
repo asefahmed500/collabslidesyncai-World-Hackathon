@@ -3,13 +3,15 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import type { Presentation, PresentationModerationStatus } from '@/types';
-import { 
-  getAllPresentationsForAdmin, 
-  deletePresentation as apiSoftDeletePresentation,
-  restorePresentation as apiRestorePresentation,
-  permanentlyDeletePresentation as apiPermanentlyDeletePresentation,
-  updatePresentationModerationStatus // New service
-} from '@/lib/firestoreService'; 
+// Removed direct firestoreService imports for these actions
+// import { 
+//   getAllPresentationsForAdmin, 
+//   deletePresentation as apiSoftDeletePresentation,
+//   restorePresentation as apiRestorePresentation,
+//   permanentlyDeletePresentation as apiPermanentlyDeletePresentation,
+//   updatePresentationModerationStatus // New service
+// } from '@/lib/firestoreService'; 
+import { getAllPresentationsForAdmin } from '@/lib/firestoreService'; // Keep this for fetching
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
@@ -34,9 +36,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 
 type ActionType = 'delete' | 'restore' | 'permanentlyDelete' | 'changeModeration';
@@ -59,6 +60,7 @@ export default function AdminAllPresentationsPage() {
   const [isModerationDialogOpen, setIsModerationDialogOpen] = useState(false);
   const [currentModerationStatus, setCurrentModerationStatus] = useState<PresentationModerationStatus>('active');
   const [moderationNotes, setModerationNotes] = useState('');
+  const [isSubmittingAction, setIsSubmittingAction] = useState(false);
 
 
   const fetchPresentations = useCallback(async () => {
@@ -99,44 +101,73 @@ export default function AdminAllPresentationsPage() {
   const handleActionConfirm = async () => {
     if (!presentationToAction || !actionType || !currentUser || !currentUser.isAppAdmin) return;
     
-    setIsLoading(true); 
+    setIsSubmittingAction(true); 
+    let success = false;
+    let message = "";
+
     try {
-      let message = "";
+      let response;
+      let url = `/api/admin/presentations/${presentationToAction.id}`;
+      const actorQueryParam = `?actorUserId=${currentUser.id}`;
+
       if (actionType === 'delete') {
-        await apiSoftDeletePresentation(presentationToAction.id, presentationToAction.teamId, currentUser.id);
-        message = `"${presentationToAction.title}" has been soft-deleted.`;
+        response = await fetch(`${url}${actorQueryParam}`, { method: 'DELETE' });
       } else if (actionType === 'restore') {
-        await apiRestorePresentation(presentationToAction.id, currentUser.id);
-        message = `"${presentationToAction.title}" has been restored.`;
+        response = await fetch(`${url}/restore${actorQueryParam}`, { method: 'POST' });
       } else if (actionType === 'permanentlyDelete') {
-        await apiPermanentlyDeletePresentation(presentationToAction.id, currentUser.id);
-        message = `"${presentationToAction.title}" has been permanently deleted.`;
+        response = await fetch(`${url}${actorQueryParam}&permanent=true`, { method: 'DELETE' });
+      } else {
+        setIsSubmittingAction(false);
+        return;
       }
-      toast({ title: "Action Successful", description: message });
-      fetchPresentations(); 
+
+      const result = await response.json();
+      success = result.success;
+      message = result.message;
+
+      if (success) {
+        toast({ title: "Action Successful", description: message });
+        fetchPresentations(); 
+      } else {
+        toast({ title: "Action Failed", description: message, variant: "destructive" });
+      }
     } catch (error: any) {
       console.error(`Error performing ${actionType} on presentation:`, error);
       toast({ title: "Error", description: error.message || `Could not perform ${actionType} action.`, variant: "destructive" });
     } finally {
       setPresentationToAction(null);
       setActionType(null);
-      setIsLoading(false);
+      setIsSubmittingAction(false);
     }
   };
 
   const handleChangeModerationStatus = async () => {
     if (!presentationToAction || !currentUser || !currentUser.isAppAdmin) return;
-    setIsLoading(true);
+    setIsSubmittingAction(true);
     try {
-      await updatePresentationModerationStatus(presentationToAction.id, currentModerationStatus, currentUser.id, moderationNotes);
-      toast({ title: "Moderation Status Updated", description: `Status for "${presentationToAction.title}" changed to ${currentModerationStatus}.` });
-      setIsModerationDialogOpen(false);
-      fetchPresentations(); // Refresh list
+      const response = await fetch(`/api/admin/presentations/${presentationToAction.id}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            status: currentModerationStatus, 
+            notes: moderationNotes,
+            actorUserId: currentUser.id 
+        }),
+      });
+      const result = await response.json();
+
+      if (result.success) {
+        toast({ title: "Moderation Status Updated", description: result.message });
+        setIsModerationDialogOpen(false);
+        fetchPresentations(); // Refresh list
+      } else {
+        toast({ title: "Error", description: result.message || "Could not update moderation status.", variant: "destructive" });
+      }
     } catch (error: any) {
       console.error("Error updating moderation status:", error);
       toast({ title: "Error", description: error.message || "Could not update moderation status.", variant: "destructive" });
     } finally {
-      setIsLoading(false);
+      setIsSubmittingAction(false);
     }
   };
   
@@ -270,10 +301,10 @@ export default function AdminAllPresentationsPage() {
                   <TableCell className="text-right space-x-1">
                     {showDeleted ? (
                         <>
-                        <Button variant="ghost" size="sm" onClick={() => { setPresentationToAction(pres); setActionType('restore');}} title="Restore Presentation">
+                        <Button variant="ghost" size="sm" onClick={() => { setPresentationToAction(pres); setActionType('restore');}} title="Restore Presentation" disabled={isSubmittingAction}>
                             <RotateCcw className="h-4 w-4 mr-1 text-green-600" /> Restore
                         </Button>
-                        <Button variant="ghost" size="sm" onClick={() => { setPresentationToAction(pres); setActionType('permanentlyDelete');}} title="Permanently Delete">
+                        <Button variant="ghost" size="sm" onClick={() => { setPresentationToAction(pres); setActionType('permanentlyDelete');}} title="Permanently Delete" disabled={isSubmittingAction}>
                             <Trash2 className="h-4 w-4 mr-1 text-destructive" /> Delete Forever
                         </Button>
                         </>
@@ -285,10 +316,10 @@ export default function AdminAllPresentationsPage() {
                         <Button variant="ghost" size="icon" asChild title="View Presentation">
                             <Link href={`/present/${pres.id}`} target="_blank"><LinkIcon className="h-4 w-4" /></Link>
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => openModerationDialog(pres)} title="Change Moderation Status">
+                        <Button variant="ghost" size="icon" onClick={() => openModerationDialog(pres)} title="Change Moderation Status" disabled={isSubmittingAction}>
                           <ShieldCheck className="h-4 w-4 text-blue-600" />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => { setPresentationToAction(pres); setActionType('delete');}} title="Soft Delete Presentation">
+                        <Button variant="ghost" size="icon" onClick={() => { setPresentationToAction(pres); setActionType('delete');}} title="Soft Delete Presentation" disabled={isSubmittingAction}>
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                         </>
@@ -315,13 +346,13 @@ export default function AdminAllPresentationsPage() {
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel onClick={() => {setPresentationToAction(null); setActionType(null);}} disabled={isLoading}>Cancel</AlertDialogCancel>
+              <AlertDialogCancel onClick={() => {setPresentationToAction(null); setActionType(null);}} disabled={isSubmittingAction}>Cancel</AlertDialogCancel>
               <AlertDialogAction 
                 onClick={handleActionConfirm} 
-                disabled={isLoading}
+                disabled={isSubmittingAction}
                 className={actionType === 'delete' || actionType === 'permanentlyDelete' ? "bg-destructive hover:bg-destructive/90 text-destructive-foreground" : ""}
               >
-                {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : getDialogDetails().actionText}
+                {isSubmittingAction ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : getDialogDetails().actionText}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -359,9 +390,9 @@ export default function AdminAllPresentationsPage() {
                 </div>
             </div>
             <DialogFooter>
-                <Button variant="outline" onClick={() => setIsModerationDialogOpen(false)} disabled={isLoading}>Cancel</Button>
-                <Button onClick={handleChangeModerationStatus} disabled={isLoading}>
-                     {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : "Save Status"}
+                <Button variant="outline" onClick={() => setIsModerationDialogOpen(false)} disabled={isSubmittingAction}>Cancel</Button>
+                <Button onClick={handleChangeModerationStatus} disabled={isSubmittingAction}>
+                     {isSubmittingAction ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : "Save Status"}
                 </Button>
             </DialogFooter>
         </DialogContent>
@@ -369,5 +400,4 @@ export default function AdminAllPresentationsPage() {
     </Card>
   );
 }
-
     
