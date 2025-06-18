@@ -3,25 +3,22 @@ import mongoose, { Schema, Document, Model, Types } from 'mongoose';
 import type { Team as TeamType, TeamMember as TeamMemberType, TeamRole } from '@/types';
 
 // TeamMember subdocument schema
-// We store userId (which is Firebase UID) directly as the key in the Map,
-// and denormalize some user info into the value for quick access.
-export interface TeamMemberDocument extends TeamMemberType, Document {} // Mongoose subdocument type
+export interface TeamMemberDocument extends TeamMemberType, Document {}
 
 const TeamMemberSchema = new Schema<TeamMemberDocument>({
-  // userId is the key in the Map, so not needed as a field in the subdocument itself.
   role: { type: String, enum: ['owner', 'admin', 'editor', 'viewer'], required: true },
   joinedAt: { type: Date, default: Date.now },
-  addedBy: { type: String, required: true }, // User.id (Firebase UID) of who added them
-  name: { type: String, trim: true }, // Denormalized
-  email: { type: String, lowercase: true, trim: true }, // Denormalized
-  profilePictureUrl: { type: String, trim: true }, // Denormalized
-}, { _id: false }); // No separate _id for subdocuments in the map values
+  addedBy: { type: String, required: true },
+  name: { type: String, trim: true },
+  email: { type: String, lowercase: true, trim: true },
+  profilePictureUrl: { type: String, trim: true },
+}, { _id: false });
 
 export interface TeamDocument extends Omit<TeamType, 'id' | 'members' | 'createdAt' | 'lastUpdatedAt'>, Document {
-  _id: Types.ObjectId; // Mongoose will auto-generate this
+  _id: Types.ObjectId;
   id?: string; // virtual getter
-  ownerId: string; // User.id (Firebase UID)
-  members: Types.Map<TeamMemberDocument>; // Key is User.id (Firebase UID), value is TeamMemberDocument
+  ownerId: string;
+  members: Types.Map<TeamMemberDocument>;
   createdAt?: Date;
   lastUpdatedAt?: Date;
 }
@@ -42,7 +39,7 @@ const TeamSettingsSchema = new Schema({
 const TeamSchema = new Schema<TeamDocument>(
   {
     name: { type: String, required: true, trim: true, index: true },
-    ownerId: { type: String, required: true, index: true }, // Firebase UID of the owner
+    ownerId: { type: String, required: true, index: true },
     members: {
       type: Map,
       of: TeamMemberSchema,
@@ -52,9 +49,21 @@ const TeamSchema = new Schema<TeamDocument>(
     settings: { type: TeamSettingsSchema, default: () => ({}) },
   },
   {
-    timestamps: true, // Adds createdAt and updatedAt
-    toJSON: { virtuals: true },
-    toObject: { virtuals: true },
+    timestamps: true,
+    toJSON: {
+      virtuals: true,
+      transform: function(doc, ret) {
+        delete ret._id;
+        delete ret.__v;
+      }
+    },
+    toObject: {
+      virtuals: true,
+      transform: function(doc, ret) {
+        delete ret._id;
+        delete ret.__v;
+      }
+    },
   }
 );
 
@@ -70,5 +79,3 @@ if (mongoose.models.Team) {
 }
 
 export default TeamModel;
-
-    

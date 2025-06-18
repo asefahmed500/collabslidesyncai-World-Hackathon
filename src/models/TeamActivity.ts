@@ -5,17 +5,15 @@ import type { TeamActivity as TeamActivityType, TeamActivityType as ActivityType
 export interface TeamActivityDocument extends Omit<TeamActivityType, 'id' | 'createdAt'>, Document {
   _id: Types.ObjectId;
   id?: string; // virtual getter
-  createdAt: Date; // Mongoose timestamp
+  createdAt: Date;
 }
 
-// Using Schema.Types.Mixed for details to allow flexibility
 const TeamActivityDetailsSchema = new Schema(Schema.Types.Mixed, { _id: false });
-
 
 const TeamActivitySchema = new Schema<TeamActivityDocument>(
   {
-    teamId: { type: String, required: true, index: true }, // Corresponds to Team.id (Mongoose _id.toHexString())
-    actorId: { type: String, required: true, index: true }, // User.id (Firebase UID)
+    teamId: { type: String, required: true, index: true },
+    actorId: { type: String, required: true, index: true },
     actorName: { type: String },
     actionType: {
       type: String,
@@ -32,9 +30,21 @@ const TeamActivitySchema = new Schema<TeamActivityDocument>(
     details: { type: TeamActivityDetailsSchema, default: () => ({}) },
   },
   {
-    timestamps: { createdAt: true, updatedAt: false }, // Only use createdAt for activities
-    toJSON: { virtuals: true },
-    toObject: { virtuals: true },
+    timestamps: { createdAt: true, updatedAt: false },
+    toJSON: {
+      virtuals: true,
+      transform: function(doc, ret) {
+        delete ret._id;
+        delete ret.__v;
+      }
+    },
+    toObject: {
+      virtuals: true,
+      transform: function(doc, ret) {
+        delete ret._id;
+        delete ret.__v;
+      }
+    },
   }
 );
 
@@ -51,5 +61,3 @@ if (mongoose.models.TeamActivity) {
 }
 
 export default TeamActivityModel;
-
-    

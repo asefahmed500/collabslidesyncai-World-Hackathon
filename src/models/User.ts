@@ -12,7 +12,7 @@ export interface UserDocument extends Omit<UserType, 'id' | 'lastActive' | 'crea
   githubId?: string | null;
   emailVerified?: boolean;
   twoFactorEnabled?: boolean;
-  teamId?: string | null; 
+  teamId?: string | null;
 }
 
 const UserSettingsSchema = new Schema({
@@ -30,12 +30,12 @@ const UserSchema = new Schema<UserDocument>(
       unique: true,
       lowercase: true,
       trim: true,
-      sparse: true // Allows multiple nulls for email if some users don't have one
+      sparse: true
     },
     emailVerified: { type: Boolean, default: false },
     profilePictureUrl: { type: String, trim: true },
-    teamId: { type: String, index: true, sparse: true, default: null }, // User's primary team ID
-    role: { type: String, enum: ['owner', 'admin', 'editor', 'viewer', 'guest'], default: 'guest' }, // Role within their teamId, 'guest' if no team
+    teamId: { type: String, index: true, sparse: true, default: null },
+    role: { type: String, enum: ['owner', 'admin', 'editor', 'viewer', 'guest'], default: 'guest' },
     lastActive: { type: Date, default: Date.now },
     settings: { type: UserSettingsSchema, default: () => ({ darkMode: false, aiFeatures: true, notifications: true }) },
     isAppAdmin: { type: Boolean, default: false },
@@ -45,19 +45,20 @@ const UserSchema = new Schema<UserDocument>(
   },
   {
     timestamps: true, // Adds createdAt and updatedAt
-    _id: false, // We are using Firebase UID as _id
+    // No `_id: false` here, as we define `_id` as a path. Mongoose will use our path.
+    // No explicit `UserSchema.virtual('id').get(...)` needed; Mongoose's default 'id' virtual will use this._id (which is a string).
     toJSON: {
-      virtuals: true,
+      virtuals: true, // Ensure Mongoose's default 'id' virtual (this._id) is included
       transform: function(doc, ret) {
-        ret.id = ret._id; // Map _id (Firebase UID string) to id
+        // 'ret' now includes 'id' from the default virtual.
+        // We remove the original '_id' and '__v' for cleaner output.
         delete ret._id;
         delete ret.__v;
       }
     },
     toObject: {
-      virtuals: true,
+      virtuals: true, // Ensure Mongoose's default 'id' virtual is included
       transform: function(doc, ret) {
-        ret.id = ret._id;
         delete ret._id;
         delete ret.__v;
       }
@@ -65,10 +66,7 @@ const UserSchema = new Schema<UserDocument>(
   }
 );
 
-UserSchema.virtual('id').get(function (this: UserDocument) {
-  return this._id;
-});
-
+// UserModel definition remains the same
 let UserModel: Model<UserDocument>;
 
 if (mongoose.models && mongoose.models.User) {
@@ -78,5 +76,3 @@ if (mongoose.models && mongoose.models.User) {
 }
 
 export default UserModel;
-
-    

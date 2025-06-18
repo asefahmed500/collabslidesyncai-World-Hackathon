@@ -5,7 +5,8 @@ import { useState, useEffect, useContext, createContext, ReactNode } from 'react
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { auth } from '@/lib/firebaseConfig';
 import type { User as AppUser } from '@/types';
-import { getUserFromMongoDB, createUserInMongoDB } from '@/lib/mongoUserService';
+// Removed direct imports from mongoUserService
+import { getOrCreateAppUserFromMongoDB } from '@/app/(auth)/actions'; // Import the new server action
 import { GoogleAuthProvider, GithubAuthProvider } from 'firebase/auth';
 
 
@@ -13,6 +14,16 @@ interface AuthContextType {
   currentUser: AppUser | null;
   loading: boolean;
   firebaseUser: FirebaseUser | null;
+}
+
+// Helper type for passing minimal Firebase user data to server actions
+interface FirebaseUserMinimal {
+  uid: string;
+  displayName: string | null;
+  email: string | null;
+  photoURL: string | null;
+  emailVerified: boolean;
+  providerData: { providerId: string; uid?: string | undefined }[];
 }
 
 const AuthContext = createContext<AuthContextType>({ currentUser: null, loading: true, firebaseUser: null });
@@ -26,44 +37,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
       setFirebaseUser(fbUser);
       if (fbUser) {
-        setLoading(true); 
+        setLoading(true);
         try {
-          let appUser = await getUserFromMongoDB(fbUser.uid);
+          // Prepare minimal data for server action
+          const fbUserMinimal: FirebaseUserMinimal = {
+            uid: fbUser.uid,
+            displayName: fbUser.displayName,
+            email: fbUser.email,
+            photoURL: fbUser.photoURL,
+            emailVerified: fbUser.emailVerified,
+            providerData: fbUser.providerData.map(pd => ({ // Ensure providerData is mapped correctly
+                providerId: pd.providerId,
+                uid: pd.uid // Make sure uid is included from providerData if it exists
+            }))
+          };
           
-          if (!appUser) {
-            console.log(`User ${fbUser.uid} not found in MongoDB, creating profile...`);
-            const providerId = fbUser.providerData[0]?.providerId;
-            const socialProfileData: Partial<AppUser> = {
-              name: fbUser.displayName,
-              email: fbUser.email,
-              profilePictureUrl: fbUser.photoURL,
-              emailVerified: fbUser.emailVerified,
-              role: 'guest', // Default to 'guest' if no team, actual role depends on team membership
-              teamId: null, // No team by default for new social signups
-            };
-            if (providerId === GoogleAuthProvider.PROVIDER_ID) {
-              socialProfileData.googleId = fbUser.providerData.find(p => p.providerId === GoogleAuthProvider.PROVIDER_ID)?.uid;
-            } else if (providerId === GithubAuthProvider.PROVIDER_ID) {
-              socialProfileData.githubId = fbUser.providerData.find(p => p.providerId === GithubAuthProvider.PROVIDER_ID)?.uid;
-            }
-             if (!socialProfileData.name && socialProfileData.email) {
-                socialProfileData.name = socialProfileData.email.split('@')[0];
-            } else if (!socialProfileData.name) {
-                socialProfileData.name = 'Anonymous User';
-            }
-            if (!socialProfileData.profilePictureUrl) {
-                socialProfileData.profilePictureUrl = `https://placehold.co/100x100.png?text=${(socialProfileData.name || 'A').charAt(0).toUpperCase()}`;
-            }
+          // Call the server action to get or create the AppUser from MongoDB
+          const appUserFromMongo = await getOrCreateAppUserFromMongoDB(fbUserMinimal);
+          setCurrentUser(appUserFromMongo);
 
-            appUser = await createUserInMongoDB(fbUser, socialProfileData);
-            if (!appUser) {
-                 console.error("Failed to create MongoDB user profile for Firebase user:", fbUser.uid);
-                 setCurrentUser(null);
-            }
-          }
-          setCurrentUser(appUser);
         } catch (error) {
-            console.error("Error fetching or creating user profile from MongoDB:", error);
+            console.error("Error fetching or creating user profile via server action:", error);
             setCurrentUser(null);
         } finally {
             setLoading(false);
@@ -85,5 +79,3 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 }
 
 export const useAuth = () => useContext(AuthContext);
-
-    
