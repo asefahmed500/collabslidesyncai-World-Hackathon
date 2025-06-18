@@ -13,7 +13,7 @@ import { AIAssistantPanel } from '@/components/editor/AIAssistantPanel';
 import { CollaborationBar } from '@/components/editor/CollaborationBar';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
-import type { Presentation, Slide, SlideElement, SlideComment, ActiveCollaboratorInfo, User as AppUser, SlideElementType } from '@/types';
+import type { Presentation, Slide, SlideElement, SlideComment, ActiveCollaboratorInfo, User as AppUser, SlideElementType, PresentationActivity } from '@/types';
 import { AlertTriangle, Home, RotateCcw, Save, Share2, Users, FileText, Loader2, Zap, WifiOff, ShieldAlert, Sparkles, LayoutTemplate, Trash2, Copy } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -279,12 +279,12 @@ export default function EditorPage() {
   const selectedElement = currentSlide?.elements.find(el => el.id === selectedElementId) || null;
 
   const handleToolSelect = (tool: string | null) => {
-    setSelectedTool(tool); // Manage selected tool state
+    setSelectedTool(tool); 
     if (tool === 'ai-design' || tool === 'ai-content' || (tool && tool.startsWith('ai-'))) {
       setIsRightPanelOpen('ai');
     } else if (tool === 'templates') {
       handleShowSlideTemplates();
-    } else if (tool !== null) { // If a drawing tool is selected, ensure properties panel is open
+    } else if (tool !== null) { 
       setIsRightPanelOpen('properties');
     }
   };
@@ -292,6 +292,8 @@ export default function EditorPage() {
   const handleAction = (action: string) => {
      if (action === 'comments') {
        setIsRightPanelOpen(isRightPanelOpen === 'properties' ? null : 'properties'); 
+    } else if (action === 'ai-panel') {
+       setIsRightPanelOpen(prev => prev === 'ai' ? (selectedElement ? 'properties' : null) : 'ai');
     } else if (action === 'share') {
       setIsShareDialogOpen(true);
     } else if (action === 'undo' || action === 'redo') {
@@ -307,7 +309,7 @@ export default function EditorPage() {
     }
     setCurrentSlideId(slideId);
     setSelectedElementId(null); 
-    setSelectedTool(null); // Deselect tool when changing slide
+    setSelectedTool(null); 
   }, [presentationId, currentSlideId, selectedElement, currentUser]);
 
   const handleElementSelect = useCallback(async (elementId: string | null) => {
@@ -321,7 +323,8 @@ export default function EditorPage() {
     }
     
     setSelectedElementId(elementId);
-    setSelectedTool(null); // Deselect any active drawing tool when an element is selected
+    setSelectedTool(null); 
+    setIsRightPanelOpen('properties'); // Ensure properties panel is open when an element is selected
 
     if (elementId) {
         const success = await apiAcquireLock(presentationId, currentSlideId, elementId, currentUser.id);
@@ -430,15 +433,15 @@ export default function EditorPage() {
 
   const handleAddElement = async (position: {x: number, y: number}) => {
     if (!presentation || !currentSlideId || !selectedTool || !currentUser) return;
-    if (selectedTool.startsWith('ai-')) return; // AI tools don't add elements directly on canvas click
+    if (selectedTool.startsWith('ai-')) return; 
 
     const newElementId = uuidv4();
     let newElementPartial: Omit<SlideElement, 'id'> = {
-        type: 'text' as SlideElementType, // default
+        type: 'text' as SlideElementType, 
         content: '',
         position,
         size: { width: 150, height: 50 },
-        style: { fontFamily: 'PT Sans', fontSize: '16px', color: '#333333', backgroundColor: '#00000000', textAlign: 'left', opacity: 1 },
+        style: { fontFamily: 'PT Sans', fontSize: '16px', color: '#333333', backgroundColor: 'transparent', textAlign: 'left', opacity: 1 },
         zIndex: (currentSlide?.elements.length || 0) + 1,
         rotation: 0,
     };
@@ -449,7 +452,7 @@ export default function EditorPage() {
         newElementPartial.size = { width: 200, height: 40 };
     } else if (selectedTool === 'image') {
         newElementPartial.type = 'image';
-        newElementPartial.content = 'https://placehold.co/300x200.png?text=New+Image'; // Placeholder URL
+        newElementPartial.content = 'https://placehold.co/300x200.png?text=New+Image'; 
         newElementPartial.size = { width: 300, height: 200 };
     } else if (selectedTool === 'shape-rectangle') {
         newElementPartial.type = 'shape';
@@ -457,29 +460,29 @@ export default function EditorPage() {
     } else if (selectedTool === 'shape-circle') {
         newElementPartial.type = 'shape';
         newElementPartial.style = { ...newElementPartial.style, shapeType: 'circle', backgroundColor: '#CCCCCC', borderColor: '#666666', borderWidth: 1 };
-        newElementPartial.size = { width: 100, height: 100 }; // Circles are often square
+        newElementPartial.size = { width: 100, height: 100 }; 
     } else if (selectedTool === 'chart') {
         newElementPartial.type = 'chart';
-        newElementPartial.content = { type: 'bar', data: {} }; // Placeholder
+        newElementPartial.content = { type: 'bar', data: {} }; 
         newElementPartial.size = { width: 400, height: 300 };
     } else if (selectedTool === 'icon') {
         newElementPartial.type = 'icon';
-        newElementPartial.content = 'smile'; // Placeholder icon name
+        newElementPartial.content = 'smile'; 
         newElementPartial.size = { width: 50, height: 50 };
-         newElementPartial.style = { ...newElementPartial.style, color: '#333333' }; // Default icon color
+         newElementPartial.style = { ...newElementPartial.style, color: '#333333' }; 
     } else {
-        return; // Unknown tool
+        return; 
     }
     
     try {
         await apiAddElementToSlide(presentation.id, currentSlideId, newElementPartial);
-        handleElementSelect(newElementId); // Select the newly added element
+        handleElementSelect(newElementId); 
         logPresentationActivity(presentation.id, currentUser.id, 'element_added', { elementType: newElementPartial.type, elementId: newElementId });
     } catch (error) {
         console.error("Error adding element:", error);
         toast({ title: "Error Adding Element", description: "Could not add the element.", variant: "destructive" });
     }
-    setSelectedTool(null); // Deselect tool after adding element
+    setSelectedTool(null); 
   };
 
   const handleDeleteElement = async (elementId: string) => {
@@ -609,14 +612,14 @@ export default function EditorPage() {
   }, [presentationId, currentSlideId, selectedElementId, currentUser, presentation]);
 
   const handleApplyAITextUpdate = (elementId: string, newContent: string) => {
-    if (selectedElement && selectedElement.id === elementId) {
+    if (selectedElement && selectedElement.id === elementId && onApplyAITextUpdate) {
         handleUpdateElement({ id: elementId, content: newContent });
         toast({title: "AI Update Applied", description: "Text element updated with AI suggestion."});
     }
   };
 
   const handleApplyAISpeakerNotes = (notes: string) => {
-    if (presentation && currentSlideId) {
+    if (presentation && currentSlideId && onApplyAISpeakerNotes) {
         const updatedSlides = presentation.slides.map(s =>
             s.id === currentSlideId ? { ...s, speakerNotes: notes } : s
         );
@@ -872,20 +875,15 @@ export default function EditorPage() {
             </AlertDialogContent>
         </AlertDialog>
 
-        <div className="md:hidden"> 
+        <div className="md:hidden fixed bottom-4 right-4 z-50"> 
           <Sheet>
             <SheetTrigger asChild>
-              <Button variant="outline" className="fixed bottom-4 right-4 z-50 shadow-lg rounded-full p-3 h-auto">
+              <Button variant="outline" className="shadow-lg rounded-full p-3 h-auto">
                 <Sparkles className="h-6 w-6 text-primary" />
+                 <span className="sr-only">Toggle AI Assistant Panel</span>
               </Button>
             </SheetTrigger>
-            <SheetContent side="bottom" className="h-[75vh] flex flex-col">
-              <SheetHeader className="pb-2">
-                <SheetTitle className="font-headline">AI Assistant</SheetTitle>
-                <SheetDescription>
-                  Get design suggestions and smart tips for your presentation.
-                </SheetDescription>
-              </SheetHeader>
+            <SheetContent side="bottom" className="h-[75vh] flex flex-col p-0">
               <div className="flex-grow overflow-hidden"> 
                  <AIAssistantPanel 
                     currentSlide={currentSlide} 
@@ -901,3 +899,5 @@ export default function EditorPage() {
     </div>
   );
 }
+
+    

@@ -47,10 +47,11 @@ export interface Team {
   };
   branding: {
     logoUrl?: string;
-    primaryColor?: string;
-    secondaryColor?: string;
-    fontPrimary?: string;
-    fontSecondary?: string;
+    primaryColor?: string; // Deep blue (#3F51B5)
+    secondaryColor?: string; // Accent color for other highlights, not the main accent
+    accentColor?: string; // Vibrant purple (#9C27B0)
+    fontPrimary?: string; // Headline font e.g., 'Space Grotesk'
+    fontSecondary?: string; // Body font e.g., 'PT Sans'
   };
   settings: {
     allowGuestEdits: boolean;
@@ -60,37 +61,36 @@ export interface Team {
   lastUpdatedAt?: Date; // Mongoose timestamp
 }
 
-export type SlideElementType = 'text' | 'image' | 'shape' | 'chart' | 'icon'; // Added icon
+export type SlideElementType = 'text' | 'image' | 'shape' | 'chart' | 'icon'; 
 export type PresentationAccessRole = 'owner' | 'editor' | 'viewer';
 
 export interface SlideElementStyle {
-  color?: string; // Text color for text, border color for shapes (optional)
+  color?: string; 
   fontFamily?: string;
-  fontSize?: string; // e.g., "16px"
-  backgroundColor?: string; // Fill color for shapes, background for text box
-  borderColor?: string; // Specifically for shape borders
+  fontSize?: string; 
+  backgroundColor?: string; 
+  borderColor?: string; 
   textAlign?: 'left' | 'center' | 'right';
   fontWeight?: 'normal' | 'bold';
   fontStyle?: 'normal' | 'italic';
   textDecoration?: 'none' | 'underline' | 'line-through';
-  opacity?: number; // 0 to 1
-  // For shapes
-  shapeType?: 'rectangle' | 'circle' | 'triangle'; // if element.type === 'shape'
-  borderWidth?: number; // in px
-  borderRadius?: number; // in px
+  opacity?: number; 
+  shapeType?: 'rectangle' | 'circle' | 'triangle'; 
+  borderWidth?: number; 
+  borderRadius?: number; 
 }
 
 export interface SlideElement {
   id: string;
   type: SlideElementType;
-  content: any; // Text string, image URL, shape type, chart data config, icon name/svg
+  content: any; 
   position: { x: number; y: number };
   size: { width: number; height: number };
   style: SlideElementStyle;
   zIndex?: number;
   lockedBy?: string | null;
-  lockTimestamp?: FirestoreTimestamp | null; // Firestore specific, may need adjustment if elements move to Mongo
-  rotation?: number; // In degrees, optional
+  lockTimestamp?: FirestoreTimestamp | null; 
+  rotation?: number; 
 }
 
 export interface SlideComment {
@@ -99,7 +99,7 @@ export interface SlideComment {
   userName: string;
   userAvatarUrl?: string;
   text: string;
-  createdAt: FirestoreTimestamp; // Firestore specific
+  createdAt: FirestoreTimestamp; 
   resolved: boolean;
 }
 
@@ -120,7 +120,7 @@ export interface ActiveCollaboratorInfo {
   name: string;
   profilePictureUrl?: string;
   cursorPosition?: { slideId: string; x: number; y: number } | null;
-  lastSeen: FirestoreTimestamp; // Firestore specific
+  lastSeen: FirestoreTimestamp; 
   color: string;
   email?: string;
 }
@@ -140,10 +140,11 @@ export interface Presentation {
     password?: string;
     commentsAllowed: boolean;
   };
+  branding?: Team['branding']; // Store a copy of team branding at time of creation/last update
   thumbnailUrl?: string;
   version: number;
-  createdAt?: FirestoreTimestamp; // Firestore specific
-  lastUpdatedAt: FirestoreTimestamp; // Firestore specific
+  createdAt?: FirestoreTimestamp; 
+  lastUpdatedAt: FirestoreTimestamp; 
   slides: Slide[];
   activeCollaborators?: { [userId: string]: ActiveCollaboratorInfo };
   collaborators?: User[];
@@ -161,10 +162,10 @@ export type TeamActivityType =
   | 'asset_deleted';
 
 export interface TeamActivity {
-  id: string; // Mongoose ObjectId as string
+  id: string; 
   _id?: Types.ObjectId | string;
-  teamId: string; // Team.id (Mongoose ObjectId as string)
-  actorId: string; // User.id (Firebase UID)
+  teamId: string; 
+  actorId: string; 
   actorName?: string;
   actionType: TeamActivityType;
   targetType?: 'user' | 'presentation' | 'team_profile' | 'asset';
@@ -182,7 +183,7 @@ export interface TeamActivity {
     assetType?: AssetType;
     [key: string]: any;
   };
-  createdAt: Date; // Mongoose timestamp
+  createdAt: Date; 
 }
 
 export type PresentationActivityType =
@@ -219,10 +220,10 @@ export interface PresentationActivity {
     accessMethod?: 'direct' | 'public_link' | 'team_access' | 'public_link_password' | 'public_link_anonymous';
     elementType?: SlideElementType;
     elementId?: string;
-    changedProperty?: string; // e.g. 'position', 'style.color'
+    changedProperty?: string; 
     [key: string]: any;
   };
-  createdAt: FirestoreTimestamp; // Firestore specific
+  createdAt: FirestoreTimestamp; 
 }
 
 export type AssetType = 'image' | 'video' | 'audio' | 'pdf' | 'other';
@@ -233,16 +234,18 @@ export interface Asset {
   uploaderId: string;
   uploaderName?: string;
   fileName: string;
-  fileType: string; // MIME type e.g. "image/png"
-  assetType: AssetType; // Simplified category
-  storagePath: string; // Full path in Firebase Storage
+  fileType: string; 
+  assetType: AssetType; 
+  storagePath: string; 
   downloadURL: string;
-  size: number; // in bytes
-  thumbnailURL?: string; // Optional: for non-image assets or smaller image versions
-  dimensions?: { width: number; height: number }; // For images
-  duration?: number; // For video/audio in seconds
+  size: number; 
+  thumbnailURL?: string; 
+  dimensions?: { width: number; height: number }; 
+  duration?: number; 
   tags?: string[];
   description?: string;
   createdAt: FirestoreTimestamp;
   lastUpdatedAt?: FirestoreTimestamp;
 }
+
+    

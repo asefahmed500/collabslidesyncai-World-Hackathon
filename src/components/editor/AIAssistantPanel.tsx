@@ -116,7 +116,7 @@ export function AIAssistantPanel({
 
       const input: SuggestDesignLayoutInput = {
         slideContent: slideContentForAI,
-        teamBrandColors: currentPresentation?.branding?.primaryColor ? `${currentPresentation.branding.primaryColor}${currentPresentation.branding.secondaryColor ? ',' + currentPresentation.branding.secondaryColor : ''}` : undefined,
+        teamBrandColors: currentPresentation?.branding?.primaryColor ? `${currentPresentation.branding.primaryColor}${currentPresentation.branding.secondaryColor ? ',' + currentPresentation.branding.secondaryColor : ''}${currentPresentation.branding.accentColor ? ',' + currentPresentation.branding.accentColor : ''}` : undefined,
         teamBrandFonts: currentPresentation?.branding?.fontPrimary ? `${currentPresentation.branding.fontPrimary}${currentPresentation.branding.fontSecondary ? ',' + currentPresentation.branding.fontSecondary : ''}`: undefined,
       };
       const result = await suggestDesignLayout(input);
@@ -536,3 +536,5 @@ export function AIAssistantPanel({
     </div>
   );
 }
+
+    
