@@ -8,8 +8,8 @@ import { SiteHeader } from '@/components/shared/SiteHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PresentationCard } from '@/components/dashboard/PresentationCard';
-import type { Presentation, User as AppUser } from '@/types'; 
-import { PlusCircle, Search, Filter, List, Grid, Users, Activity, Loader2, FileWarning, Library, ArrowUpDown, Eye, Trash2, Edit3, MoreVertical, CopyIcon, Star } from 'lucide-react';
+import type { Presentation, User as AppUser } from '@/types';
+import { PlusCircle, Search, Filter, List, Grid, Users, Activity, Loader2, FileWarning, Library, ArrowUpDown, Eye, Trash2, Edit3, MoreVertical, CopyIcon, Star, BarChart2, FileText as FileTextIcon, Cpu, Users2 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -49,10 +49,14 @@ export default function DashboardPage() {
   const [presentations, setPresentations] = useState<Presentation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filter, setFilter] = useState('all'); 
+  const [filter, setFilter] = useState('all');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [sortOption, setSortOption] = useState<SortOption>('lastUpdatedAt_desc');
   const [presentationToDelete, setPresentationToDelete] = useState<Presentation | null>(null);
+
+  // Stats state
+  const [presentationsCreatedCount, setPresentationsCreatedCount] = useState(0);
+  const [totalSlidesCreatedCount, setTotalSlidesCreatedCount] = useState(0);
 
 
   const fetchAndSetPresentations = useCallback(async () => {
@@ -61,6 +65,12 @@ export default function DashboardPage() {
       try {
         const data = await getPresentationsForUser(currentUser.id, currentUser.teamId);
         setPresentations(data);
+
+        // Calculate stats
+        const userCreatedPresentations = data.filter(p => p.creatorId === currentUser.id);
+        setPresentationsCreatedCount(userCreatedPresentations.length);
+        setTotalSlidesCreatedCount(userCreatedPresentations.reduce((sum, p) => sum + (p.slides?.length || 0), 0));
+
       } catch (error) {
         console.error("Error fetching presentations:", error);
         toast({ title: "Error", description: "Could not fetch presentations.", variant: "destructive" });
@@ -76,7 +86,7 @@ export default function DashboardPage() {
     } else if (currentUser) {
       fetchAndSetPresentations();
     } else if (!authLoading && !currentUser) {
-        setIsLoading(false); 
+        setIsLoading(false);
     }
   }, [currentUser, authLoading, router, fetchAndSetPresentations]);
 
@@ -86,7 +96,6 @@ export default function DashboardPage() {
       return;
     }
     try {
-      // Default teamId to undefined if currentUser.teamId is null
       const teamIdForNewPres = currentUser.teamId || undefined;
       const newPresentationId = await apiCreatePresentation(currentUser.id, "Untitled Presentation", teamIdForNewPres);
       toast({ title: "Presentation Created", description: "Redirecting to editor..." });
@@ -96,13 +105,14 @@ export default function DashboardPage() {
       toast({ title: "Error", description: error.message || "Could not create presentation.", variant: "destructive" });
     }
   };
-  
+
   const handleDeletePresentation = async () => {
     if (!presentationToDelete || !currentUser) return;
     try {
       await apiDeletePresentation(presentationToDelete.id, presentationToDelete.teamId || undefined, currentUser.id);
       toast({ title: "Presentation Deleted", description: `"${presentationToDelete.title}" has been removed.` });
-      setPresentations(prev => prev.filter(p => p.id !== presentationToDelete.id));
+      // Refetch presentations to update list and stats
+      fetchAndSetPresentations();
     } catch (error: any) {
       console.error("Error deleting presentation:", error);
       toast({ title: "Error", description: error.message || "Could not delete presentation.", variant: "destructive" });
@@ -116,7 +126,7 @@ export default function DashboardPage() {
     .filter(p => {
       const matchesSearch = p.title.toLowerCase().includes(searchTerm.toLowerCase()) || (p.description && p.description.toLowerCase().includes(searchTerm.toLowerCase()));
       if (!currentUser) return false;
-      
+
       const isSharedDirectly = p.access && p.access[currentUser.id] && p.creatorId !== currentUser.id;
       const isTeamAccessible = p.teamId && p.teamId === currentUser.teamId && p.creatorId !== currentUser.id && !isSharedDirectly;
 
@@ -129,10 +139,10 @@ export default function DashboardPage() {
         case 'mine':
             matchesFilter = p.creatorId === currentUser.id;
             break;
-        case 'shared': // Explicitly shared OR accessible via team but not created by user
+        case 'shared':
             matchesFilter = isSharedDirectly || isTeamAccessible;
             break;
-        case 'team': // Specifically team presentations (could be created by user or others in team)
+        case 'team':
             matchesFilter = !!(p.teamId && p.teamId === currentUser.teamId);
             break;
         default:
@@ -144,10 +154,9 @@ export default function DashboardPage() {
         const getVal = (obj: Presentation, keyPart: string) => {
             if (keyPart.startsWith('lastUpdatedAt') || keyPart.startsWith('createdAt')) {
                 const dateVal = obj[keyPart.split('_')[0] as 'lastUpdatedAt' | 'createdAt'];
-                // Handle both Firestore Timestamps and JS Dates if data source varies
                 return dateVal instanceof Date ? dateVal.getTime() : (dateVal as any)?.toDate ? (dateVal as any).toDate().getTime() : 0;
             }
-            return obj[keyPart.split('_')[0] as 'title'] || ''; // Ensure string for localeCompare
+            return obj[keyPart.split('_')[0] as 'title'] || '';
         };
 
         const [key, order] = sortOption.split('_');
@@ -157,11 +166,10 @@ export default function DashboardPage() {
         if (typeof valA === 'string' && typeof valB === 'string') {
             return order === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
         }
-        // Explicitly cast to number for date comparisons
         return order === 'asc' ? (valA as number) - (valB as number) : (valB as number) - (valA as number);
     });
-  
-  const recentPresentations = [...presentations] // Use all presentations before filtering for "Recent"
+
+  const recentPresentations = [...presentations]
     .sort((a,b) => {
         const dateA = a.lastUpdatedAt instanceof Date ? a.lastUpdatedAt.getTime() : (a.lastUpdatedAt as any)?.toDate ? (a.lastUpdatedAt as any).toDate().getTime() : 0;
         const dateB = b.lastUpdatedAt instanceof Date ? b.lastUpdatedAt.getTime() : (b.lastUpdatedAt as any)?.toDate ? (b.lastUpdatedAt as any).toDate().getTime() : 0;
@@ -169,7 +177,7 @@ export default function DashboardPage() {
     })
     .slice(0,3);
 
-  if (authLoading || (isLoading && currentUser)) { 
+  if (authLoading || (isLoading && currentUser)) {
     return (
       <div className="flex flex-col min-h-screen">
         <SiteHeader />
@@ -179,8 +187,8 @@ export default function DashboardPage() {
       </div>
     );
   }
-  
-  if (!currentUser && !authLoading) { 
+
+  if (!currentUser && !authLoading) {
      return (
         <div className="flex flex-col min-h-screen">
           <SiteHeader />
@@ -199,6 +207,61 @@ export default function DashboardPage() {
           <h1 className="font-headline text-4xl font-bold text-primary">Your Dashboard</h1>
           <p className="text-muted-foreground">Welcome back, {currentUser?.name}! Manage your presentations and assets here.</p>
         </div>
+
+        {/* User Analytics & Insights Section */}
+        <section className="mb-10">
+            <h2 className="font-headline text-2xl font-semibold mb-4 flex items-center">
+                <BarChart2 className="mr-3 h-6 w-6 text-primary" />
+                Your Analytics & Insights
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                <Card className="shadow-sm hover:shadow-md transition-shadow">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Presentations Created</CardTitle>
+                        <FileTextIcon className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">{presentationsCreatedCount}</div>
+                        <p className="text-xs text-muted-foreground">Total presentations you've started.</p>
+                    </CardContent>
+                </Card>
+                <Card className="shadow-sm hover:shadow-md transition-shadow">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Total Slides Created</CardTitle>
+                        <Grid className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">{totalSlidesCreatedCount}</div>
+                        <p className="text-xs text-muted-foreground">Across all your created presentations.</p>
+                    </CardContent>
+                </Card>
+                <Card className="shadow-sm hover:shadow-md transition-shadow">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">AI Tokens Used</CardTitle>
+                        <Cpu className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">N/A</div>
+                        <p className="text-xs text-muted-foreground">Tracking coming soon.</p>
+                    </CardContent>
+                </Card>
+                <Card className="shadow-sm hover:shadow-md transition-shadow">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Collaboration Stats</CardTitle>
+                        <Users2 className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">N/A</div>
+                        <p className="text-xs text-muted-foreground">View team activity for insights.</p>
+                         {currentUser?.teamId && (
+                            <Button variant="link" size="sm" className="p-0 h-auto text-xs mt-1" asChild>
+                                <Link href="/dashboard/manage-team">View Team Activity</Link>
+                            </Button>
+                        )}
+                    </CardContent>
+                </Card>
+            </div>
+        </section>
 
         <div className="mb-6 flex flex-col sm:flex-row items-center justify-between gap-4 p-4 border rounded-lg shadow-sm bg-card">
           <div className="relative w-full sm:max-w-sm">
@@ -224,7 +287,7 @@ export default function DashboardPage() {
                 {currentUser?.teamId && <SelectItem value="team">My Team's (Strict)</SelectItem>}
               </SelectContent>
             </Select>
-            
+
             <Select value={sortOption} onValueChange={(value) => setSortOption(value as SortOption)}>
                 <SelectTrigger className="w-full xs:w-auto sm:w-[180px]">
                     <ArrowUpDown className="h-4 w-4 mr-2 text-muted-foreground" />
@@ -248,15 +311,15 @@ export default function DashboardPage() {
             </Button>
           </div>
         </div>
-        
+
         <section className="mb-10">
           <h2 className="font-headline text-2xl font-semibold mb-4">Recent Presentations</h2>
           {isLoading ? <div className="flex justify-center py-4"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div> : recentPresentations.length > 0 ? (
              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {recentPresentations.map(p => (
-                <PresentationCard 
-                    key={p.id} 
-                    presentation={p} 
+                <PresentationCard
+                    key={p.id}
+                    presentation={p}
                     onDeleteRequest={() => setPresentationToDelete(p)}
                 />
               ))}
@@ -284,22 +347,21 @@ export default function DashboardPage() {
             <div className={`grid gap-6 ${viewMode === 'grid' ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4' : 'grid-cols-1'}`}>
               {sortedAndFilteredPresentations.map((presentation: Presentation) => (
                 viewMode === 'grid' ? (
-                  <PresentationCard 
-                    key={presentation.id} 
-                    presentation={presentation} 
+                  <PresentationCard
+                    key={presentation.id}
+                    presentation={presentation}
                     onDeleteRequest={() => setPresentationToDelete(presentation)}
                   />
                 ) : (
-                  // List View Item
                   <Card key={presentation.id} className="hover:shadow-md transition-shadow">
                     <CardContent className="p-3 sm:p-4 flex items-center justify-between gap-2 sm:gap-4">
                       <div className="flex items-center gap-3 sm:gap-4 flex-grow min-w-0">
-                        <Image 
-                            src={presentation.thumbnailUrl || "https://placehold.co/80x45.png"} 
-                            alt={presentation.title} 
-                            width={80} 
-                            height={45} 
-                            className="rounded-md hidden sm:block flex-shrink-0 object-cover" 
+                        <Image
+                            src={presentation.thumbnailUrl || "https://placehold.co/80x45.png"}
+                            alt={presentation.title}
+                            width={80}
+                            height={45}
+                            className="rounded-md hidden sm:block flex-shrink-0 object-cover"
                             data-ai-hint="presentation thumbnail small"
                         />
                         <div className="flex-grow min-w-0">
@@ -370,7 +432,7 @@ export default function DashboardPage() {
             </div>
           )}
         </section>
-        
+
         <section className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
           <Card className="shadow-sm hover:shadow-md transition-shadow">
             <CardHeader>
