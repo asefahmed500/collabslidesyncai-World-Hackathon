@@ -18,7 +18,8 @@ import {
   deleteField,
   orderBy,
   limit,
-  runTransaction
+  runTransaction,
+  or
 } from 'firebase/firestore';
 import { ref, deleteObject } from 'firebase/storage';
 import type { Presentation, Slide, SlideElement, SlideComment, User, Team, ActiveCollaboratorInfo, TeamRole, TeamMember, TeamActivity, TeamActivityType, PresentationActivity, PresentationActivityType, PresentationAccessRole, Asset, AssetType } from '@/types';
@@ -60,7 +61,7 @@ const presentationActivitiesCollection = collection(db, 'presentationActivities'
 const assetsCollection = collection(db, 'assets'); 
 
 
-export async function createPresentation(userId: string, title: string, teamId?: string | null, description: string = ''): Promise<string> {
+export async function createPresentation(userId: string, title: string, teamId?: string, description: string = ''): Promise<string> {
   const initialSlideId = `slide-initial-${Date.now()}`;
   const newSlide: Omit<Slide, 'presentationId'> = {
     id: initialSlideId,
@@ -84,7 +85,7 @@ export async function createPresentation(userId: string, title: string, teamId?:
     title,
     description,
     creatorId: userId,
-    teamId: teamId || undefined,
+    teamId: teamId || undefined, // Store undefined if no teamId
     access: { [userId]: 'owner' },
     settings: {
       isPublic: false,
@@ -114,35 +115,27 @@ export async function createPresentation(userId: string, title: string, teamId?:
 }
 
 export async function getPresentationsForUser(userId: string, userTeamId?: string | null): Promise<Presentation[]> {
-  const queries = [];
-  // Presentations created by the user
-  queries.push(query(presentationsCollection, where('creatorId', '==', userId), orderBy('lastUpdatedAt', 'desc')));
-  // Presentations explicitly shared with the user (owner, editor, viewer)
-  queries.push(query(presentationsCollection, where(`access.${userId}`, 'in', ['owner', 'editor', 'viewer']), orderBy('lastUpdatedAt', 'desc')));
-  
-  // Presentations shared with the user's team (if they are part of a team)
+  const conditions = [
+    where('creatorId', '==', userId), // Created by user
+    where(`access.${userId}`, 'in', ['owner', 'editor', 'viewer']) // Explicitly shared with user
+  ];
   if (userTeamId) {
-    queries.push(query(presentationsCollection, where('teamId', '==', userTeamId), orderBy('lastUpdatedAt', 'desc')));
+    conditions.push(where('teamId', '==', userTeamId)); // Belongs to user's team
   }
+  
+  const q = query(presentationsCollection, or(...conditions), orderBy('lastUpdatedAt', 'desc'));
 
-  const allSnapshots = await Promise.all(queries.map(q => getDocs(q)));
+  const snapshot = await getDocs(q);
   const presentationsMap = new Map<string, Presentation>();
   
-  allSnapshots.forEach(snapshot => {
-    snapshot.docs.forEach(docSnap => {
+  snapshot.docs.forEach(docSnap => {
       if (!presentationsMap.has(docSnap.id)) {
         const data = convertTimestamps(docSnap.data());
-        // Ensure access object exists before trying to read from it
         if (!data.access) data.access = {}; 
         presentationsMap.set(docSnap.id, { id: docSnap.id, ...data } as Presentation);
       }
-    });
   });
   
-  // Filter out presentations where the user is the creator AND it's a team presentation, if team filtering is already handled
-  // This avoids duplicates if a user created a team presentation.
-  // The primary sorting will be done client-side if needed, but fetching sorted helps.
-  // Default sort by lastUpdatedAt on the client for simplicity now.
   return Array.from(presentationsMap.values());
 }
 
@@ -212,7 +205,7 @@ export async function updatePresentation(presentationId: string, data: Partial<P
   }
 }
 
-export async function deletePresentation(presentationId: string, teamId?: string | null, actorId?: string): Promise<void> {
+export async function deletePresentation(presentationId: string, teamId?: string, actorId?: string): Promise<void> {
   const docRef = doc(db, 'presentations', presentationId);
   const pres = await getPresentationById(presentationId); 
   await deleteDoc(docRef);

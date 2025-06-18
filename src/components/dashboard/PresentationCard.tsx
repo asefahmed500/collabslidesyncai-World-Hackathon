@@ -16,14 +16,16 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useRouter } from 'next/navigation';
+import { useAuth } from '@/hooks/useAuth';
 
 interface PresentationCardProps {
   presentation: Presentation;
-  onDelete: (presentationId: string) => void; // onDelete now just needs ID
+  onDeleteRequest: (presentation: Presentation) => void; 
 }
 
-export function PresentationCard({ presentation, onDelete }: PresentationCardProps) {
+export function PresentationCard({ presentation, onDeleteRequest }: PresentationCardProps) {
   const router = useRouter();
+  const { currentUser } = useAuth();
   const collaboratorCount = presentation.access ? Object.keys(presentation.access).filter(id => id !== presentation.creatorId).length : 0;
   
   const lastUpdatedDate = presentation.lastUpdatedAt instanceof Date 
@@ -38,6 +40,7 @@ export function PresentationCard({ presentation, onDelete }: PresentationCardPro
     // In a real app: call an API to duplicate, then perhaps refresh list or navigate to new one
   };
 
+  const isCreator = presentation.creatorId === currentUser?.id;
 
   return (
     <Card className="flex flex-col h-full shadow-md hover:shadow-xl transition-shadow duration-200 ease-in-out rounded-xl overflow-hidden">
@@ -78,6 +81,9 @@ export function PresentationCard({ presentation, onDelete }: PresentationCardPro
             {collaboratorCount} collaborator{collaboratorCount > 1 ? 's' : ''}
           </div>
         )}
+         {presentation.teamId && currentUser?.teamId && presentation.teamId === currentUser.teamId && (
+            <Badge variant="outline" className="text-xs mt-1.5">Team: Your Team</Badge>
+        )}
       </CardContent>
       <CardFooter className="p-3 border-t bg-muted/30">
         <div className="flex justify-between w-full items-center">
@@ -94,7 +100,7 @@ export function PresentationCard({ presentation, onDelete }: PresentationCardPro
             <DropdownMenuContent align="end">
               <DropdownMenuLabel>Actions</DropdownMenuLabel>
               <DropdownMenuItem onClick={() => router.push(`/editor/${presentation.id}`)}>
-                <Edit3 className="mr-2 h-4 w-4" /> Edit Presentation
+                <Edit3 className="mr-2 h-4 w-4" /> Open Editor
               </DropdownMenuItem>
               <DropdownMenuItem onClick={handleDuplicate} disabled>
                 <CopyIcon className="mr-2 h-4 w-4" /> Duplicate (Soon)
@@ -102,10 +108,14 @@ export function PresentationCard({ presentation, onDelete }: PresentationCardPro
               <DropdownMenuItem disabled>
                 <Star className="mr-2 h-4 w-4" /> Add to Favorites (Soon)
               </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => onDelete(presentation.id)} className="text-destructive focus:text-destructive focus:bg-destructive/10">
-                <Trash2 className="mr-2 h-4 w-4" /> Delete
-              </DropdownMenuItem>
+              {isCreator && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => onDeleteRequest(presentation)} className="text-destructive focus:text-destructive focus:bg-destructive/10">
+                    <Trash2 className="mr-2 h-4 w-4" /> Delete
+                  </DropdownMenuItem>
+                </>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

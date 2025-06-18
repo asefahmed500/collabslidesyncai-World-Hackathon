@@ -9,9 +9,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PresentationCard } from '@/components/dashboard/PresentationCard';
 import type { Presentation, User as AppUser } from '@/types'; 
-import { PlusCircle, Search, Filter, List, Grid, Users, Activity, Loader2, FileWarning, Library, ArrowUpDown } from 'lucide-react';
+import { PlusCircle, Search, Filter, List, Grid, Users, Activity, Loader2, FileWarning, Library, ArrowUpDown, Eye, Trash2, Edit3, MoreVertical, CopyIcon, Star } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import Image from 'next/image';
 import { useAuth } from '@/hooks/useAuth';
 import { getPresentationsForUser, createPresentation as apiCreatePresentation, deletePresentation as apiDeletePresentation } from '@/lib/firestoreService';
@@ -25,7 +26,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
   DropdownMenu,
@@ -35,6 +35,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { formatDistanceToNowStrict } from 'date-fns';
+
 
 type SortOption = 'lastUpdatedAt_desc' | 'lastUpdatedAt_asc' | 'title_asc' | 'title_desc' | 'createdAt_desc' | 'createdAt_asc';
 
@@ -84,7 +86,9 @@ export default function DashboardPage() {
       return;
     }
     try {
-      const newPresentationId = await apiCreatePresentation(currentUser.id, "Untitled Presentation", currentUser.teamId || undefined);
+      // Default teamId to undefined if currentUser.teamId is null
+      const teamIdForNewPres = currentUser.teamId || undefined;
+      const newPresentationId = await apiCreatePresentation(currentUser.id, "Untitled Presentation", teamIdForNewPres);
       toast({ title: "Presentation Created", description: "Redirecting to editor..." });
       router.push(`/editor/${newPresentationId}`);
     } catch (error: any) {
@@ -96,7 +100,7 @@ export default function DashboardPage() {
   const handleDeletePresentation = async () => {
     if (!presentationToDelete || !currentUser) return;
     try {
-      await apiDeletePresentation(presentationToDelete.id, presentationToDelete.teamId, currentUser.id);
+      await apiDeletePresentation(presentationToDelete.id, presentationToDelete.teamId || undefined, currentUser.id);
       toast({ title: "Presentation Deleted", description: `"${presentationToDelete.title}" has been removed.` });
       setPresentations(prev => prev.filter(p => p.id !== presentationToDelete.id));
     } catch (error: any) {
@@ -113,19 +117,37 @@ export default function DashboardPage() {
       const matchesSearch = p.title.toLowerCase().includes(searchTerm.toLowerCase()) || (p.description && p.description.toLowerCase().includes(searchTerm.toLowerCase()));
       if (!currentUser) return false;
       
-      const matchesFilter = filter === 'all' || 
-                           (filter === 'mine' && p.creatorId === currentUser.id) ||
-                           (filter === 'shared' && p.access && p.access[currentUser.id] && p.creatorId !== currentUser.id) ||
-                           (filter === 'team' && p.teamId && p.teamId === currentUser.teamId); // team filter is broad
+      const isSharedDirectly = p.access && p.access[currentUser.id] && p.creatorId !== currentUser.id;
+      const isTeamAccessible = p.teamId && p.teamId === currentUser.teamId && p.creatorId !== currentUser.id && !isSharedDirectly;
+
+
+      let matchesFilter = false;
+      switch (filter) {
+        case 'all':
+            matchesFilter = true;
+            break;
+        case 'mine':
+            matchesFilter = p.creatorId === currentUser.id;
+            break;
+        case 'shared': // Explicitly shared OR accessible via team but not created by user
+            matchesFilter = isSharedDirectly || isTeamAccessible;
+            break;
+        case 'team': // Specifically team presentations (could be created by user or others in team)
+            matchesFilter = !!(p.teamId && p.teamId === currentUser.teamId);
+            break;
+        default:
+            matchesFilter = true;
+      }
       return matchesSearch && matchesFilter;
     })
     .sort((a, b) => {
         const getVal = (obj: Presentation, keyPart: string) => {
             if (keyPart.startsWith('lastUpdatedAt') || keyPart.startsWith('createdAt')) {
                 const dateVal = obj[keyPart.split('_')[0] as 'lastUpdatedAt' | 'createdAt'];
+                // Handle both Firestore Timestamps and JS Dates if data source varies
                 return dateVal instanceof Date ? dateVal.getTime() : (dateVal as any)?.toDate ? (dateVal as any).toDate().getTime() : 0;
             }
-            return obj[keyPart.split('_')[0] as 'title'];
+            return obj[keyPart.split('_')[0] as 'title'] || ''; // Ensure string for localeCompare
         };
 
         const [key, order] = sortOption.split('_');
@@ -135,6 +157,7 @@ export default function DashboardPage() {
         if (typeof valA === 'string' && typeof valB === 'string') {
             return order === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
         }
+        // Explicitly cast to number for date comparisons
         return order === 'asc' ? (valA as number) - (valB as number) : (valB as number) - (valA as number);
     });
   
@@ -197,8 +220,8 @@ export default function DashboardPage() {
               <SelectContent>
                 <SelectItem value="all">All Presentations</SelectItem>
                 <SelectItem value="mine">Created by Me</SelectItem>
-                <SelectItem value="shared">Shared with Me</SelectItem>
-                {currentUser?.teamId && <SelectItem value="team">My Team's</SelectItem>}
+                <SelectItem value="shared">Shared / Team</SelectItem>
+                {currentUser?.teamId && <SelectItem value="team">My Team's (Strict)</SelectItem>}
               </SelectContent>
             </Select>
             
@@ -234,7 +257,7 @@ export default function DashboardPage() {
                 <PresentationCard 
                     key={p.id} 
                     presentation={p} 
-                    onDelete={() => setPresentationToDelete(p)}
+                    onDeleteRequest={() => setPresentationToDelete(p)}
                 />
               ))}
             </div>
@@ -251,7 +274,12 @@ export default function DashboardPage() {
         </section>
 
         <section className="mb-12">
-          <h2 className="font-headline text-2xl font-semibold mb-4">All Presentations ({sortedAndFilteredPresentations.length})</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-headline text-2xl font-semibold">All Presentations ({sortedAndFilteredPresentations.length})</h2>
+             <Button variant="ghost" size="icon" onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')} aria-label="Toggle view mode" className="sm:hidden">
+              {viewMode === 'grid' ? <List className="h-5 w-5" /> : <Grid className="h-5 w-5" />}
+            </Button>
+          </div>
           {isLoading ? <div className="flex justify-center py-8"><Loader2 className="h-10 w-10 animate-spin text-primary" /></div> : sortedAndFilteredPresentations.length > 0 ? (
             <div className={`grid gap-6 ${viewMode === 'grid' ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4' : 'grid-cols-1'}`}>
               {sortedAndFilteredPresentations.map((presentation: Presentation) => (
@@ -259,7 +287,7 @@ export default function DashboardPage() {
                   <PresentationCard 
                     key={presentation.id} 
                     presentation={presentation} 
-                    onDelete={() => setPresentationToDelete(presentation)}
+                    onDeleteRequest={() => setPresentationToDelete(presentation)}
                   />
                 ) : (
                   // List View Item
@@ -271,14 +299,16 @@ export default function DashboardPage() {
                             alt={presentation.title} 
                             width={80} 
                             height={45} 
-                            className="rounded hidden sm:block flex-shrink-0" 
+                            className="rounded-md hidden sm:block flex-shrink-0 object-cover" 
                             data-ai-hint="presentation thumbnail small"
                         />
                         <div className="flex-grow min-w-0">
-                          <h3 className="font-headline text-lg font-semibold truncate" title={presentation.title}>{presentation.title}</h3>
+                          <h3 className="font-headline text-lg font-semibold truncate hover:text-primary transition-colors" title={presentation.title}>
+                            <Link href={`/editor/${presentation.id}`}>{presentation.title}</Link>
+                          </h3>
                           <p className="text-xs text-muted-foreground truncate">
-                            Last updated: {presentation.lastUpdatedAt ? new Date(presentation.lastUpdatedAt as any).toLocaleDateString() : 'N/A'}
-                            {presentation.teamId && ` | Team: ${currentUser?.teamId === presentation.teamId ? 'Your Team' : presentation.teamId.substring(0,8)}...`}
+                            Last updated: {presentation.lastUpdatedAt ? formatDistanceToNowStrict(presentation.lastUpdatedAt instanceof Date ? presentation.lastUpdatedAt : (presentation.lastUpdatedAt as any).toDate(), { addSuffix: true }) : 'N/A'}
+                            {presentation.teamId && currentUser?.teamId && presentation.teamId === currentUser.teamId && <Badge variant="outline" className="ml-2 text-xs">Team</Badge>}
                           </p>
                         </div>
                       </div>
@@ -290,25 +320,25 @@ export default function DashboardPage() {
                          )}
                          <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                <Button variant="ghost" size="icon" className="h-8 w-8 p-0">
+                                    <MoreVertical className="h-4 w-4" />
                                     <span className="sr-only">Open menu</span>
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
                                 </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                                 <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                <DropdownMenuItem onClick={() => router.push(`/editor/${presentation.id}`)}>Open Editor</DropdownMenuItem>
-                                <DropdownMenuItem disabled>Duplicate (Soon)</DropdownMenuItem>
-                                <DropdownMenuItem disabled>Add to Favorites (Soon)</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => router.push(`/editor/${presentation.id}`)}><Edit3 className="mr-2 h-4 w-4" />Open Editor</DropdownMenuItem>
+                                <DropdownMenuItem disabled><CopyIcon className="mr-2 h-4 w-4" />Duplicate (Soon)</DropdownMenuItem>
+                                <DropdownMenuItem disabled><Star className="mr-2 h-4 w-4" />Add to Favorites (Soon)</DropdownMenuItem>
                                 <DropdownMenuSeparator />
                                  {presentation.creatorId === currentUser?.id && (
                                     <DropdownMenuItem onClick={() => setPresentationToDelete(presentation)} className="text-destructive focus:bg-destructive/10 focus:text-destructive">
-                                        Delete Presentation
+                                        <Trash2 className="mr-2 h-4 w-4" /> Delete Presentation
                                     </DropdownMenuItem>
                                  )}
                             </DropdownMenuContent>
                         </DropdownMenu>
-                        <Button variant="outline" size="sm" asChild className="h-8">
+                        <Button variant="default" size="sm" asChild className="h-8">
                           <Link href={`/editor/${presentation.id}`}>Open</Link>
                         </Button>
                       </div>
@@ -361,7 +391,7 @@ export default function DashboardPage() {
                   </Link>
                 </>
                ) : (
-                 <p className="text-muted-foreground text-sm">Create or join a team to use the asset library. You can create a team when signing up or through team management (coming soon for existing users without teams).</p>
+                 <p className="text-muted-foreground text-sm">Create or join a team to use the asset library. You can create a team when signing up.</p>
                )}
             </CardContent>
           </Card>
@@ -399,7 +429,7 @@ export default function DashboardPage() {
         <AlertDialog open={!!presentationToDelete} onOpenChange={(open) => !open && setPresentationToDelete(null)}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Delete "{presentationToDelete.title}"?</AlertDialogTitle>
+              <AlertDialogTitle className="flex items-center"><Trash2 className="mr-2 h-5 w-5 text-destructive"/>Delete "{presentationToDelete.title}"?</AlertDialogTitle>
               <AlertDialogDescription>
                 This action cannot be undone. This will permanently delete the presentation.
               </AlertDialogDescription>
