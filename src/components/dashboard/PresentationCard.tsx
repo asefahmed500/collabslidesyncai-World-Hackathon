@@ -123,5 +123,3 @@ export function PresentationCard({ presentation, onDeleteRequest }: Presentation
     </Card>
   );
 }
-
-    
