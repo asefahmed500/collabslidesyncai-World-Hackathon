@@ -1,0 +1,115 @@
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper function to check if a user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Helper function to check if the authenticated user matches the given userId
+    function isUser(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Presentation specific helpers
+    function isPresentationCreator(presentationData) {
+      return isUser(presentationData.creatorId);
+    }
+
+    function canReadPresentation(presentationData) {
+      // Public presentations are readable by anyone
+      if (presentationData.settings.isPublic == true) {
+        return true;
+      }
+      // Authenticated users can read if:
+      return isAuthenticated() && (
+        isPresentationCreator(presentationData) || // They are the creator
+        presentationData.access[request.auth.uid] != null || // They have explicit access
+        // Team access: Best handled with custom claims (request.auth.token.teamId)
+        // If you have user documents in Firestore: get(/databases/$(database)/documents/users/$(request.auth.uid)).data.teamId == presentationData.teamId
+        (presentationData.teamId != null && request.auth.token.teamId == presentationData.teamId)
+      );
+    }
+
+    function canEditPresentation(presentationData) {
+      // Authenticated users can edit if:
+      return isAuthenticated() && (
+        isPresentationCreator(presentationData) || // They are the creator
+        (presentationData.access[request.auth.uid] == 'owner' || presentationData.access[request.auth.uid] == 'editor') || // Explicit owner/editor access
+        // Team access for editing: Best handled with custom claims (request.auth.token.teamId and request.auth.token.teamRole)
+        (presentationData.teamId != null && request.auth.token.teamId == presentationData.teamId &&
+         (request.auth.token.teamRole == 'owner' || request.auth.token.teamRole == 'admin' || request.auth.token.teamRole == 'editor'))
+      );
+    }
+
+    match /presentations/{presentationId} {
+      allow read: if canReadPresentation(resource.data);
+
+      allow create: if isAuthenticated() &&
+                       request.resource.data.creatorId == request.auth.uid &&
+                       request.resource.data.access[request.auth.uid] == 'owner' &&
+                       request.resource.data.title is string && request.resource.data.title.size() > 0 &&
+                       request.resource.data.slides is list &&
+                       // Validate teamId if provided and using custom claims
+                       (request.resource.data.teamId == null || request.resource.data.teamId == request.auth.token.teamId);
+
+      allow update: if isAuthenticated() && (
+                      // Allow users to update their own presence details (activeCollaborators map)
+                      (
+                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['activeCollaborators', 'lastUpdatedAt']) &&
+                        request.resource.data.activeCollaborators[request.auth.uid].id == request.auth.uid &&
+                        request.resource.data.activeCollaborators[request.auth.uid].lastSeen == request.time // Ensure lastSeen is server timestamp
+                        // Add more checks for cursorPosition if needed, e.g., request.resource.data.activeCollaborators[request.auth.uid].cursorPosition.slideId is string
+                      ) ||
+                      // Allow authorized users (creator, owner, editor) to update other fields
+                      (
+                        canEditPresentation(resource.data) &&
+                        request.resource.data.creatorId == resource.data.creatorId && // Cannot change creatorId
+                        (request.resource.data.teamId == resource.data.teamId || (resource.data.teamId == null && request.resource.data.teamId is string)) && // Cannot change teamId once set, can set if null
+                        (request.resource.data.title == null || (request.resource.data.title is string && request.resource.data.title.size() > 0)) // Example: title validation
+                        // Add more specific field validations as needed
+                      )
+                    );
+
+      allow delete: if isAuthenticated() && isPresentationCreator(resource.data); // Only the creator can delete
+    }
+
+    // Assets collection
+    // Assumes asset metadata includes 'teamId' and 'uploaderId'
+    // Assumes user's auth token might have 'teamId' and 'teamRole' as custom claims
+    match /assets/{assetId} {
+      allow read: if isAuthenticated() &&
+                     (request.auth.token.teamId == resource.data.teamId || resource.data.uploaderId == request.auth.uid); // User is member of the asset's team OR is the uploader
+
+      allow create: if isAuthenticated() &&
+                       request.resource.data.uploaderId == request.auth.uid &&
+                       (request.resource.data.teamId == request.auth.token.teamId) && // User must upload to their own team (via custom claim)
+                       request.resource.data.fileName is string && request.resource.data.fileName.size() > 0 &&
+                       request.resource.data.storagePath is string &&
+                       request.resource.data.downloadURL is string &&
+                       request.resource.data.size is number && request.resource.data.size > 0 &&
+                       request.resource.data.createdAt == request.time; // Ensure server timestamp for creation
+
+      allow delete: if isAuthenticated() &&
+                       (request.resource.data.uploaderId == request.auth.uid || // Uploader can delete
+                        (request.auth.token.teamId == resource.data.teamId && (request.auth.token.teamRole == 'owner' || request.auth.token.teamRole == 'admin')) // Team owner/admin can delete
+                       );
+      // Updates to asset metadata are generally not done client-side, or would need specific rules.
+    }
+
+    // Presentation Activities collection
+    match /presentationActivities/{activityId} {
+      allow create: if isAuthenticated() &&
+                       request.resource.data.actorId == request.auth.uid &&
+                       request.resource.data.createdAt == request.time; // Ensure server timestamp
+
+      // Read access for activities can be broad or restricted based on needs.
+      // Example: Allow authenticated users to read any activity (for now).
+      // Could be refined to: canReadPresentation(get(/databases/$(database)/documents/presentations/$(resource.data.presentationId)).data)
+      allow read: if isAuthenticated();
+    }
+  }
+}
