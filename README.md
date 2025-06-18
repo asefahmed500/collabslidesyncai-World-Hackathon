@@ -229,7 +229,8 @@ This detailed breakdown should clarify how the different parts of the applicatio
 This README provides a detailed overview of CollabSlideSyncAI's features and setup.
 ```
 # collabslidesyncai-World-Hackathon
-```
 This README now provides a good overview of the user features and how they are implemented within the CollabSlideSyncAI application.
 
+    
+```
     
