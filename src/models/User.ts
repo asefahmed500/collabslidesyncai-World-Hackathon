@@ -12,6 +12,7 @@ export interface UserDocument extends Omit<UserType, 'id' | 'lastActive' | 'crea
   githubId?: string | null;
   emailVerified?: boolean;
   twoFactorEnabled?: boolean;
+  disabled?: boolean; // New field
   teamId?: string | null;
 }
 
@@ -39,25 +40,22 @@ const UserSchema = new Schema<UserDocument>(
     lastActive: { type: Date, default: Date.now },
     settings: { type: UserSettingsSchema, default: () => ({ darkMode: false, aiFeatures: true, notifications: true }) },
     isAppAdmin: { type: Boolean, default: false },
+    disabled: { type: Boolean, default: false }, // New field with default
     googleId: { type: String, sparse: true, unique: true, default: null },
     githubId: { type: String, sparse: true, unique: true, default: null },
     twoFactorEnabled: { type: Boolean, default: false },
   },
   {
     timestamps: true, // Adds createdAt and updatedAt
-    // No `_id: false` here, as we define `_id` as a path. Mongoose will use our path.
-    // No explicit `UserSchema.virtual('id').get(...)` needed; Mongoose's default 'id' virtual will use this._id (which is a string).
     toJSON: {
-      virtuals: true, // Ensure Mongoose's default 'id' virtual (this._id) is included
+      virtuals: true, 
       transform: function(doc, ret) {
-        // 'ret' now includes 'id' from the default virtual.
-        // We remove the original '_id' and '__v' for cleaner output.
         delete ret._id;
         delete ret.__v;
       }
     },
     toObject: {
-      virtuals: true, // Ensure Mongoose's default 'id' virtual is included
+      virtuals: true, 
       transform: function(doc, ret) {
         delete ret._id;
         delete ret.__v;
@@ -66,7 +64,6 @@ const UserSchema = new Schema<UserDocument>(
   }
 );
 
-// UserModel definition remains the same
 let UserModel: Model<UserDocument>;
 
 if (mongoose.models && mongoose.models.User) {

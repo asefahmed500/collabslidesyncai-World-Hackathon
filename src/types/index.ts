@@ -20,6 +20,7 @@ export interface User {
     notifications: boolean;
   };
   isAppAdmin?: boolean;
+  disabled?: boolean; // New field for disabling user account
   googleId?: string | null;
   githubId?: string | null;
   twoFactorEnabled?: boolean;
