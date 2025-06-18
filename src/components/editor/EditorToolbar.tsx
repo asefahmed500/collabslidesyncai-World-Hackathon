@@ -20,6 +20,7 @@ import {
   LayoutTemplate,
   Sparkles, // For toggling AI Panel
 } from "lucide-react";
+import { useRouter } from 'next/navigation'; // Import useRouter
 
 const editorTools = [
   { id: "text", label: "Text", icon: Type },
@@ -42,13 +43,20 @@ const aiToolTriggers = [ // These select a tool that also opens the AI panel
 
 
 interface EditorToolbarProps {
+  presentationId: string; // Add presentationId prop
   onToolSelect: (tool: string | null) => void; 
   onAction: (action: string) => void;
   onShowSlideTemplates: () => void;
   selectedTool: string | null;
 }
 
-export function EditorToolbar({ onToolSelect, onAction, onShowSlideTemplates, selectedTool }: EditorToolbarProps) {
+export function EditorToolbar({ presentationId, onToolSelect, onAction, onShowSlideTemplates, selectedTool }: EditorToolbarProps) {
+  const router = useRouter(); // Initialize useRouter
+
+  const handlePresent = () => {
+    router.push(`/present/${presentationId}`);
+  };
+  
   return (
     <TooltipProvider delayDuration={100}>
       <div className="bg-card border-b p-2 flex items-center space-x-1 shadow-sm sticky top-16 z-30">
@@ -145,12 +153,10 @@ export function EditorToolbar({ onToolSelect, onAction, onShowSlideTemplates, se
           </TooltipContent>
         </Tooltip>
 
-        <Button variant="default" size="sm" onClick={() => onAction("present")}>
+        <Button variant="default" size="sm" onClick={handlePresent}>
           <Play className="mr-2 h-4 w-4" /> Present
         </Button>
       </div>
     </TooltipProvider>
   );
 }
-
-    

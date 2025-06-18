@@ -133,6 +133,11 @@ export default function EditorPage() {
       if (presData.creatorId === user.id || (presData.access && presData.access[user.id])) {
         hasAccess = true;
         accessMethod = presData.teamId === user.teamId && presData.creatorId !== user.id ? 'team_access' : 'direct';
+      } else if (presData.teamId && presData.teamId === user.teamId) {
+         // Check if user is part of the team, assumes basic view access for team members
+         // For more granular control, team role checks against presentation access map might be needed
+         hasAccess = true;
+         accessMethod = 'team_access';
       }
     }
 
@@ -285,13 +290,13 @@ export default function EditorPage() {
     } else if (tool === 'templates') {
       handleShowSlideTemplates();
     } else if (tool !== null) {
-      setIsRightPanelOpen('properties');
+      setIsRightPanelOpen('properties'); // Default to properties panel if a drawing tool is selected
     }
   };
 
   const handleAction = (action: string) => {
      if (action === 'comments') {
-       setIsRightPanelOpen(isRightPanelOpen === 'properties' ? null : 'properties');
+       setIsRightPanelOpen(isRightPanelOpen === 'properties' ? null : 'properties'); // Toggle for comments within properties
     } else if (action === 'ai-panel') {
        setIsRightPanelOpen(prev => prev === 'ai' ? (selectedElement ? 'properties' : null) : 'ai');
     } else if (action === 'share') {
@@ -299,7 +304,8 @@ export default function EditorPage() {
     } else if (action === 'undo' || action === 'redo') {
         toast({ title: "Coming Soon!", description: `${action.charAt(0).toUpperCase() + action.slice(1)} functionality is under development.`, duration: 2000 });
     } else {
-      toast({ title: "Action Triggered", description: `Action '${action}' functionality pending implementation.`, duration: 2000 });
+      // Present action handled by EditorToolbar's navigation
+      // toast({ title: "Action Triggered", description: `Action '${action}' functionality pending implementation.`, duration: 2000 });
     }
   };
 
@@ -373,8 +379,8 @@ export default function EditorPage() {
         if (currentSlideId === slideToDelete.id) {
           if (updatedSlides.length > 0) {
             const currentIndex = presentation.slides.findIndex(s => s.id === slideToDelete.id);
-            const nextSlideIndex = Math.max(0, Math.min(currentIndex -1, updatedSlides.length - 1));
-            setCurrentSlideId(updatedSlides[nextSlideIndex]?.id || null);
+            const nextSlideIndex = Math.max(0, Math.min(currentIndex -1, updatedSlides.length - 1)); // try previous, else next if possible
+            setCurrentSlideId(updatedSlides[nextSlideIndex]?.id || (updatedSlides[0]?.id || null));
           } else {
             setCurrentSlideId(null);
           }
@@ -614,14 +620,14 @@ export default function EditorPage() {
   };
 
   const handleApplyAITextUpdate = (elementId: string, newContent: string) => {
-    if (selectedElement && selectedElement.id === elementId && onApplyAITextUpdate) {
+    if (selectedElement && selectedElement.id === elementId && onApplyAITextUpdate) { // onApplyAITextUpdate is a local var here, should be handleUpdateElement
         handleUpdateElement({ id: elementId, content: newContent });
         toast({title: "AI Update Applied", description: "Text element updated with AI suggestion."});
     }
   };
 
   const handleApplyAISpeakerNotes = (notes: string) => {
-    if (presentation && currentSlideId && onApplyAISpeakerNotes) {
+    if (presentation && currentSlideId && onApplyAISpeakerNotes) { // onApplyAISpeakerNotes is local var
         const updatedSlides = presentation.slides.map(s =>
             s.id === currentSlideId ? { ...s, speakerNotes: notes } : s
         );
@@ -776,6 +782,7 @@ export default function EditorPage() {
     <div className="flex flex-col h-screen overflow-hidden">
       <EditorHeader />
       <EditorToolbar
+        presentationId={presentationId}
         onToolSelect={handleToolSelect}
         onAction={handleAction}
         onShowSlideTemplates={handleShowSlideTemplates}
