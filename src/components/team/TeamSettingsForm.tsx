@@ -4,8 +4,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
-import { useFormStatus, useFormState } from "react-dom";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -21,10 +20,9 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import type { Team, User as AppUser } from "@/types";
-import { updateTeamProfile as serverUpdateTeamProfile } from '@/app/teams/actions';
-import { Loader2, Save, Palette, Settings as SettingsIcon, Image as ImageIcon, Font } from "lucide-react"; // Renamed Settings to SettingsIcon
+import { Loader2, Save, Palette, Settings as SettingsIcon, Image as ImageIcon, Font } from "lucide-react";
 
-const colorRegex = /^#([0-9A-Fa-f]{3,4}){1,2}$/; // Supports #RGB, #RGBA, #RRGGBB, #RRGGBBAA
+const colorRegex = /^#([0-9A-Fa-f]{3,4}){1,2}$/;
 
 const formSchema = z.object({
   teamName: z.string().min(3, { message: "Team name must be at least 3 characters." }).max(50),
@@ -45,26 +43,9 @@ interface TeamSettingsFormProps {
   onTeamUpdated: (updatedTeam: Team) => void;
 }
 
-function SubmitButton() {
-  const { pending } = useFormStatus();
-  return (
-    <Button type="submit" disabled={pending} className="w-full sm:w-auto">
-      {pending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-      Save Team Settings
-    </Button>
-  );
-}
-
 export function TeamSettingsForm({ team, currentUser, onTeamUpdated }: TeamSettingsFormProps) {
   const { toast } = useToast();
-
-  const [formState, formAction] = useFormState(
-    async (prevState: any, formData: FormData) => {
-      formData.append('teamId', team.id);
-      return serverUpdateTeamProfile(prevState, formData);
-    },
-    { success: false, message: "", updatedTeam: null }
-  );
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const form = useForm<FormSchemaType>({
     resolver: zodResolver(formSchema),
@@ -81,7 +62,6 @@ export function TeamSettingsForm({ team, currentUser, onTeamUpdated }: TeamSetti
   });
   
   useEffect(() => {
-    // Reset form if team prop changes
     form.reset({
       teamName: team.name || "",
       logoUrl: team.branding?.logoUrl || "",
@@ -94,24 +74,57 @@ export function TeamSettingsForm({ team, currentUser, onTeamUpdated }: TeamSetti
     });
   }, [team, form]);
 
+  const onSubmit = async (values: FormSchemaType) => {
+    setIsSubmitting(true);
+    try {
+      const payload = {
+        actorUserId: currentUser.id,
+        name: values.teamName,
+        branding: {
+          logoUrl: values.logoUrl || undefined,
+          primaryColor: values.primaryColor || undefined,
+          secondaryColor: values.secondaryColor || undefined,
+          fontPrimary: values.fontPrimary || undefined,
+          fontSecondary: values.fontSecondary || undefined,
+        },
+        settings: {
+          allowGuestEdits: values.allowGuestEdits,
+          aiFeaturesEnabled: values.aiFeaturesEnabled,
+        },
+      };
 
-  useEffect(() => {
-    if (formState.message) {
-      if (formState.success && formState.updatedTeam) {
+      const response = await fetch(`/api/teams/${team.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.success && result.team) {
         toast({
           title: "Team Settings Updated",
-          description: formState.message,
+          description: result.message,
         });
-        onTeamUpdated(formState.updatedTeam as Team);
-      } else if (!formState.success) {
+        onTeamUpdated(result.team as Team);
+      } else {
         toast({
           title: "Update Failed",
-          description: formState.message,
+          description: result.message || "An unknown error occurred.",
           variant: "destructive",
         });
       }
+    } catch (error) {
+      console.error("Error updating team settings:", error);
+      toast({
+        title: "Update Error",
+        description: "An unexpected error occurred. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
     }
-  }, [formState, toast, onTeamUpdated]);
+  };
 
   const canEdit = team.members[currentUser.id]?.role === 'owner' || team.members[currentUser.id]?.role === 'admin';
 
@@ -121,7 +134,7 @@ export function TeamSettingsForm({ team, currentUser, onTeamUpdated }: TeamSetti
 
   return (
     <Form {...form}>
-      <form action={formAction} className="space-y-8">
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
         <FormField
           control={form.control}
           name="teamName"
@@ -214,7 +227,6 @@ export function TeamSettingsForm({ team, currentUser, onTeamUpdated }: TeamSetti
             </div>
         </div>
 
-
         <div className="space-y-6 pt-6 border-t">
             <h3 className="text-lg font-semibold flex items-center"><SettingsIcon className="mr-2 h-5 w-5 text-primary"/>General Settings</h3>
             <FormField
@@ -262,14 +274,13 @@ export function TeamSettingsForm({ team, currentUser, onTeamUpdated }: TeamSetti
         </div>
         
         <div className="pt-6 border-t">
-            <SubmitButton />
-            {formState?.message && !formState.success && (
-                <p className="text-sm font-medium text-destructive pt-2 text-center">{formState.message}</p>
-            )}
+            <Button type="submit" disabled={isSubmitting} className="w-full sm:w-auto">
+                {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                Save Team Settings
+            </Button>
         </div>
       </form>
     </Form>
   );
 }
-
     

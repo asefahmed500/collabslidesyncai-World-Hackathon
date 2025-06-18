@@ -14,12 +14,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import type { Team, TeamMember, TeamRole, User as AppUser } from "@/types";
-import { 
-    addTeamMemberByEmailAction, 
-    updateTeamMemberRoleAction, 
-    removeTeamMemberAction,
-    transferTeamOwnershipAction 
-} from '@/app/teams/actions';
+// Removed direct import of server actions
 import { Loader2, UserPlus, Edit, Trash2, UserCircle, ShieldQuestion, Crown, Mail, Save, X } from 'lucide-react';
 import { Label } from '../ui/label';
 import { Form, FormControl, FormField, FormItem, FormMessage } from '../ui/form';
@@ -46,8 +41,7 @@ export function TeamMembersManager({ team, currentUser, onMembersUpdated }: Team
   const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
   const [selectedNewRole, setSelectedNewRole] = useState<TeamRole | ''>('');
   const [memberToRemove, setMemberToRemove] = useState<({id: string, name?: string | null}) | null>(null);
-  const [transferTarget, setTransferTarget] = useState<({id: string, name?: string | null}) | null>(null);
-
+  const [transferTarget, setTransferTarget] = useState<({id: string, name?: string | null}) | null>(null); // Transfer ownership stub
 
   const addMemberForm = useForm<AddMemberFormValues>({
     resolver: zodResolver(addMemberSchema),
@@ -59,16 +53,26 @@ export function TeamMembersManager({ team, currentUser, onMembersUpdated }: Team
   const canManageHigherRoles = isCurrentUserOwner; 
   const canManageMembers = isCurrentUserOwner || isCurrentUserAdmin;
 
-  const onAddMember: SubmitHandler<AddMemberFormValues> = async (data) => {
+  const onAddMemberSubmit: SubmitHandler<AddMemberFormValues> = async (data) => {
     setIsSubmitting(true);
-    const result = await addTeamMemberByEmailAction(team.id, data.email, data.role);
-    if (result.success && result.updatedTeamMembers) {
-      toast({ title: "Member Action", description: result.message });
-      onMembersUpdated(result.updatedTeamMembers);
-      addMemberForm.reset();
-      setIsAddMemberDialogOpen(false);
-    } else {
-      toast({ title: "Failed to Add Member", description: result.message, variant: "destructive" });
+    try {
+      const response = await fetch(`/api/teams/${team.id}/members`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...data, actorUserId: currentUser.id }),
+      });
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        toast({ title: "Member Action", description: result.message });
+        if(result.members) onMembersUpdated(result.members);
+        addMemberForm.reset();
+        setIsAddMemberDialogOpen(false);
+      } else {
+        toast({ title: "Failed to Add Member", description: result.message || "An unknown error occurred.", variant: "destructive" });
+      }
+    } catch (error) {
+      toast({ title: "Error", description: "Could not add member. Please try again.", variant: "destructive" });
     }
     setIsSubmitting(false);
   };
@@ -84,12 +88,21 @@ export function TeamMembersManager({ team, currentUser, onMembersUpdated }: Team
       return;
     }
     setIsSubmitting(true);
-    const result = await updateTeamMemberRoleAction(team.id, editingMemberId, selectedNewRole);
-    if (result.success && result.updatedTeamMembers) {
-      toast({ title: "Role Updated", description: result.message });
-      onMembersUpdated(result.updatedTeamMembers);
-    } else {
-      toast({ title: "Failed to Update Role", description: result.message, variant: "destructive" });
+    try {
+      const response = await fetch(`/api/teams/${team.id}/members/${editingMemberId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newRole: selectedNewRole, actorUserId: currentUser.id }),
+      });
+      const result = await response.json();
+      if (response.ok && result.success) {
+        toast({ title: "Role Updated", description: result.message });
+        if(result.members) onMembersUpdated(result.members);
+      } else {
+        toast({ title: "Failed to Update Role", description: result.message || "An unknown error occurred.", variant: "destructive" });
+      }
+    } catch (error) {
+       toast({ title: "Error", description: "Could not update role. Please try again.", variant: "destructive" });
     }
     setEditingMemberId(null);
     setSelectedNewRole('');
@@ -99,25 +112,33 @@ export function TeamMembersManager({ team, currentUser, onMembersUpdated }: Team
   const handleConfirmRemoveMember = async () => {
     if (!memberToRemove) return;
     setIsSubmitting(true);
-    const result = await removeTeamMemberAction(team.id, memberToRemove.id);
-     if (result.success && result.updatedTeamMembers) {
-      toast({ title: "Member Removed", description: result.message });
-      onMembersUpdated(result.updatedTeamMembers);
-    } else {
-      toast({ title: "Failed to Remove Member", description: result.message, variant: "destructive" });
+    try {
+      const response = await fetch(`/api/teams/${team.id}/members/${memberToRemove.id}?actorUserId=${currentUser.id}`, {
+        method: 'DELETE',
+      });
+      const result = await response.json();
+      if (response.ok && result.success) {
+        toast({ title: "Member Removed", description: result.message });
+         if(result.members) onMembersUpdated(result.members);
+      } else {
+        toast({ title: "Failed to Remove Member", description: result.message || "An unknown error occurred.", variant: "destructive" });
+      }
+    } catch (error) {
+      toast({ title: "Error", description: "Could not remove member. Please try again.", variant: "destructive" });
     }
     setMemberToRemove(null);
     setIsSubmitting(false);
   };
 
-  const handleConfirmTransferOwnership = async () => {
+  const handleConfirmTransferOwnership = async () => { // Stub for now
     if (!transferTarget) return;
     setIsSubmitting(true);
-    const result = await transferTeamOwnershipAction(team.id, transferTarget.id);
-    toast({ title: result.success ? "Ownership Transfer Complete" : "Ownership Transfer Failed", description: result.message, variant: result.success ? "default" : "destructive" });
-     if (result.success && result.updatedTeam) { // Action should return updatedTeam if successful
-      onMembersUpdated(result.updatedTeam.members);
-    }
+    // const result = await transferTeamOwnershipAction(team.id, transferTarget.id); // This was a server action
+    // For API route:
+    // const response = await fetch(`/api/teams/${team.id}/transfer-ownership`, { method: 'POST', body: JSON.stringify({ newOwnerId: transferTarget.id, actorUserId: currentUser.id }) });
+    // const result = await response.json();
+    toast({ title: "Feature Incomplete", description: "Team ownership transfer via API route is not fully implemented yet.", variant: "info" });
+    // if (result.success && result.updatedTeam) { onMembersUpdated(result.updatedTeam.members); }
     setTransferTarget(null);
     setIsSubmitting(false);
   }
@@ -146,7 +167,7 @@ export function TeamMembersManager({ team, currentUser, onMembersUpdated }: Team
               </DialogDescription>
             </DialogHeader>
             <Form {...addMemberForm}>
-                <form onSubmit={addMemberForm.handleSubmit(onAddMember)} className="space-y-4 py-2">
+                <form onSubmit={addMemberForm.handleSubmit(onAddMemberSubmit)} className="space-y-4 py-2">
                 <FormField
                     control={addMemberForm.control}
                     name="email"
@@ -321,5 +342,4 @@ export function TeamMembersManager({ team, currentUser, onMembersUpdated }: Team
     </div>
   );
 }
-
     
