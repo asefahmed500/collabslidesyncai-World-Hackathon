@@ -214,4 +214,4 @@ This detailed breakdown should clarify how the different parts of the applicatio
 *   **Genkit:** If AI features are used, the necessary Google Cloud credentials/API keys for Genkit must be available in the runtime environment.
 
 This README provides a detailed overview of CollabSlideSyncAI's features and setup.
-```
+```# collabslidesyncai-World-Hackathon
