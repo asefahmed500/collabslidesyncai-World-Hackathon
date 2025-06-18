@@ -1,8 +1,10 @@
+
 "use client";
 
 import { useEffect, useState } from 'react';
 import type { User } from '@/types';
-import { getAllUsers } from '@/lib/firestoreService';
+// import { getAllUsers } from '@/lib/firestoreService'; // Firestore no longer source for all users
+import { getAllUsersFromMongoDB } from '@/lib/mongoUserService'; // Import MongoDB service
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -10,18 +12,23 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Loader2, UserCircle, Edit, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
+import { useToast } from '@/hooks/use-toast';
 
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const { toast } = useToast();
 
   useEffect(() => {
     setIsLoading(true);
-    getAllUsers()
+    getAllUsersFromMongoDB()
       .then(setUsers)
-      .catch(console.error)
+      .catch(error => {
+        console.error("Error fetching users from MongoDB:", error);
+        toast({ title: "Error", description: "Could not fetch users.", variant: "destructive" });
+      })
       .finally(() => setIsLoading(false));
-  }, []);
+  }, [toast]);
 
   if (isLoading) {
     return (
@@ -35,18 +42,19 @@ export default function AdminUsersPage() {
     <Card>
       <CardHeader>
         <CardTitle>All Users ({users.length})</CardTitle>
-        <CardDescription>Browse and manage all registered users in the system.</CardDescription>
+        <CardDescription>Browse and manage all registered users in the system (from MongoDB).</CardDescription>
       </CardHeader>
       <CardContent>
         {users.length === 0 ? (
-          <p className="text-muted-foreground text-center">No users found.</p>
+          <p className="text-muted-foreground text-center">No users found in MongoDB.</p>
         ) : (
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>User</TableHead>
                 <TableHead>Email</TableHead>
-                <TableHead>Role (Primary Team)</TableHead>
+                <TableHead>Team Role</TableHead>
+                <TableHead>Team ID</TableHead>
                 <TableHead>App Admin</TableHead>
                 <TableHead>Joined</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
@@ -67,14 +75,15 @@ export default function AdminUsersPage() {
                   <TableCell>{user.email}</TableCell>
                   <TableCell>
                     <Badge variant={user.role === 'owner' ? 'default' : user.role === 'admin' ? 'secondary' : 'outline'} className="capitalize">
-                      {user.role}
+                      {user.role || 'N/A'}
                     </Badge>
                   </TableCell>
+                  <TableCell className="font-mono text-xs">{user.teamId || 'N/A'}</TableCell>
                   <TableCell>
                     {user.isAppAdmin ? <Badge variant="destructive">Yes</Badge> : <Badge variant="outline">No</Badge>}
                   </TableCell>
                   <TableCell>
-                    {user.createdAt ? format(new Date(user.createdAt as Date), 'PP') : 'N/A'}
+                    {user.createdAt ? format(new Date(user.createdAt), 'PP') : 'N/A'}
                   </TableCell>
                   <TableCell className="text-right">
                     <Button variant="ghost" size="icon" disabled title="Edit User (Placeholder)">

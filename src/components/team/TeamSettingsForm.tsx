@@ -21,16 +21,16 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import type { Team, User as AppUser } from "@/types";
-import { updateTeamProfile as serverUpdateTeamProfile } from "@/app/teams/actions"; // Assuming actions file path
-import { Loader2, Save } from "lucide-react";
+import { updateTeamProfile as serverUpdateTeamProfile } from '@/app/teams/actions';
+import { Loader2, Save, Palette, Settings as SettingsIcon, Image as ImageIcon } from "lucide-react"; // Renamed Settings to SettingsIcon
 
 const formSchema = z.object({
   teamName: z.string().min(3, { message: "Team name must be at least 3 characters." }).max(50),
   logoUrl: z.string().url({ message: "Please enter a valid URL for the logo." }).optional().or(z.literal('')),
-  primaryColor: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/, { message: "Enter a valid hex color (e.g., #RRGGBB)."}).optional().or(z.literal('')),
-  secondaryColor: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/, { message: "Enter a valid hex color (e.g., #RRGGBB)."}).optional().or(z.literal('')),
-  fontPrimary: z.string().max(50).optional().or(z.literal('')),
-  fontSecondary: z.string().max(50).optional().or(z.literal('')),
+  primaryColor: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/, { message: "Enter a valid hex color (e.g., #RRGGBB or #RGB)."}).optional().or(z.literal('')),
+  secondaryColor: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/, { message: "Enter a valid hex color (e.g., #RRGGBB or #RGB)."}).optional().or(z.literal('')),
+  fontPrimary: z.string().max(50, {message: "Font name too long."}).optional().or(z.literal('')),
+  fontSecondary: z.string().max(50, {message: "Font name too long."}).optional().or(z.literal('')),
   allowGuestEdits: z.boolean().optional(),
   aiFeaturesEnabled: z.boolean().optional(),
 });
@@ -46,9 +46,9 @@ interface TeamSettingsFormProps {
 function SubmitButton() {
   const { pending } = useFormStatus();
   return (
-    <Button type="submit" disabled={pending}>
+    <Button type="submit" disabled={pending} className="w-full sm:w-auto">
       {pending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-      Save Changes
+      Save Team Settings
     </Button>
   );
 }
@@ -58,7 +58,6 @@ export function TeamSettingsForm({ team, currentUser, onTeamUpdated }: TeamSetti
 
   const [formState, formAction] = useFormState(
     async (prevState: any, formData: FormData) => {
-      // Add teamId to formData so action can access it
       formData.append('teamId', team.id);
       return serverUpdateTeamProfile(prevState, formData);
     },
@@ -70,12 +69,12 @@ export function TeamSettingsForm({ team, currentUser, onTeamUpdated }: TeamSetti
     defaultValues: {
       teamName: team.name || "",
       logoUrl: team.branding?.logoUrl || "",
-      primaryColor: team.branding?.primaryColor || "",
-      secondaryColor: team.branding?.secondaryColor || "",
-      fontPrimary: team.branding?.fontPrimary || "",
-      fontSecondary: team.branding?.fontSecondary || "",
+      primaryColor: team.branding?.primaryColor || "#3F51B5",
+      secondaryColor: team.branding?.secondaryColor || "#FFC107",
+      fontPrimary: team.branding?.fontPrimary || "Space Grotesk",
+      fontSecondary: team.branding?.fontSecondary || "PT Sans",
       allowGuestEdits: team.settings?.allowGuestEdits || false,
-      aiFeaturesEnabled: team.settings?.aiFeaturesEnabled || true,
+      aiFeaturesEnabled: team.settings?.aiFeaturesEnabled === undefined ? true : team.settings.aiFeaturesEnabled,
     },
   });
 
@@ -83,11 +82,11 @@ export function TeamSettingsForm({ team, currentUser, onTeamUpdated }: TeamSetti
     if (formState.message) {
       if (formState.success && formState.updatedTeam) {
         toast({
-          title: "Team Updated",
+          title: "Team Settings Updated",
           description: formState.message,
         });
         onTeamUpdated(formState.updatedTeam as Team);
-        // form.reset(formState.updatedTeam as FormSchemaType); // Reset form with new values
+        // form.reset(formState.updatedTeam as FormSchemaType); // Re-sync form if needed
       } else if (!formState.success) {
         toast({
           title: "Update Failed",
@@ -98,7 +97,6 @@ export function TeamSettingsForm({ team, currentUser, onTeamUpdated }: TeamSetti
     }
   }, [formState, toast, onTeamUpdated, form]);
 
-  // Check if current user is owner or admin
   const canEdit = team.members[currentUser.id]?.role === 'owner' || team.members[currentUser.id]?.role === 'admin';
 
   if (!canEdit) {
@@ -122,125 +120,137 @@ export function TeamSettingsForm({ team, currentUser, onTeamUpdated }: TeamSetti
           )}
         />
 
-        <h3 className="text-lg font-medium pt-4 border-t">Branding</h3>
-        <FormField
-          control={form.control}
-          name="logoUrl"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Logo URL</FormLabel>
-              <FormControl>
-                <Input placeholder="https://example.com/logo.png" {...field} />
-              </FormControl>
-              <FormDescription>Link to your team's logo image.</FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-6 pt-6 border-t">
+            <h3 className="text-lg font-semibold flex items-center"><Palette className="mr-2 h-5 w-5 text-primary" />Branding</h3>
             <FormField
             control={form.control}
-            name="primaryColor"
+            name="logoUrl"
             render={({ field }) => (
                 <FormItem>
-                <FormLabel>Primary Color (Hex)</FormLabel>
+                <FormLabel className="flex items-center"><ImageIcon className="mr-2 h-4 w-4"/>Logo URL</FormLabel>
                 <FormControl>
-                    <Input placeholder="#3F51B5" {...field} />
+                    <Input placeholder="https://example.com/logo.png" {...field} />
                 </FormControl>
+                <FormDescription>Link to your team's logo image.</FormDescription>
                 <FormMessage />
+                </FormItem>
+            )}
+            />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <FormField
+                control={form.control}
+                name="primaryColor"
+                render={({ field }) => (
+                    <FormItem>
+                    <FormLabel>Primary Color</FormLabel>
+                    <div className="flex items-center gap-2">
+                        <Input type="color" value={field.value} onChange={field.onChange} className="w-12 h-10 p-1"/>
+                        <Input placeholder="#3F51B5" {...field} />
+                    </div>
+                    <FormMessage />
+                    </FormItem>
+                )}
+                />
+                <FormField
+                control={form.control}
+                name="secondaryColor"
+                render={({ field }) => (
+                    <FormItem>
+                    <FormLabel>Secondary Color</FormLabel>
+                     <div className="flex items-center gap-2">
+                        <Input type="color" value={field.value} onChange={field.onChange} className="w-12 h-10 p-1"/>
+                        <Input placeholder="#FFC107" {...field} />
+                    </div>
+                    <FormMessage />
+                    </FormItem>
+                )}
+                />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <FormField
+                control={form.control}
+                name="fontPrimary"
+                render={({ field }) => (
+                    <FormItem>
+                    <FormLabel>Primary Font</FormLabel>
+                    <FormControl>
+                        <Input placeholder="Space Grotesk" {...field} />
+                    </FormControl>
+                     <FormDescription>e.g., 'Arial', 'Verdana', 'Space Grotesk'</FormDescription>
+                    <FormMessage />
+                    </FormItem>
+                )}
+                />
+                <FormField
+                control={form.control}
+                name="fontSecondary"
+                render={({ field }) => (
+                    <FormItem>
+                    <FormLabel>Secondary Font</FormLabel>
+                    <FormControl>
+                        <Input placeholder="PT Sans" {...field} />
+                    </FormControl>
+                    <FormDescription>e.g., 'Times New Roman', 'PT Sans'</FormDescription>
+                    <FormMessage />
+                    </FormItem>
+                )}
+                />
+            </div>
+        </div>
+
+
+        <div className="space-y-6 pt-6 border-t">
+            <h3 className="text-lg font-semibold flex items-center"><SettingsIcon className="mr-2 h-5 w-5 text-primary"/>General Settings</h3>
+            <FormField
+            control={form.control}
+            name="allowGuestEdits"
+            render={({ field }) => (
+                <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4 shadow-sm bg-card">
+                <div className="space-y-0.5">
+                    <FormLabel className="text-base">Allow Guest Edits</FormLabel>
+                    <FormDescription>
+                    Permit users not formally in your team to edit public presentations (if link is shared).
+                    </FormDescription>
+                </div>
+                <FormControl>
+                    <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                    name={field.name} // Ensure name is passed for form submission
+                    />
+                </FormControl>
                 </FormItem>
             )}
             />
             <FormField
             control={form.control}
-            name="secondaryColor"
+            name="aiFeaturesEnabled"
             render={({ field }) => (
-                <FormItem>
-                <FormLabel>Secondary Color (Hex)</FormLabel>
+                <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4 shadow-sm bg-card">
+                <div className="space-y-0.5">
+                    <FormLabel className="text-base">Enable AI Features</FormLabel>
+                    <FormDescription>
+                    Allow team members to use AI-powered assistance for content and design.
+                    </FormDescription>
+                </div>
                 <FormControl>
-                    <Input placeholder="#FFC107" {...field} />
+                    <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                    name={field.name} // Ensure name is passed for form submission
+                    />
                 </FormControl>
-                <FormMessage />
                 </FormItem>
             )}
             />
         </div>
-         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <FormField
-            control={form.control}
-            name="fontPrimary"
-            render={({ field }) => (
-                <FormItem>
-                <FormLabel>Primary Font</FormLabel>
-                <FormControl>
-                    <Input placeholder="Space Grotesk" {...field} />
-                </FormControl>
-                <FormMessage />
-                </FormItem>
-            )}
-            />
-            <FormField
-            control={form.control}
-            name="fontSecondary"
-            render={({ field }) => (
-                <FormItem>
-                <FormLabel>Secondary Font</FormLabel>
-                <FormControl>
-                    <Input placeholder="PT Sans" {...field} />
-                </FormControl>
-                <FormMessage />
-                </FormItem>
-            )}
-            />
-        </div>
-
-
-        <h3 className="text-lg font-medium pt-4 border-t">General Settings</h3>
-        <FormField
-          control={form.control}
-          name="allowGuestEdits"
-          render={({ field }) => (
-            <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
-              <div className="space-y-0.5">
-                <FormLabel className="text-base">Allow Guest Edits</FormLabel>
-                <FormDescription>
-                  Permit users not formally in your team to edit public presentations (if link is shared).
-                </FormDescription>
-              </div>
-              <FormControl>
-                <Switch
-                  checked={field.value}
-                  onCheckedChange={field.onChange}
-                />
-              </FormControl>
-            </FormItem>
-          )}
-        />
-        <FormField
-          control={form.control}
-          name="aiFeaturesEnabled"
-          render={({ field }) => (
-            <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
-              <div className="space-y-0.5">
-                <FormLabel className="text-base">Enable AI Features</FormLabel>
-                <FormDescription>
-                  Allow team members to use AI-powered assistance for content and design.
-                </FormDescription>
-              </div>
-              <FormControl>
-                <Switch
-                  checked={field.value}
-                  onCheckedChange={field.onChange}
-                />
-              </FormControl>
-            </FormItem>
-          )}
-        />
         
-        <SubmitButton />
-         {formState?.message && !formState.success && (
-            <p className="text-sm font-medium text-destructive pt-2 text-center">{formState.message}</p>
-        )}
+        <div className="pt-6 border-t">
+            <SubmitButton />
+            {formState?.message && !formState.success && (
+                <p className="text-sm font-medium text-destructive pt-2 text-center">{formState.message}</p>
+            )}
+        </div>
       </form>
     </Form>
   );

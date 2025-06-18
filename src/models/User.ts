@@ -2,18 +2,17 @@
 import mongoose, { Schema, Document, Model } from 'mongoose';
 import type { User as UserType } from '@/types';
 
-// This interface represents the Mongoose document structure.
-// It uses Firebase UID (_id: string) as the primary key.
-export interface UserDocument extends Omit<UserType, 'id' | 'lastActive' | 'createdAt' | 'updatedAt' | 'role' | '_id'>, Document {
-  _id: string; // Firebase UID will be used as _id. Mongoose will not auto-generate its ObjectId.
-  role: 'owner' | 'admin' | 'editor' | 'viewer' | 'guest'; // Ensure role has a default
+export interface UserDocument extends Omit<UserType, 'id' | 'lastActive' | 'createdAt' | 'updatedAt' | '_id'>, Document {
+  _id: string; // Firebase UID will be used as _id
+  role: 'owner' | 'admin' | 'editor' | 'viewer' | 'guest';
   lastActive: Date;
-  createdAt?: Date; // Mongoose timestamp
-  updatedAt?: Date; // Mongoose timestamp
+  createdAt?: Date;
+  updatedAt?: Date;
   googleId?: string | null;
   githubId?: string | null;
   emailVerified?: boolean;
   twoFactorEnabled?: boolean;
+  teamId?: string | null; // Added teamId
 }
 
 const UserSettingsSchema = new Schema({
@@ -24,41 +23,39 @@ const UserSettingsSchema = new Schema({
 
 const UserSchema = new Schema<UserDocument>(
   {
-    _id: { type: String, required: true }, // Explicitly define _id as String for Firebase UID
+    _id: { type: String, required: true },
     name: { type: String, trim: true, index: true },
-    email: { 
-      type: String, 
-      unique: true, // Emails should be unique
-      lowercase: true, 
-      trim: true, 
-      // sparse: true ensures uniqueness constraint only applies to documents that have this field.
-      // Useful if email can be null/undefined initially for some auth methods, though Firebase usually provides it.
-      sparse: true 
+    email: {
+      type: String,
+      unique: true,
+      lowercase: true,
+      trim: true,
+      sparse: true
     },
     emailVerified: { type: Boolean, default: false },
     profilePictureUrl: { type: String, trim: true },
-    teamId: { type: String, index: true, sparse: true }, // For primary team reference
-    role: { type: String, enum: ['owner', 'admin', 'editor', 'viewer', 'guest'], default: 'editor' },
+    teamId: { type: String, index: true, sparse: true, default: null }, // User's primary team ID
+    role: { type: String, enum: ['owner', 'admin', 'editor', 'viewer', 'guest'], default: 'editor' }, // Role within their teamId
     lastActive: { type: Date, default: Date.now },
     settings: { type: UserSettingsSchema, default: () => ({ darkMode: false, aiFeatures: true, notifications: true }) },
     isAppAdmin: { type: Boolean, default: false },
-    googleId: { type: String, sparse: true, unique: true, default: null }, // Unique if present
-    githubId: { type: String, sparse: true, unique: true, default: null }, // Unique if present
+    googleId: { type: String, sparse: true, unique: true, default: null },
+    githubId: { type: String, sparse: true, unique: true, default: null },
     twoFactorEnabled: { type: Boolean, default: false },
   },
   {
-    timestamps: true, // Adds createdAt and updatedAt automatically
-    _id: false, // Important: Disable Mongoose's default ObjectId generation for _id since we use Firebase UID.
-    toJSON: { 
-      virtuals: true, // Ensure virtuals like 'id' are included in toJSON output
+    timestamps: true,
+    _id: false, // Disable Mongoose's default ObjectId for _id as we use Firebase UID
+    toJSON: {
+      virtuals: true,
       transform: function(doc, ret) {
-        ret.id = ret._id; // Map _id (Firebase UID string) to id field for consistency with AppUser type
-        delete ret._id;   // Remove the original _id if 'id' is preferred
-        delete ret.__v;   // Remove Mongoose version key
+        ret.id = ret._id; // Map _id (Firebase UID string) to id
+        delete ret._id;
+        delete ret.__v;
       }
     },
-    toObject: { 
-      virtuals: true, // Ensure virtuals like 'id' are included in toObject output
+    toObject: {
+      virtuals: true,
       transform: function(doc, ret) {
         ret.id = ret._id;
         delete ret._id;
@@ -68,15 +65,12 @@ const UserSchema = new Schema<UserDocument>(
   }
 );
 
-// Virtual 'id' getter that returns the string representation of _id (which is Firebase UID)
 UserSchema.virtual('id').get(function (this: UserDocument) {
   return this._id;
 });
 
-
 let UserModel: Model<UserDocument>;
 
-// Check if the model already exists to prevent OverwriteModelError in HMR scenarios
 if (mongoose.models && mongoose.models.User) {
   UserModel = mongoose.models.User as Model<UserDocument>;
 } else {
@@ -84,5 +78,3 @@ if (mongoose.models && mongoose.models.User) {
 }
 
 export default UserModel;
-
-    

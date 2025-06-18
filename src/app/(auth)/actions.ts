@@ -1,10 +1,10 @@
 
 'use server';
 
-import { auth } from '@/lib/firebaseConfig'; // Firebase app, auth
-import { 
-  createUserWithEmailAndPassword, 
-  signInWithEmailAndPassword, 
+import { auth } from '@/lib/firebaseConfig';
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
   signOut as firebaseSignOut,
   sendEmailVerification as firebaseSendEmailVerification,
   updateProfile as firebaseUpdateProfile,
@@ -19,23 +19,22 @@ import {
 } from 'firebase/auth';
 import type { User as FirebaseUserType } from 'firebase/auth';
 import type { User as AppUser } from '@/types';
-import { 
-  createUserInMongoDB, 
-  getUserFromMongoDB, 
+import {
+  createUserInMongoDB,
+  getUserFromMongoDB,
   updateUserInMongoDB,
   deleteUserFromMongoDB,
-  getUserByEmailFromMongoDB
+  getUserByEmailFromMongoDB,
+  updateUserTeamAndRoleInMongoDB
 } from '@/lib/mongoUserService';
+import { createTeamInMongoDB } from '@/lib/mongoTeamService';
 import { revalidatePath } from 'next/cache';
-// TODO: Remove createTeam and getUserProfile from firestoreService if teams also move to MongoDB
-// For now, team creation on signup is removed to simplify this step.
-// import { createTeam, getUserProfile as getFirestoreUserProfile } from '@/lib/firestoreService'; 
 
 export interface AuthResponse {
   success: boolean;
   message: string;
   userId?: string;
-  user?: AppUser | null; // Changed from User to AppUser
+  user?: AppUser | null;
   requiresReauth?: boolean;
 }
 
@@ -43,48 +42,71 @@ export async function signUpWithEmail(prevState: any, formData: FormData): Promi
   const name = formData.get('name') as string;
   const email = formData.get('email') as string;
   const password = formData.get('password') as string;
-  // const teamName = formData.get('teamName') as string; // Team creation removed for now
+  const teamName = formData.get('teamName') as string;
 
-  // if (!name || !email || !password || !teamName) {
-  if (!name || !email || !password) {
-    return { success: false, message: 'All fields (Name, Email, Password) are required.' };
+  if (!name || !email || !password || !teamName) {
+    return { success: false, message: 'All fields (Name, Email, Team Name, Password) are required.' };
+  }
+  if (teamName.length < 3) {
+    return { success: false, message: 'Team name must be at least 3 characters.' };
   }
 
+
   try {
-    // 1. Check if user already exists in MongoDB by email (optional, Firebase handles this for auth)
     const existingMongoUser = await getUserByEmailFromMongoDB(email);
     if (existingMongoUser) {
       return { success: false, message: 'This email address is already associated with an account.' };
     }
 
-    // 2. Create Firebase Auth user
     const userCredential = await createUserWithEmailAndPassword(auth, email, password);
     const firebaseUser = userCredential.user;
 
-    // 3. Update Firebase Auth profile (optional, but good practice)
     await firebaseUpdateProfile(firebaseUser, { displayName: name });
-    
-    // 4. Send email verification
     await firebaseSendEmailVerification(firebaseUser);
 
-    // 5. Create user document in MongoDB
-    const appUser = await createUserInMongoDB(firebaseUser, { name, role: 'editor' }); // Default role 'editor'
-    if (!appUser) {
-        // This case should ideally be handled by createUserInMongoDB's error handling
-        // but as a fallback:
-        await firebaseDeleteUser(firebaseUser); // Rollback Firebase user creation
-        return { success: false, message: 'Failed to create user profile in database. Firebase user rolled back.' };
-    }
-    
-    // Team creation logic removed for now. User will not be assigned to a team on signup.
-    // const teamId = await createTeam(teamName, appUser); // This would need to use appUser
-    // await updateUserInMongoDB(appUser.id, { teamId, role: 'owner' }); // Update user with team info
+    // Create AppUser object shell for MongoDB, teamId and role will be set after team creation
+    const initialAppUserForMongo: Partial<AppUser> = {
+        name,
+        email: firebaseUser.email,
+        emailVerified: firebaseUser.emailVerified,
+        profilePictureUrl: firebaseUser.photoURL,
+        role: 'owner', // Will be owner of the new team
+        isAppAdmin: false, // Default, can be changed manually in DB
+    };
 
-    return { 
-      success: true, 
-      message: 'Signup successful! A verification email has been sent. Please check your inbox.', 
+    // Create user in MongoDB first without teamId
+    let appUser = await createUserInMongoDB(firebaseUser, initialAppUserForMongo);
+    if (!appUser) {
+      await firebaseDeleteUser(firebaseUser); // Rollback Firebase user
+      return { success: false, message: 'Failed to create user profile in database. Firebase user rolled back.' };
+    }
+
+    // Create the team, with this user as owner
+    const newTeam = await createTeamInMongoDB(teamName, appUser);
+    if (!newTeam) {
+      await firebaseDeleteUser(firebaseUser); // Rollback Firebase user
+      await deleteUserFromMongoDB(appUser.id); // Rollback MongoDB user
+      return { success: false, message: 'Failed to create team. User creation rolled back.' };
+    }
+
+    // Update the user in MongoDB with teamId and role 'owner'
+    const updatedAppUser = await updateUserTeamAndRoleInMongoDB(appUser.id, newTeam.id, 'owner');
+     if (!updatedAppUser) {
+        // This is a critical failure, try to clean up
+        console.error(`Failed to update user ${appUser.id} with teamId ${newTeam.id} after team creation.`);
+        // Potentially rollback team creation if desired, though complex
+        await firebaseDeleteUser(firebaseUser);
+        await deleteUserFromMongoDB(appUser.id);
+        // Team might be orphaned, or add logic to delete it too
+        return { success: false, message: 'Failed to associate user with new team. Signup rolled back.' };
+    }
+
+
+    return {
+      success: true,
+      message: `Signup successful! Team "${teamName}" created. A verification email has been sent. Please check your inbox.`,
       userId: firebaseUser.uid,
-      user: appUser
+      user: updatedAppUser
     };
   } catch (error: any) {
     console.error('Signup error:', error);
@@ -111,29 +133,24 @@ export async function signInWithEmail(prevState: any, formData: FormData): Promi
     const firebaseUser = userCredential.user;
 
     if (!firebaseUser.emailVerified) {
-        // Optionally, resend verification email
-        // await firebaseSendEmailVerification(firebaseUser);
-        return { 
-            success: false, 
+        return {
+            success: false,
             message: 'Email not verified. Please check your inbox for the verification link.'
         };
     }
 
-    // Fetch full AppUser profile from MongoDB
     const appUser = await getUserFromMongoDB(firebaseUser.uid);
 
     if (!appUser) {
-        // This might happen if user was created in Firebase but not in MongoDB (e.g. migration issue)
-        // Or if they signed up with social and record creation failed.
-        // For now, treat as error. Could create a MongoDB profile here as a fallback.
         console.warn(`User document not found in MongoDB for UID: ${firebaseUser.uid} after login.`);
-        // Attempt to create user in MongoDB as a recovery step
-        const recoveredUser = await createUserInMongoDB(firebaseUser);
+        const recoveredUser = await createUserInMongoDB(firebaseUser, {role: 'editor'}); // Attempt recovery
         if (!recoveredUser) {
           return { success: false, message: 'Login successful with Firebase, but failed to load/create user profile from database.' };
         }
         return { success: true, message: 'Login successful! User profile recovered.', userId: firebaseUser.uid, user: recoveredUser };
     }
+    // Update lastActive on login
+    await updateUserInMongoDB(appUser.id, { lastActive: new Date() });
 
     return { success: true, message: 'Login successful!', userId: firebaseUser.uid, user: appUser };
   } catch (error: any) {
@@ -145,45 +162,39 @@ export async function signInWithEmail(prevState: any, formData: FormData): Promi
   }
 }
 
-// Server action to handle profile creation/update after social sign-in (called from client after Firebase SDK handles popup)
 export async function handleSocialSignIn(firebaseUser: FirebaseUserType): Promise<AuthResponse> {
   if (!firebaseUser?.uid) {
     return { success: false, message: 'Firebase user data is missing for social sign-in.' };
   }
   try {
     let appUser = await getUserFromMongoDB(firebaseUser.uid);
-    if (!appUser) {
-      // User does not exist in MongoDB, create them
-      const providerId = firebaseUser.providerData[0]?.providerId;
-      const socialProfileData: Partial<AppUser> = {
-        name: firebaseUser.displayName,
-        email: firebaseUser.email,
-        profilePictureUrl: firebaseUser.photoURL,
-        emailVerified: firebaseUser.emailVerified,
-        role: 'editor', // Default role for new social sign-ups
-      };
-      if (providerId === GoogleAuthProvider.PROVIDER_ID) {
+    const socialProfileData: Partial<AppUser> = {
+      name: firebaseUser.displayName,
+      email: firebaseUser.email,
+      profilePictureUrl: firebaseUser.photoURL,
+      emailVerified: firebaseUser.emailVerified,
+      lastActive: new Date(),
+    };
+    const providerId = firebaseUser.providerData[0]?.providerId;
+    if (providerId === GoogleAuthProvider.PROVIDER_ID) {
         socialProfileData.googleId = firebaseUser.providerData.find(p => p.providerId === GoogleAuthProvider.PROVIDER_ID)?.uid;
-      } else if (providerId === GithubAuthProvider.PROVIDER_ID) {
+    } else if (providerId === GithubAuthProvider.PROVIDER_ID) {
         socialProfileData.githubId = firebaseUser.providerData.find(p => p.providerId === GithubAuthProvider.PROVIDER_ID)?.uid;
-      }
-      
+    }
+
+    if (!appUser) {
+      // User does not exist in MongoDB, create them with a default role 'editor'
+      // They won't be part of a team automatically on social sign-up unless further logic is added
+      socialProfileData.role = 'editor';
       appUser = await createUserInMongoDB(firebaseUser, socialProfileData);
       if (!appUser) {
         return { success: false, message: "Failed to create user profile after social sign-in." };
       }
     } else {
-      // User exists, potentially update their profile with latest from provider if changed (e.g. profile picture)
-      const updates: Partial<AppUser> = { lastActive: new Date() };
-      if (firebaseUser.displayName && appUser.name !== firebaseUser.displayName) {
-        updates.name = firebaseUser.displayName;
-      }
-      if (firebaseUser.photoURL && appUser.profilePictureUrl !== firebaseUser.photoURL) {
-        updates.profilePictureUrl = firebaseUser.photoURL;
-      }
-      if (Object.keys(updates).length > 1) { // Only update if more than just lastActive changed
-        await updateUserInMongoDB(appUser.id, updates);
-        appUser = {...appUser, ...updates}; // Reflect updates locally
+      // User exists, update their profile with latest from provider and set lastActive
+      appUser = await updateUserInMongoDB(appUser.id, socialProfileData);
+       if (!appUser) {
+        return { success: false, message: "Failed to update user profile after social sign-in." };
       }
     }
     return { success: true, message: "Social sign-in successful.", userId: appUser.id, user: appUser };
@@ -197,7 +208,6 @@ export async function handleSocialSignIn(firebaseUser: FirebaseUserType): Promis
 export async function signOut(): Promise<AuthResponse> {
   try {
     await firebaseSignOut(auth);
-    // Client-side useAuth hook will clear local state
     return { success: true, message: 'Signed out successfully.' };
   } catch (error: any) {
     console.error('Sign out error:', error);
@@ -225,7 +235,7 @@ export async function sendPasswordReset(prevState: any, formData: FormData): Pro
 
 export async function updateUserProfileServer(userId: string, formData: FormData): Promise<AuthResponse> {
   const name = formData.get('name') as string;
-  const profilePictureUrl = formData.get('profilePictureUrl') as string; // Assuming URL is provided for now
+  const profilePictureUrl = formData.get('profilePictureUrl') as string;
 
   if (!auth.currentUser || auth.currentUser.uid !== userId) {
     return { success: false, message: 'Unauthorized to update this profile.' };
@@ -233,10 +243,9 @@ export async function updateUserProfileServer(userId: string, formData: FormData
 
   const updates: Partial<AppUser> = {};
   if (name) updates.name = name;
-  if (profilePictureUrl) updates.profilePictureUrl = profilePictureUrl; // In a real app, handle file upload here
+  if (profilePictureUrl) updates.profilePictureUrl = profilePictureUrl;
 
   try {
-    // Update Firebase Auth profile
     if (name || profilePictureUrl) {
         await firebaseUpdateProfile(auth.currentUser, {
         displayName: name || auth.currentUser.displayName,
@@ -244,9 +253,8 @@ export async function updateUserProfileServer(userId: string, formData: FormData
         });
     }
 
-    // Update MongoDB profile
     const updatedUser = await updateUserInMongoDB(userId, updates);
-    revalidatePath('/dashboard/profile'); // Revalidate if you have a profile page showing this
+    revalidatePath('/dashboard/profile');
     return { success: true, message: 'Profile updated successfully.', user: updatedUser };
   } catch (error: any) {
     console.error('Error updating profile:', error);
@@ -269,11 +277,8 @@ export async function changePasswordServer(userId: string, formData: FormData): 
   }
 
   try {
-    // Re-authenticate user
     const credential = EmailAuthProvider.credential(auth.currentUser.email!, currentPassword);
     await reauthenticateWithCredential(auth.currentUser, credential);
-    
-    // Update password
     await firebaseUpdatePassword(auth.currentUser, newPassword);
     return { success: true, message: 'Password updated successfully.' };
   } catch (error: any) {
@@ -288,10 +293,7 @@ export async function changePasswordServer(userId: string, formData: FormData): 
   }
 }
 
-// TODO: Implement 2FA setup/verification/disable actions
 export async function setupTwoFactorAuth(userId: string): Promise<AuthResponse> {
-  // This would involve generating a secret, QR code, etc.
-  // Placeholder for now.
   console.log('2FA setup action called for user:', userId);
   return { success: false, message: '2FA setup not yet implemented.' };
 }
@@ -300,41 +302,19 @@ export async function deleteUserAccountServer(userId: string): Promise<AuthRespo
   if (!auth.currentUser || auth.currentUser.uid !== userId) {
     return { success: false, message: 'Unauthorized.' };
   }
-  
-  // IMPORTANT: For actual account deletion, re-authentication is critical.
-  // The current implementation is simplified. A real app would pass a currentPassword
-  // or trigger a re-authentication flow on the client.
-  // const currentPassword = formData.get('currentPassword') as string; // Example
-  // if (!currentPassword) return { success: false, message: 'Password required to delete account.' };
-  // try {
-  //   const credential = EmailAuthProvider.credential(auth.currentUser.email!, currentPassword);
-  //   await reauthenticateWithCredential(auth.currentUser, credential);
-  // } catch (error: any) {
-  //   return { success: false, message: 'Re-authentication failed. Cannot delete account.', requiresReauth: true };
-  // }
 
   try {
-    // Delete from MongoDB FIRST
+    // TODO: Handle team ownership transfer or team deletion if user is an owner.
+    // For now, this is a simplified deletion.
     await deleteUserFromMongoDB(userId);
-    
-    // THEN Delete from Firebase Auth (this is the irreversible step for auth)
     await firebaseDeleteUser(auth.currentUser);
-    
-    // Revalidate relevant paths (e.g., home, admin users list if applicable)
-    revalidatePath('/'); 
+    revalidatePath('/');
     return { success: true, message: 'Account deleted successfully.' };
-  } catch (error: any)
-   {
+  } catch (error: any) {
     console.error('Error deleting account:', error);
      if (error.code === 'auth/requires-recent-login'){
-        // This error from firebaseDeleteUser means re-authentication is needed.
-        // You'd typically redirect the user to log in again.
         return { success: false, message: 'This operation is sensitive and requires recent authentication. Please log in again before retrying this request.', requiresReauth: true}
     }
-    // If MongoDB deletion failed but Firebase succeeded, or vice-versa, you might have an orphaned record.
-    // Consider more robust transaction handling or cleanup jobs for production.
     return { success: false, message: error.message || 'Failed to delete account.' };
   }
 }
-
-    

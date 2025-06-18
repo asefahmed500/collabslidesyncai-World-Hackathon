@@ -2,36 +2,34 @@
 import mongoose, { Schema, Document, Model, Types } from 'mongoose';
 import type { Team as TeamType, TeamMember as TeamMemberType, TeamRole } from '@/types';
 
-export interface TeamMemberDocument extends Omit<TeamMemberType, 'joinedAt'>, Document {
-  joinedAt: Date;
-  // _id will be part of the subdocument array if not explicitly disabled
-}
-
-const TeamMemberSchema = new Schema<TeamMemberDocument>({
-  userId: { type: String, required: true }, // Corresponds to User.id (Firebase UID or Mongoose _id.toString())
+// TeamMember subdocument schema
+// We store userId (which is Firebase UID) directly, not as a ref to User model in this subdoc
+// for easier querying if needed and to keep team document somewhat self-contained for members list.
+const TeamMemberSchema = new Schema<TeamMemberType & Document>({
+  // userId is the key in the Map, so not needed as a field in the subdocument itself.
   role: { type: String, enum: ['owner', 'admin', 'editor', 'viewer'], required: true },
   joinedAt: { type: Date, default: Date.now },
-  addedBy: { type: String, required: true }, // User.id of who added them
-  name: { type: String },
-  email: { type: String },
-  profilePictureUrl: { type: String },
-}, { _id: false }); // _id: false if you don't want Mongoose to add _id to each member
+  addedBy: { type: String, required: true }, // User.id (Firebase UID) of who added them
+  name: { type: String }, // Denormalized
+  email: { type: String }, // Denormalized
+  profilePictureUrl: { type: String }, // Denormalized
+}, { _id: false }); // No separate _id for subdocuments in the map values
 
 export interface TeamDocument extends Omit<TeamType, 'id' | 'members' | 'createdAt' | 'lastUpdatedAt'>, Document {
-  _id: mongoose.Types.ObjectId;
-  id?: string; // virtual
-  ownerId: string; // User.id (Firebase UID or Mongoose _id.toString())
-  members: Types.Map<TeamMemberDocument>; // Using Mongoose Map for { [userId: string]: TeamMember }
+  _id: Types.ObjectId; // Mongoose will auto-generate this
+  id?: string; // virtual getter
+  ownerId: string; // User.id (Firebase UID)
+  members: Types.Map<TeamMemberType>; // Key is User.id (Firebase UID), value is TeamMemberType
   createdAt?: Date;
   lastUpdatedAt?: Date;
 }
 
 const TeamBrandingSchema = new Schema({
-  logoUrl: String,
-  primaryColor: String,
-  secondaryColor: String,
-  fontPrimary: String,
-  fontSecondary: String,
+  logoUrl: { type: String, trim: true, default: '' },
+  primaryColor: { type: String, trim: true, default: '#3F51B5' },
+  secondaryColor: { type: String, trim: true, default: '#FFC107' },
+  fontPrimary: { type: String, trim: true, default: 'Space Grotesk' },
+  fontSecondary: { type: String, trim: true, default: 'PT Sans' },
 }, { _id: false });
 
 const TeamSettingsSchema = new Schema({
@@ -41,8 +39,8 @@ const TeamSettingsSchema = new Schema({
 
 const TeamSchema = new Schema<TeamDocument>(
   {
-    name: { type: String, required: true, trim: true },
-    ownerId: { type: String, required: true, index: true },
+    name: { type: String, required: true, trim: true, index: true },
+    ownerId: { type: String, required: true, index: true }, // Firebase UID of the owner
     members: {
       type: Map,
       of: TeamMemberSchema,

@@ -1,8 +1,9 @@
+
 "use client";
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Zap, LayoutDashboard, UserCircle, LogOut, Settings, User, Users, ShieldCheck } from 'lucide-react'; // Added Users, ShieldCheck icon
+import { Zap, LayoutDashboard, UserCircle, LogOut, Settings, User, Users, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
@@ -61,10 +62,10 @@ export function SiteHeader() {
           </span>
         </Link>
 
-        <nav className="flex items-center space-x-4">
+        <nav className="flex items-center space-x-2 sm:space-x-4">
           {currentUser && (
              <Link href="/dashboard" passHref legacyBehavior>
-                <Button variant="ghost" className="hidden md:inline-flex">
+                <Button variant="ghost" className="hidden md:inline-flex text-sm">
                   <LayoutDashboard className="mr-2 h-4 w-4" />
                   Dashboard
                 </Button>
@@ -73,10 +74,10 @@ export function SiteHeader() {
           {currentUser ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="relative h-9 w-9 rounded-full">
+                <Button variant="ghost" className="relative h-9 w-9 rounded-full p-0">
                   <Avatar className="h-9 w-9">
-                    <AvatarImage src={currentUser.profilePictureUrl || \`https://placehold.co/40x40.png?text=\${currentUser.name?.charAt(0).toUpperCase()}\`} alt={currentUser.name || 'User'} data-ai-hint="profile avatar" />
-                    <AvatarFallback>{currentUser.name ? currentUser.name.charAt(0).toUpperCase() : <User className="h-4 w-4"/>}</AvatarFallback>
+                    <AvatarImage src={currentUser.profilePictureUrl || `https://placehold.co/40x40.png?text=${currentUser.name?.charAt(0).toUpperCase()}`} alt={currentUser.name || 'User'} data-ai-hint="profile avatar"/>
+                    <AvatarFallback>{currentUser.name ? currentUser.name.charAt(0).toUpperCase() : <UserIcon className="h-4 w-4"/>}</AvatarFallback>
                   </Avatar>
                 </Button>
               </DropdownMenuTrigger>
@@ -90,7 +91,7 @@ export function SiteHeader() {
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => router.push('/profile')} disabled> {/* Placeholder for profile page */}
+                <DropdownMenuItem onClick={() => router.push('/dashboard/profile')}>
                   <UserCircle className="mr-2 h-4 w-4" />
                   <span>Profile</span>
                 </DropdownMenuItem>
@@ -98,8 +99,8 @@ export function SiteHeader() {
                   <LayoutDashboard className="mr-2 h-4 w-4" />
                   <span>Dashboard</span>
                 </DropdownMenuItem>
-                {canManageTeam && (
-                  <DropdownMenuItem onClick={() => router.push(\`/dashboard/manage-team\`)}>
+                {currentUser.teamId && ( // Show Manage Team if user has a teamId, regardless of role for now; specific permissions handled on page
+                  <DropdownMenuItem onClick={() => router.push(`/dashboard/manage-team`)}>
                     <Users className="mr-2 h-4 w-4" />
                     <span>Manage Team</span>
                   </DropdownMenuItem>
@@ -112,7 +113,7 @@ export function SiteHeader() {
                 )}
                  <DropdownMenuItem disabled>
                   <Settings className="mr-2 h-4 w-4" />
-                  <span>Settings</span>
+                  <span>Settings (App)</span>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleSignOut}>
@@ -122,9 +123,14 @@ export function SiteHeader() {
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            <Link href="/login" passHref legacyBehavior>
-              <Button>Login</Button>
-            </Link>
+            <>
+             <Link href="/login" passHref legacyBehavior>
+                <Button variant="ghost" className="text-sm">Login</Button>
+             </Link>
+             <Link href="/signup" passHref legacyBehavior>
+                <Button className="text-sm">Sign Up</Button>
+             </Link>
+            </>
           )}
         </nav>
       </div>
