@@ -39,6 +39,7 @@ import {
   addSlideToPresentation as apiAddSlide,
   deleteSlideFromPresentation as apiDeleteSlide,
   duplicateSlideInPresentation as apiDuplicateSlide,
+  moveSlideInPresentation as apiMoveSlide,
   updateElementInSlide as apiUpdateElement, 
   addCommentToSlide as apiAddComment,
   resolveCommentOnSlide as apiResolveComment,
@@ -82,6 +83,8 @@ export default function EditorPage() {
   const [accessDenied, setAccessDenied] = useState(false);
   const [passwordVerifiedInSession, setPasswordVerifiedInSession] = useState(false);
   const [slideToDelete, setSlideToDelete] = useState<Slide | null>(null);
+  const [showTemplatesDialog, setShowTemplatesDialog] = useState(false);
+
 
   const unsubscribePresentationListener = useRef<(() => void) | null>(null);
   const presenceIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -329,7 +332,7 @@ export default function EditorPage() {
     }
   };
 
-  const handleDeleteSlide = async (slideIdToDelete: string) => {
+  const handleDeleteSlide = (slideIdToDelete: string) => { // No async here, just sets state
     if (!presentation || !currentUser) return;
     const slide = presentation.slides.find(s => s.id === slideIdToDelete);
     if (!slide) return;
@@ -342,14 +345,14 @@ export default function EditorPage() {
     try {
       const updatedSlides = await apiDeleteSlide(presentation.id, slideToDelete.id);
       if (updatedSlides) {
-        setPresentation(prev => prev ? { ...prev, slides: updatedSlides } : null);
+        // setPresentation(prev => prev ? { ...prev, slides: updatedSlides } : null); // Handled by listener
         toast({ title: "Slide Deleted", description: `Slide ${slideToDelete.slideNumber} has been removed.` });
 
         if (currentSlideId === slideToDelete.id) {
           if (updatedSlides.length > 0) {
-            const currentIndex = presentation.slides.findIndex(s => s.id === slideToDelete.id);
-            const nextSlideIndex = Math.min(currentIndex, updatedSlides.length - 1);
-            setCurrentSlideId(updatedSlides[nextSlideIndex >=0 ? nextSlideIndex : 0]?.id || null);
+            const currentIndex = presentation.slides.findIndex(s => s.id === slideToDelete.id); // Use pre-delete index
+            const nextSlideIndex = Math.min(Math.max(0, currentIndex -1), updatedSlides.length - 1); // Select previous or first if no prev
+            setCurrentSlideId(updatedSlides[nextSlideIndex]?.id || null);
           } else {
             setCurrentSlideId(null);
           }
@@ -372,8 +375,7 @@ export default function EditorPage() {
     setIsSaving(true);
     try {
       const result = await apiDuplicateSlide(presentation.id, slideIdToDuplicate);
-      if (result && result.newSlideId && result.updatedSlides) {
-        setPresentation(prev => prev ? { ...prev, slides: result.updatedSlides } : null);
+      if (result && result.newSlideId) { // Listener will update slides
         toast({ title: "Slide Duplicated", description: "Slide has been duplicated." });
         setCurrentSlideId(result.newSlideId); // Select the duplicated slide
         setSelectedElementId(null);
@@ -388,8 +390,28 @@ export default function EditorPage() {
     }
   };
 
+  const handleMoveSlide = async (slideId: string, direction: 'up' | 'down') => {
+    if (!presentation || !currentUser) return;
+    setIsSaving(true);
+    try {
+      const updatedSlides = await apiMoveSlide(presentation.id, slideId, direction);
+      if (updatedSlides) {
+        // setPresentation(prev => prev ? { ...prev, slides: updatedSlides } : null); // Handled by listener
+        toast({ title: "Slide Moved", description: "Slide order updated."});
+      } else {
+        toast({ title: "Error", description: "Could not move slide or no change made.", variant: "default" });
+      }
+    } catch (error) {
+       console.error("Error moving slide:", error);
+       toast({ title: "Error Moving Slide", description: "Could not move slide.", variant: "destructive"});
+    } finally {
+       setIsSaving(false);
+    }
+  };
+
+
   const handleShowSlideTemplates = () => {
-    toast({ title: "Coming Soon!", description: "Slide templates feature will be available in a future update." });
+    setShowTemplatesDialog(true);
   };
 
   const handleUpdateElement = useCallback(async (updatedElementPartial: Partial<SlideElement>) => {
@@ -664,6 +686,7 @@ export default function EditorPage() {
           onAddSlide={handleAddSlide}
           onDeleteSlide={handleDeleteSlide}
           onDuplicateSlide={handleDuplicateSlide}
+          onMoveSlide={handleMoveSlide}
           disabled={isSaving || !isOnline || !currentUser || (presentation?.creatorId !== currentUser.id && presentation?.access[currentUser.id] !== 'owner' && presentation?.access[currentUser.id] !== 'editor')}
         />
         <EditorCanvas 
@@ -736,6 +759,20 @@ export default function EditorPage() {
             </AlertDialogContent>
         </AlertDialog>
       )}
+       <AlertDialog open={showTemplatesDialog} onOpenChange={setShowTemplatesDialog}>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle className="flex items-center"><LayoutTemplate className="mr-2 h-5 w-5" />Slide Templates</AlertDialogTitle>
+                    <AlertDialogDescription>
+                        This feature is coming soon! You'll be able to choose from a variety of pre-designed slide templates to kickstart your content.
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogAction onClick={() => setShowTemplatesDialog(false)}>Got it!</AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
+
         <div className="md:hidden"> 
           <Sheet>
             <SheetTrigger asChild>
@@ -765,4 +802,3 @@ export default function EditorPage() {
     </div>
   );
 }
-

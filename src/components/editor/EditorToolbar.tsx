@@ -137,4 +137,3 @@ export function EditorToolbar({ onToolSelect, onAction, onShowSlideTemplates }: 
     </TooltipProvider>
   );
 }
-

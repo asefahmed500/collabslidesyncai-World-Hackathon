@@ -232,7 +232,7 @@ export async function addSlideToPresentation(presentationId: string, newSlideDat
     let currentSlides = presentationData.slides || [];
     
     const slideId = uuidv4();
-    const slideNumber = currentSlides.length + 1;
+    const slideNumber = currentSlides.length + 1; // Temp number, will be re-numbered
     const defaultElementId = uuidv4();
     
     const defaultElement: SlideElement = {
@@ -242,10 +242,10 @@ export async function addSlideToPresentation(presentationId: string, newSlideDat
     };
     
     const newSlide: Slide = {
-      id: slideId, presentationId: presentationId, slideNumber: slideNumber,
+      id: slideId, presentationId: presentationId, slideNumber: slideNumber, // placeholder
       elements: newSlideData.elements || [defaultElement],
       speakerNotes: newSlideData.speakerNotes || "", comments: newSlideData.comments || [],
-      thumbnailUrl: newSlideData.thumbnailUrl || `https://placehold.co/160x90.png?text=S${slideNumber}`,
+      thumbnailUrl: newSlideData.thumbnailUrl || `https://placehold.co/160x90.png?text=New`,
       backgroundColor: newSlideData.backgroundColor || '#FFFFFF', aiSuggestions: newSlideData.aiSuggestions || [],
     };
     
@@ -297,17 +297,22 @@ export async function duplicateSlideInPresentation(presentationId: string, slide
 
     const originalSlide = slides[originalSlideIndex];
     const newSlideId = uuidv4();
+    // Deep clone the slide and its elements, generating new IDs for elements
+    const duplicatedElements = originalSlide.elements.map(el => ({
+      ...JSON.parse(JSON.stringify(el)), // Deep clone element
+      id: uuidv4(), // New unique ID for each duplicated element
+    }));
+
     const duplicatedSlide: Slide = {
-      ...JSON.parse(JSON.stringify(originalSlide)), // Deep clone
-      id: newSlideId,
+      ...JSON.parse(JSON.stringify(originalSlide)), // Deep clone original slide
+      id: newSlideId, // New unique ID for the duplicated slide
       slideNumber: 0, // Will be renumbered
-      elements: originalSlide.elements.map(el => ({
-        ...JSON.parse(JSON.stringify(el)),
-        id: uuidv4(), // New ID for each element
-      })),
+      elements: duplicatedElements,
       comments: [], // Comments are typically not duplicated
       aiSuggestions: [], // AI suggestions are typically not duplicated
       // Keep thumbnail and background color from original, or reset if desired
+      // For thumbnail, maybe add a "(Copy)" or generate a new placeholder
+      thumbnailUrl: originalSlide.thumbnailUrl ? `${originalSlide.thumbnailUrl.split('?')[0]}?text=Copy` : `https://placehold.co/160x90.png?text=Copy`,
     };
 
     slides.splice(originalSlideIndex + 1, 0, duplicatedSlide);
@@ -315,6 +320,40 @@ export async function duplicateSlideInPresentation(presentationId: string, slide
 
     transaction.update(presRef, { slides: updatedSlides, lastUpdatedAt: serverTimestamp() });
     return { newSlideId, updatedSlides };
+  });
+}
+
+export async function moveSlideInPresentation(presentationId: string, slideId: string, direction: 'up' | 'down'): Promise<Slide[] | null> {
+  const presRef = doc(db, 'presentations', presentationId);
+  return await runTransaction(db, async (transaction) => {
+    const presDoc = await transaction.get(presRef);
+    if (!presDoc.exists()) throw new Error("Presentation not found");
+
+    const presentationData = presDoc.data() as Presentation;
+    let slides = [...(presentationData.slides || [])]; // Create a mutable copy
+    const currentIndex = slides.findIndex(s => s.id === slideId);
+
+    if (currentIndex === -1) {
+      console.warn(`Slide ${slideId} not found for move operation.`);
+      return presentationData.slides;
+    }
+
+    if (direction === 'up' && currentIndex > 0) {
+      const temp = slides[currentIndex];
+      slides[currentIndex] = slides[currentIndex - 1];
+      slides[currentIndex - 1] = temp;
+    } else if (direction === 'down' && currentIndex < slides.length - 1) {
+      const temp = slides[currentIndex];
+      slides[currentIndex] = slides[currentIndex + 1];
+      slides[currentIndex + 1] = temp;
+    } else {
+      // Cannot move further, return original slides
+      return presentationData.slides;
+    }
+
+    const updatedSlides = renumberSlides(slides);
+    transaction.update(presRef, { slides: updatedSlides, lastUpdatedAt: serverTimestamp() });
+    return updatedSlides;
   });
 }
 

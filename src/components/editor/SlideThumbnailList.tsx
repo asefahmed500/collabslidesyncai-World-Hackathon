@@ -5,7 +5,7 @@ import Image from 'next/image';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import type { Slide } from '@/types';
-import { PlusCircle, GripVertical, Trash2, Copy } from 'lucide-react';
+import { PlusCircle, GripVertical, Trash2, Copy, ArrowUp, ArrowDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   Tooltip,
@@ -21,6 +21,7 @@ interface SlideThumbnailListProps {
   onAddSlide: () => void;
   onDeleteSlide: (slideId: string) => void;
   onDuplicateSlide: (slideId: string) => void;
+  onMoveSlide: (slideId: string, direction: 'up' | 'down') => void;
   disabled?: boolean;
 }
 
@@ -31,6 +32,7 @@ export function SlideThumbnailList({
   onAddSlide,
   onDeleteSlide,
   onDuplicateSlide,
+  onMoveSlide,
   disabled 
 }: SlideThumbnailListProps) {
   return (
@@ -41,7 +43,6 @@ export function SlideThumbnailList({
             <div
               key={slide.id}
               onClick={(e) => {
-                 // Ensure clicks on buttons within the thumbnail don't also trigger slide selection
                  if ((e.target as HTMLElement).closest('button')) return;
                  if (!disabled) onSlideSelect(slide.id)
               }}
@@ -54,7 +55,7 @@ export function SlideThumbnailList({
               tabIndex={disabled ? -1 : 0}
               onKeyDown={(e) => !disabled && e.key === 'Enter' && onSlideSelect(slide.id)}
               role="button"
-              aria-label={`Select slide ${slide.slideNumber}`}
+              aria-label={`Select slide ${slide.slideNumber || index + 1}`}
               aria-current={currentSlideId === slide.id ? "true" : "false"}
               aria-disabled={disabled}
             >
@@ -75,19 +76,49 @@ export function SlideThumbnailList({
                 )}
               </div>
               {/* Action buttons */}
-              <div className="absolute bottom-1 right-1 z-20 flex space-x-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-150">
+              <div className="absolute bottom-1 right-1 z-20 flex space-x-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-150">
                 <TooltipProvider delayDuration={100}>
+                   <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="h-5 w-5 p-0.5 bg-background/70 hover:bg-background" 
+                        onClick={(e) => { e.stopPropagation(); if (!disabled && index > 0) onMoveSlide(slide.id, 'up');}} 
+                        disabled={disabled || index === 0}
+                        aria-label="Move slide up"
+                      >
+                        <ArrowUp className="h-3 w-3" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top"><p>Move Up</p></TooltipContent>
+                  </Tooltip>
+                   <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="h-5 w-5 p-0.5 bg-background/70 hover:bg-background" 
+                        onClick={(e) => { e.stopPropagation(); if (!disabled && index < slides.length - 1) onMoveSlide(slide.id, 'down');}} 
+                        disabled={disabled || index === slides.length - 1}
+                        aria-label="Move slide down"
+                      >
+                        <ArrowDown className="h-3 w-3" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top"><p>Move Down</p></TooltipContent>
+                  </Tooltip>
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button 
                         variant="ghost" 
                         size="icon" 
-                        className="h-6 w-6 p-1 bg-background/70 hover:bg-background" 
+                        className="h-5 w-5 p-0.5 bg-background/70 hover:bg-background" 
                         onClick={(e) => { e.stopPropagation(); if (!disabled) onDuplicateSlide(slide.id);}} 
                         disabled={disabled}
                         aria-label="Duplicate slide"
                       >
-                        <Copy className="h-3.5 w-3.5" />
+                        <Copy className="h-3 w-3" />
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent side="top"><p>Duplicate Slide</p></TooltipContent>
@@ -97,22 +128,18 @@ export function SlideThumbnailList({
                       <Button 
                         variant="ghost" 
                         size="icon" 
-                        className="h-6 w-6 p-1 bg-background/70 hover:bg-background text-destructive hover:text-destructive/80" 
+                        className="h-5 w-5 p-0.5 bg-background/70 hover:bg-background text-destructive hover:text-destructive/80" 
                         onClick={(e) => { e.stopPropagation(); if (!disabled) onDeleteSlide(slide.id);}} 
                         disabled={disabled}
                         aria-label="Delete slide"
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
+                        <Trash2 className="h-3 w-3" />
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent side="top"><p>Delete Slide</p></TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
               </div>
-              {/* Drag handle (visual only for now) */}
-              {/* <div className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-50 transition-opacity">
-                <GripVertical className="h-5 w-5 text-muted-foreground" />
-              </div> */}
             </div>
           ))}
         </div>
@@ -125,4 +152,3 @@ export function SlideThumbnailList({
     </div>
   );
 }
-
