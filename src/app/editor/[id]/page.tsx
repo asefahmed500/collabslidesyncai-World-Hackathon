@@ -158,7 +158,7 @@ export default function EditorPage() {
       return;
     }
 
-    if (presentationId && collaboratorColor && (currentUser || presentation?.settings.isPublic)) {
+    if (presentationId && collaboratorColor && (currentUser || presentation?.settings.isPublic || passwordVerifiedInSession)) {
       setIsLoading(true);
 
       const presRef = doc(db, 'presentations', presentationId);
@@ -273,7 +273,7 @@ export default function EditorPage() {
       };
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [presentationId, currentUser, authLoading, collaboratorColor, checkAccessAndLoad]);
+  }, [presentationId, currentUser, authLoading, collaboratorColor, checkAccessAndLoad, passwordVerifiedInSession]);
 
   const currentSlide = presentation?.slides.find(s => s.id === currentSlideId) || null;
   const selectedElement = currentSlide?.elements.find(el => el.id === selectedElementId) || null;
@@ -469,12 +469,11 @@ export default function EditorPage() {
         newElementPartial.size = { width: 100, height: 100 };
     } else if (selectedTool === 'chart') {
         newElementPartial.type = 'chart';
-        newElementPartial.content = { type: 'bar', data: {} };
+        newElementPartial.content = { type: 'bar', data: {} }; // Placeholder for chart data structure
         newElementPartial.size = { width: 400, height: 300 };
     } else if (selectedTool === 'icon') {
         newElementPartial.type = 'icon';
-        newElementPartial.content = 'smile';
-        newElementPartial.size = { width: 50, height: 50 };
+        newElementPartial.content = 'smile'; // Default Lucide icon name
          newElementPartial.style = { ...newElementPartial.style, color: '#333333' };
     } else {
         return;
@@ -523,7 +522,7 @@ export default function EditorPage() {
     const targetElement = presentation.slides.find(s => s.id === currentSlideId)?.elements.find(el => el.id === updatedElementPartial.id);
     if (targetElement && targetElement.lockedBy && targetElement.lockedBy !== currentUser.id) {
         // This check is also in apiUpdateElement, but good to have client-side too.
-        const locker = presentation.activeCollaborators?.[targetElement.lockedBy]?.name || "another user";
+        const locker = presentation.activeCollaborators?.[targetElement.lockedBy!]?.name || "another user";
         toast({ title: "Update Failed", description: `Element is locked by ${locker}.`, variant: "destructive" });
         return;
     }
@@ -635,16 +634,17 @@ export default function EditorPage() {
     setPasswordVerifiedInSession(true);
     sessionStorage.setItem(`passwordVerified_${presentationId}`, 'true');
     setIsPasswordPromptOpen(false);
-    setIsLoading(true);
-    if (presentation && currentUser) {
+    setIsLoading(true); // Trigger re-evaluation of access and data loading
+    if (presentation && currentUser) { // Log access after successful password verification
         logPresentationActivity(presentation.id, currentUser.id, 'presentation_viewed', { accessMethod: 'public_link_password' });
-    } else if (presentation) {
+    } else if (presentation) { // For guest users
         logPresentationActivity(presentation.id, 'guest_password_verified', 'presentation_viewed', { accessMethod: 'public_link_password' });
     }
+    // Re-fetch or re-evaluate access based on presentation data already loaded or to be reloaded by listener
     getPresentationById(presentationId).then(async (presData) => {
         if (presData) {
-            setPresentation(presData);
-            await checkAccessAndLoad(presData, currentUser);
+            setPresentation(presData); // Ensure local state is up-to-date
+            await checkAccessAndLoad(presData, currentUser); // Re-check access
             setIsLoading(false);
         }
     });
@@ -760,6 +760,7 @@ export default function EditorPage() {
                 </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+                <DropdownMenuLabel>Actions</DropdownMenuLabel>
                 <DropdownMenuItem onClick={handleSavePresentationTitle} disabled={isSaving}><Save className="mr-2 h-4 w-4" /> Save Title Now</DropdownMenuItem>
                 <DropdownMenuItem disabled><RotateCcw className="mr-2 h-4 w-4" /> Version History</DropdownMenuItem>
                 <DropdownMenuSeparator />
@@ -838,7 +839,7 @@ export default function EditorPage() {
             currentUser={currentUser}
         />
       )}
-      {presentation && isPasswordPromptOpen && (
+      {presentation && isPasswordPromptOpen && !passwordVerifiedInSession && (
          <PasswordPromptDialog
             presentationId={presentation.id}
             isOpen={isPasswordPromptOpen}

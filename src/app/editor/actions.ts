@@ -5,9 +5,8 @@ import { auth, db } from '@/lib/firebaseConfig';
 import { 
   updatePresentation as apiUpdatePresentation, 
   getPresentationById,
-  getUserByEmail,
+  getUserByEmail, // This correctly uses mongoUserService via firestoreService
   logPresentationActivity,
-  getUserProfile
 } from '@/lib/firestoreService';
 import type { Presentation, PresentationAccessRole, User as AppUser } from '@/types';
 import { revalidatePath } from 'next/cache';
@@ -45,14 +44,17 @@ export async function updatePresentationShareSettingsAction(
 
   // Permission check: Only creator or those with 'owner' role in access map can change settings
   const isCreator = presentation.creatorId === currentUserId;
-  const isOwnerInAccess = presentation.access[currentUserId] === 'owner';
-  if (!isCreator && !isOwnerInAccess) {
+  const isOwnerInAccessMap = presentation.access && presentation.access[currentUserId] === 'owner';
+  if (!isCreator && !isOwnerInAccessMap) {
     return { success: false, message: 'You do not have permission to change sharing settings for this presentation.' };
   }
   
-  const updates: Partial<Presentation> = { settings: { ...presentation.settings }, access: { ...presentation.access } };
+  const updates: Partial<Presentation> = { 
+    settings: { ...(presentation.settings || { isPublic: false, passwordProtected: false, commentsAllowed: true }) }, // Ensure settings object exists
+    access: { ...(presentation.access || {}) } // Ensure access object exists
+  };
   let activityDetails: any = {};
-  let mainActionType: Presentation['settings'] | 'collaborator_update' = 'sharing_settings_updated';
+  let mainActionType: 'sharing_settings_updated' | 'password_set' | 'password_removed' | 'collaborator_update' = 'sharing_settings_updated';
 
 
   // Handle isPublic toggle
@@ -82,7 +84,7 @@ export async function updatePresentationShareSettingsAction(
 
     if (passwordProtected) {
       if (password && password.length > 0) { // Only update password if a new one is provided
-        updates.settings!.password = password;
+        updates.settings!.password = password; // Firestore will hash this if rules are set up for it (not by default)
         mainActionType = 'password_set';
       } else if (!presentation.settings.password) { // If enabling protection and no password existed and none provided
          return { success: false, message: 'Please provide a password when enabling password protection.' };
@@ -102,7 +104,7 @@ export async function updatePresentationShareSettingsAction(
   const inviteRole = formData.get('inviteRole') as PresentationAccessRole;
 
   if (inviteEmail && inviteRole) {
-    const userToInvite = await getUserByEmail(inviteEmail);
+    const userToInvite = await getUserByEmail(inviteEmail); // This calls mongoUserService
     if (!userToInvite) {
       return { success: false, message: `User with email ${inviteEmail} not found.` };
     }
@@ -110,18 +112,21 @@ export async function updatePresentationShareSettingsAction(
          return { success: false, message: `User ${inviteEmail} is already the owner.` };
     }
     updates.access![userToInvite.id] = inviteRole;
-    mainActionType = 'collaborator_update'; // More specific activity later
+    // Log specific collaborator added event
     await logPresentationActivity(presentationId, currentUserId, 'collaborator_added', {
         targetUserId: userToInvite.id,
+        targetUserName: userToInvite.name || userToInvite.email,
         newRole: inviteRole,
     });
+    mainActionType = 'collaborator_update'; // Indicate a collaborator change happened
   }
 
   // Handle changes to existing collaborators (roles, removals)
   // FormData only gives us one value per name, so we need to structure names carefully
-  // Example: `access[userIdToRemove]=remove`, `access[userIdToChangeRole]=newRole`
+  // Example: `accessRole[userIdToRemove]=remove`, `accessRole[userIdToChangeRole]=newRole`
+  let collaboratorChanged = false;
   for (const key of formData.keys()) {
-    if (key.startsWith('access[')) { // e.g. access[someUserId]
+    if (key.startsWith('accessRole[')) { 
       const userId = key.substring(key.indexOf('[') + 1, key.indexOf(']'));
       const newRoleOrAction = formData.get(key) as string;
 
@@ -133,29 +138,33 @@ export async function updatePresentationShareSettingsAction(
             updates.access![userId] = deleteField() as any;
             await logPresentationActivity(presentationId, currentUserId, 'collaborator_removed', {
                 targetUserId: userId,
+                targetUserName: presentation.activeCollaborators?.[userId]?.name || userId,
                 oldRole: oldRole
             });
-            mainActionType = 'collaborator_update';
+            collaboratorChanged = true;
         }
       } else if (['editor', 'viewer'].includes(newRoleOrAction) && updates.access![userId] !== newRoleOrAction) {
          const oldRole = presentation.access[userId];
          updates.access![userId] = newRoleOrAction as PresentationAccessRole;
          await logPresentationActivity(presentationId, currentUserId, 'collaborator_role_changed', {
             targetUserId: userId,
+            targetUserName: presentation.activeCollaborators?.[userId]?.name || userId,
             oldRole: oldRole,
             newRole: newRoleOrAction as PresentationAccessRole
          });
-         mainActionType = 'collaborator_update';
+         collaboratorChanged = true;
       }
     }
   }
+  if (collaboratorChanged) mainActionType = 'collaborator_update';
 
 
   try {
     await apiUpdatePresentation(presentationId, updates);
     const updatedPresentation = await getPresentationById(presentationId); // Fetch updated
     
-    if (mainActionType !== 'collaborator_update' && mainActionType !== 'password_set' && mainActionType !== 'password_removed') {
+    // General activity log if no specific one was already logged for this interaction set
+    if (mainActionType === 'sharing_settings_updated' && Object.keys(activityDetails).length > 0) {
        await logPresentationActivity(presentationId, currentUserId, 'sharing_settings_updated', activityDetails);
     }
 
@@ -185,12 +194,14 @@ export async function verifyPasswordAction(
   }
 
   if (!presentation.settings.passwordProtected || !presentation.settings.password) {
-    return { success: false, message: 'This presentation is not password protected.' };
+    // This case should ideally not be hit if UI enables password field correctly,
+    // but good to have a server-side check.
+    return { success: true, message: 'This presentation is not password protected (or password was removed). Access granted.' };
   }
 
+  // IMPORTANT: Firestore does not hash passwords. This is a simple string comparison.
+  // For actual security, you'd hash passwords before storing or use a different mechanism.
   if (presentation.settings.password === passwordAttempt) {
-    // In a real app, you might issue a short-lived token or set a session flag here
-    // For now, success means client-side can proceed.
     return { success: true, message: 'Password verified.' };
   } else {
     return { success: false, message: 'Incorrect password.' };

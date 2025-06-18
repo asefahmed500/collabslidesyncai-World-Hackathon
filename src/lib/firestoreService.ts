@@ -24,7 +24,7 @@ import {
 import { ref, deleteObject } from 'firebase/storage';
 import type { Presentation, Slide, SlideElement, SlideComment, User, Team, ActiveCollaboratorInfo, TeamRole, TeamMember, TeamActivity, TeamActivityType, PresentationActivity, PresentationActivityType, PresentationAccessRole, Asset, AssetType, SlideElementType } from '@/types';
 import { logTeamActivityInMongoDB } from './mongoTeamService';
-import { getUserByEmailFromMongoDB } from './mongoUserService';
+import { getUserByEmailFromMongoDB } from './mongoUserService'; // Correctly points to MongoDB service
 import { v4 as uuidv4 } from 'uuid';
 
 
@@ -77,7 +77,7 @@ export async function createPresentation(userId: string, title: string, teamId?:
       content: `Welcome to '${title}'!`,
       position: { x: 50, y: 50 },
       size: { width: 700, height: 100 },
-      style: { fontFamily: 'Space Grotesk', fontSize: '36px', color: '#333333', backgroundColor: 'transparent', textAlign: 'left', fontWeight: 'bold', opacity: 1 },
+      style: { fontFamily: 'Space Grotesk', fontSize: '36px', color: '#333333', backgroundColor: 'transparent', textAlign: 'left', fontWeight: 'bold', fontStyle: 'normal', textDecoration: 'none', opacity: 1 },
       zIndex: 1,
       rotation: 0,
       lockedBy: null,
@@ -168,8 +168,8 @@ export async function updatePresentation(presentationId: string, data: Partial<P
         const newSettings = data.settings;
         if (newSettings) {
           for (const settingKey in newSettings) {
-             if (settingKey === 'password' && newSettings.password === '') {
-                 updatePayload[`settings.password`] = deleteField();
+             if (settingKey === 'password' && (newSettings.password === undefined || newSettings.password === null || newSettings.password === '')) {
+                 updatePayload[`settings.password`] = deleteField(); // Use deleteField for removal
              } else if (newSettings[settingKey as keyof Presentation['settings']] !== undefined) {
                  updatePayload[`settings.${settingKey}`] = newSettings[settingKey as keyof Presentation['settings']];
              }
@@ -179,7 +179,7 @@ export async function updatePresentation(presentationId: string, data: Partial<P
         const newAccess = data.access;
         if (newAccess) {
           for (const accessKey in newAccess) {
-             if (newAccess[accessKey] === null || newAccess[accessKey] === undefined) {
+             if (newAccess[accessKey] === null || newAccess[accessKey] === undefined || (newAccess[accessKey] as any) === deleteField()) { // Check for deleteField marker
                 updatePayload[`access.${accessKey}`] = deleteField();
              } else {
                 updatePayload[`access.${accessKey}`] = newAccess[accessKey];
@@ -218,7 +218,7 @@ export async function updatePresentation(presentationId: string, data: Partial<P
       }
     }
   }
-  if (Object.keys(updatePayload).length > 1) {
+  if (Object.keys(updatePayload).length > 1) { // Ensure there's something to update besides timestamp
     await updateDoc(docRef, updatePayload);
   }
 }
@@ -251,7 +251,7 @@ export async function addSlideToPresentation(presentationId: string, newSlideDat
     const defaultElement: SlideElement = {
       id: defaultElementId, type: 'text', content: `Slide ${slideNumber}`,
       position: { x: 50, y: 50 }, size: { width: 400, height: 50 },
-      style: { fontFamily: 'Space Grotesk', fontSize: '24px', color: '#333333', backgroundColor: 'transparent', textAlign: 'left', opacity: 1 }, zIndex: 1, rotation: 0,
+      style: { fontFamily: 'Space Grotesk', fontSize: '24px', color: '#333333', backgroundColor: 'transparent', textAlign: 'left', fontWeight: 'normal', fontStyle: 'normal', textDecoration: 'none', opacity: 1 }, zIndex: 1, rotation: 0,
       lockedBy: null, lockTimestamp: null,
     };
 
@@ -261,7 +261,6 @@ export async function addSlideToPresentation(presentationId: string, newSlideDat
       speakerNotes: newSlideData.speakerNotes || "", comments: newSlideData.comments || [],
       thumbnailUrl: newSlideData.thumbnailUrl || `https://placehold.co/160x90.png?text=S${slideNumber}`,
       backgroundColor: newSlideData.backgroundColor || '#FFFFFF',
-      // aiSuggestions: newSlideData.aiSuggestions || [], // Removed aiSuggestions if not actively used
     };
 
     const updatedSlidesArray = [...currentSlides, newSlide];
@@ -313,7 +312,7 @@ export async function duplicateSlideInPresentation(presentationId: string, slide
     const originalSlide = slides[originalSlideIndex];
     const newSlideId = uuidv4();
     const duplicatedElements = originalSlide.elements.map(el => ({
-      ...JSON.parse(JSON.stringify(el)),
+      ...JSON.parse(JSON.stringify(el)), // Deep copy, consider structuredClone for modern environments
       id: uuidv4(),
       lockedBy: null, // Ensure new elements are not locked
       lockTimestamp: null,
@@ -322,10 +321,9 @@ export async function duplicateSlideInPresentation(presentationId: string, slide
     const duplicatedSlide: Slide = {
       ...JSON.parse(JSON.stringify(originalSlide)),
       id: newSlideId,
-      slideNumber: 0,
+      slideNumber: 0, // Will be re-numbered
       elements: duplicatedElements,
-      comments: [],
-      // aiSuggestions: [], // Reset suggestions for duplicated slide
+      comments: [], // Do not duplicate comments for now
       thumbnailUrl: originalSlide.thumbnailUrl ? `${originalSlide.thumbnailUrl.split('?')[0]}?text=Copy` : `https://placehold.co/160x90.png?text=Copy`,
     };
 
@@ -361,7 +359,7 @@ export async function moveSlideInPresentation(presentationId: string, slideId: s
       slides[currentIndex] = slides[currentIndex + 1];
       slides[currentIndex + 1] = temp;
     } else {
-      return presentationData.slides;
+      return presentationData.slides; // No change possible
     }
 
     const updatedSlides = renumberSlides(slides);
@@ -627,7 +625,7 @@ export async function logPresentationActivity(
 ): Promise<string> {
   let actorNameResolved = 'System/Guest';
   // In a real app, you might fetch user profile here if actorId is not 'system' or 'guest'
-  // For now, keeping it simple or assuming name is passed in details if needed.
+  // For now, assuming actorId is a Firebase UID and their name is passed in details if available or can be fetched from User model.
 
   const activityData: Omit<PresentationActivity, 'id'> = {
     presentationId, actorId, actorName: actorNameResolved, actionType, details: details || {}, createdAt: serverTimestamp() as Timestamp,
@@ -679,24 +677,10 @@ export async function deleteAsset(assetId: string, storagePath: string, teamId: 
 }
 // --- End Asset Management ---
 
+// This function now correctly uses the MongoDB service to find users by email.
 export async function getUserByEmail(email: string): Promise<User | null> {
-    console.warn("getUserByEmail in firestoreService is fetching from MongoDB due to data model migration. This is generally correct for current auth flows.");
-    const userFromMongo = await getUserByEmailFromMongoDB(email);
-    return userFromMongo;
+    return getUserByEmailFromMongoDB(email);
 }
-
-// This function seems to be removed or unused, keeping it for now if it's used elsewhere.
-// export async function getUserProfile(userId: string): Promise<User | null> {
-//   // Placeholder: Fetch user profile from Firestore or your user management system
-//   // This is just an example and likely needs to connect to your actual user data source
-//   console.warn("getUserProfile in firestoreService is a placeholder and might not fetch correct user data.");
-//   const userRef = doc(db, "users", userId); // Assuming you have a 'users' collection
-//   const userSnap = await getDoc(userRef);
-//   if (userSnap.exists()) {
-//     return { id: userSnap.id, ...convertTimestamps(userSnap.data()) } as User;
-//   }
-//   return null;
-// }
 
 
 export { getNextUserColor };

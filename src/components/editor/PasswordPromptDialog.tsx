@@ -15,6 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import type { Presentation } from "@/types";
 import { verifyPasswordAction } from '@/app/editor/actions';
 import { KeyRound, Loader2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 
 interface PasswordPromptDialogProps {
   presentationId: string;
@@ -39,8 +40,9 @@ function SubmitButton() {
 
 export function PasswordPromptDialog({ presentationId, isOpen, onOpenChange, onPasswordVerified }: PasswordPromptDialogProps) {
   const { toast } = useToast();
+  const router = useRouter();
   
-  const [initialState, formAction] = useFormState(verifyPasswordAction, {
+  const [state, formAction] = useFormState(verifyPasswordAction, { // Renamed formState to state to avoid conflict
     success: false,
     message: "",
   });
@@ -53,21 +55,33 @@ export function PasswordPromptDialog({ presentationId, isOpen, onOpenChange, onP
   });
   
   useEffect(() => {
-    if (initialState?.message) {
-      if (initialState.success) {
-        toast({ title: "Access Granted", description: initialState.message });
+    if (state?.message) {
+      if (state.success) {
+        toast({ title: "Access Granted", description: state.message });
         onPasswordVerified();
         onOpenChange(false); 
       } else {
-        toast({ title: "Access Denied", description: initialState.message, variant: "destructive" });
+        toast({ title: "Access Denied", description: state.message, variant: "destructive" });
         form.resetField("passwordAttempt");
       }
     }
-  }, [initialState, toast, onOpenChange, onPasswordVerified, form]);
+  }, [state, toast, onOpenChange, onPasswordVerified, form]);
+
+  const handleDialogClose = () => {
+    onOpenChange(false);
+    // If the dialog is closed without verifying, and it was mandatory, redirect.
+    // This depends on how EditorPage manages the state, so this might be redundant
+    // if EditorPage already handles redirection if passwordVerifiedInSession is false.
+    if (!state?.success) { // Check internal state before potentially redirecting
+        toast({ title: "Access Required", description: "Password verification is needed to view this presentation.", variant: "info" });
+        router.push('/dashboard'); // Or a more appropriate page
+    }
+  };
+
 
   return (
-    <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+    <Dialog open={isOpen} onOpenChange={handleDialogClose}> {/* Use custom close handler */}
+      <DialogContent className="sm:max-w-md" onEscapeKeyDown={handleDialogClose} onPointerDownOutside={(e)=> e.preventDefault()}> {/* Prevent closing by clicking outside */}
         <DialogHeader>
           <DialogTitle className="flex items-center"><KeyRound className="mr-2 h-5 w-5 text-primary"/> Password Required</DialogTitle>
           <DialogDescription>
@@ -91,8 +105,8 @@ export function PasswordPromptDialog({ presentationId, isOpen, onOpenChange, onP
             <DialogFooter className="pt-2">
                  <SubmitButton />
             </DialogFooter>
-             {initialState?.message && !initialState.success && (
-                <p className="text-sm text-destructive text-center pt-1">{initialState.message}</p>
+             {state?.message && !state.success && (
+                <p className="text-sm text-destructive text-center pt-1">{state.message}</p>
             )}
         </form>
       </DialogContent>

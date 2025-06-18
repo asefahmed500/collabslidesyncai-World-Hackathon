@@ -110,7 +110,6 @@ export interface Slide {
   elements: SlideElement[];
   speakerNotes?: string;
   comments: SlideComment[];
-  aiSuggestions?: string[];
   thumbnailUrl?: string;
   backgroundColor?: string;
 }
@@ -137,7 +136,7 @@ export interface Presentation {
   settings: {
     isPublic: boolean;
     passwordProtected: boolean;
-    password?: string;
+    password?: string; // Store password directly for simplicity; hash in real app
     commentsAllowed: boolean;
   };
   branding?: Team['branding']; // Store a copy of team branding at time of creation/last update
@@ -147,7 +146,6 @@ export interface Presentation {
   lastUpdatedAt: FirestoreTimestamp;
   slides: Slide[];
   activeCollaborators?: { [userId: string]: ActiveCollaboratorInfo }; // Map of active users
-  collaborators?: User[];
 }
 
 export type TeamActivityType =

@@ -16,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import type { Presentation, PresentationAccessRole, User as AppUser } from "@/types";
 import { updatePresentationShareSettingsAction } from '@/app/editor/actions';
-import { Globe, Lock, Link as LinkIcon, UserPlus, Users, Trash2, Edit, Loader2, Copy } from 'lucide-react';
+import { Globe, Lock, Link as LinkIcon, UserPlus, Users, Trash2, Edit, Loader2, Copy, FileText, Image as ImageIconSvg, Film } from 'lucide-react'; // Renamed ImageIcon
 import { Separator } from '../ui/separator';
 import { ScrollArea } from '../ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
@@ -34,7 +34,7 @@ const formSchema = z.object({
   passwordProtected: z.boolean(),
   password: z.string().optional(),
   inviteEmail: z.string().email({ message: "Invalid email." }).optional().or(z.literal('')),
-  inviteRole: z.custom<PresentationAccessRole>().optional(),
+  inviteRole: z.custom<PresentationAccessRole>((val) => ['editor', 'viewer'].includes(val as string)).optional(),
 });
 type FormSchemaType = z.infer<typeof formSchema>;
 
@@ -94,24 +94,25 @@ export function ShareDialog({ presentation, isOpen, onOpenChange, onPresentation
 
   if (!presentation || !currentUser) return null;
 
-  const presentationLink = `${window.location.origin}/editor/${presentation.id}`; // Simplified link
+  const presentationLink = `${window.location.origin}/editor/${presentation.id}`; 
+  const embedLink = `${window.location.origin}/editor/${presentation.id}?embed=true`;
 
-  const handleCopyToClipboard = () => {
-    navigator.clipboard.writeText(presentationLink)
-      .then(() => toast({ title: "Link Copied!", description: "Presentation link copied to clipboard." }))
+
+  const handleCopyToClipboard = (link: string, message: string = "Link copied to clipboard.") => {
+    navigator.clipboard.writeText(link)
+      .then(() => toast({ title: "Copied!", description: message }))
       .catch(err => toast({ title: "Copy Failed", description: "Could not copy link.", variant: "destructive" }));
   };
   
-  const isCurrentUserOwner = presentation.creatorId === currentUser.id || presentation.access[currentUser.id] === 'owner';
+  const isCurrentUserOwner = presentation.creatorId === currentUser.id || (presentation.access && presentation.access[currentUser.id] === 'owner');
 
-  const collaborators = Object.entries(presentation.access)
+
+  const collaborators = presentation.access ? Object.entries(presentation.access)
     .map(([userId, role]) => ({ userId, role, 
-        // In a real app, you'd fetch user details if not readily available
-        // For now, use email from presentation.activeCollaborators or placeholder
         name: presentation.activeCollaborators?.[userId]?.name || userId.substring(0,8), 
         email: presentation.activeCollaborators?.[userId]?.email || 'Email not available',
         profilePictureUrl: presentation.activeCollaborators?.[userId]?.profilePictureUrl
-    }));
+    })) : [];
 
 
   return (
@@ -120,14 +121,15 @@ export function ShareDialog({ presentation, isOpen, onOpenChange, onPresentation
         <DialogHeader>
           <DialogTitle className="text-2xl font-headline">Share "{presentation.title}"</DialogTitle>
           <DialogDescription>
-            Manage access and sharing settings for this presentation.
+            Manage access, sharing, export and embed options for this presentation.
           </DialogDescription>
         </DialogHeader>
         
-        <ScrollArea className="flex-grow pr-2">
+        <ScrollArea className="flex-grow pr-2 -mr-2"> 
         <form action={formAction} className="space-y-6 py-4">
             <input type="hidden" name="presentationId" value={presentation.id} />
             
+            {/* Link Sharing Section */}
             <div className="space-y-4 p-4 border rounded-lg shadow-sm bg-muted/30">
                 <h3 className="text-lg font-semibold flex items-center"><LinkIcon className="mr-2 h-5 w-5 text-primary"/> Link Sharing</h3>
                 <FormField
@@ -170,7 +172,7 @@ export function ShareDialog({ presentation, isOpen, onOpenChange, onPresentation
                     <Label>Shareable Link</Label>
                     <div className="flex items-center gap-2 mt-1">
                         <Input type="text" readOnly value={presentationLink} className="text-sm bg-muted"/>
-                        <Button type="button" variant="outline" size="icon" onClick={handleCopyToClipboard} title="Copy link">
+                        <Button type="button" variant="outline" size="icon" onClick={() => handleCopyToClipboard(presentationLink)} title="Copy link">
                             <Copy className="h-4 w-4"/>
                         </Button>
                     </div>
@@ -179,6 +181,7 @@ export function ShareDialog({ presentation, isOpen, onOpenChange, onPresentation
             
             <Separator />
 
+            {/* Manage Collaborators Section */}
             <div className="space-y-4 p-4 border rounded-lg shadow-sm bg-muted/30">
                  <h3 className="text-lg font-semibold flex items-center"><Users className="mr-2 h-5 w-5 text-primary"/> Manage Collaborators</h3>
                 {isCurrentUserOwner && (
@@ -195,8 +198,9 @@ export function ShareDialog({ presentation, isOpen, onOpenChange, onPresentation
                                  <Controller
                                     name="inviteRole"
                                     control={form.control}
+                                    defaultValue="viewer"
                                     render={({ field }) => (
-                                        <Select name={field.name} onValueChange={field.onChange} defaultValue={field.value}>
+                                        <Select name={field.name} onValueChange={field.onChange} value={field.value}>
                                             <SelectTrigger id="inviteRole" className="w-[120px]">
                                                 <SelectValue placeholder="Role" />
                                             </SelectTrigger>
@@ -219,7 +223,7 @@ export function ShareDialog({ presentation, isOpen, onOpenChange, onPresentation
                     <li key={collab.userId} className="flex items-center justify-between p-2.5 rounded-md border bg-background shadow-sm">
                         <div className="flex items-center gap-2">
                             <Avatar className="h-7 w-7">
-                                <AvatarImage src={collab.profilePictureUrl} alt={collab.name} data-ai-hint="profile avatar small"/>
+                                <AvatarImage src={collab.profilePictureUrl || undefined} alt={collab.name || 'User'} data-ai-hint="profile avatar small"/>
                                 <AvatarFallback>{collab.name?.charAt(0).toUpperCase() || 'U'}</AvatarFallback>
                             </Avatar>
                             <div>
@@ -231,7 +235,7 @@ export function ShareDialog({ presentation, isOpen, onOpenChange, onPresentation
                         {collab.userId !== presentation.creatorId && isCurrentUserOwner ? (
                             <>
                                 <Select 
-                                    name={`access[${collab.userId}]`}
+                                    name={`accessRole[${collab.userId}]`}
                                     defaultValue={collab.role}
                                     disabled={!isCurrentUserOwner}
                                 >
@@ -243,7 +247,7 @@ export function ShareDialog({ presentation, isOpen, onOpenChange, onPresentation
                                         <SelectItem value="editor">Editor</SelectItem>
                                     </SelectContent>
                                 </Select>
-                                <Button type="submit" name={`access[${collab.userId}]`} value="remove" variant="ghost" size="icon" title="Remove collaborator" disabled={!isCurrentUserOwner}>
+                                <Button type="submit" name={`accessRole[${collab.userId}]`} value="remove" variant="ghost" size="icon" title="Remove collaborator" disabled={!isCurrentUserOwner}>
                                     <Trash2 className="h-4 w-4 text-destructive"/>
                                 </Button>
                             </>
@@ -255,7 +259,50 @@ export function ShareDialog({ presentation, isOpen, onOpenChange, onPresentation
                     ))}
                 </ul>
             </div>
-          <DialogFooter className="pt-4 border-t">
+
+            <Separator />
+
+            {/* Export Section */}
+            <div className="space-y-4 p-4 border rounded-lg shadow-sm bg-muted/30">
+                <h3 className="text-lg font-semibold flex items-center"><FileText className="mr-2 h-5 w-5 text-primary"/> Export Presentation</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <Button type="button" variant="outline" disabled>
+                        <FileText className="mr-2 h-4 w-4" /> Export as PDF (Soon)
+                    </Button>
+                    <Button type="button" variant="outline" disabled>
+                        <Film className="mr-2 h-4 w-4" /> Export as PPT (Soon)
+                    </Button>
+                    <Button type="button" variant="outline" disabled>
+                        <ImageIconSvg className="mr-2 h-4 w-4" /> Export Images (Soon)
+                    </Button>
+                </div>
+            </div>
+            
+            <Separator />
+
+            {/* Embed Section */}
+            <div className="space-y-2 p-4 border rounded-lg shadow-sm bg-muted/30">
+                <h3 className="text-lg font-semibold flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2 text-primary"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+                    Embed Presentation
+                </h3>
+                 <p className="text-xs text-muted-foreground">Copy and paste this code to embed the presentation on your website (view-only).</p>
+                <div className="p-2 bg-background rounded-md border">
+                    <Input 
+                        type="text" 
+                        readOnly 
+                        value={`<iframe src="${embedLink}" width="800" height="600" frameborder="0" allowfullscreen="true" mozallowfullscreen="true" webkitallowfullscreen="true"></iframe>`}
+                        className="text-xs bg-muted font-mono h-auto py-1.5"
+                        onClick={(e) => (e.target as HTMLInputElement).select()}
+                    />
+                </div>
+                <Button type="button" variant="outline" size="sm" onClick={() => handleCopyToClipboard(`<iframe src="${embedLink}" width="800" height="600" frameborder="0" allowfullscreen="true" mozallowfullscreen="true" webkitallowfullscreen="true"></iframe>`, "Embed code copied!")} className="mt-1">
+                    <Copy className="mr-2 h-4 w-4" /> Copy Embed Code
+                </Button>
+            </div>
+
+
+          <DialogFooter className="pt-4 border-t sticky bottom-0 bg-background py-3">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
             {isCurrentUserOwner && <SubmitButton />}
           </DialogFooter>
@@ -265,4 +312,3 @@ export function ShareDialog({ presentation, isOpen, onOpenChange, onPresentation
     </Dialog>
   );
 }
-
