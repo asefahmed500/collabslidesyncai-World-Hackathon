@@ -3,8 +3,7 @@
 
 import { useEffect, useState } from 'react';
 import type { Team } from '@/types';
-// import { getAllTeams } from '@/lib/firestoreService'; // Firestore no longer source for teams
-import { getAllTeamsFromMongoDB } from '@/lib/mongoTeamService'; // Import MongoDB service
+import { getAllTeamsFromMongoDB } from '@/lib/mongoTeamService'; 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -71,7 +70,7 @@ export default function AdminTeamsPage() {
                     </div>
                   </TableCell>
                   <TableCell className="font-mono text-xs">{team.ownerId}</TableCell>
-                  <TableCell>{Object.keys(team.members || {}).length}</TableCell>
+                  <TableCell>{team.members ? Object.keys(team.members).length : 0}</TableCell>
                   <TableCell>
                     {team.createdAt ? format(new Date(team.createdAt), 'PP') : 'N/A'}
                   </TableCell>
@@ -92,3 +91,5 @@ export default function AdminTeamsPage() {
     </Card>
   );
 }
+
+    

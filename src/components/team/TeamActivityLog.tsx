@@ -1,12 +1,12 @@
 
 "use client";
 
-import type { TeamActivity } from '@/types';
+import type { TeamActivity, TeamRole, PresentationAccessRole } from '@/types';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { formatDistanceToNow } from 'date-fns';
-import { UserCircle, Edit3, UserPlus, UserMinus, UserCog, FileText, FileX, Settings, Image as ImageIcon } from 'lucide-react';
+import { UserCircle, Edit3, UserPlus, UserMinus, UserCog, FileText, FileX, Settings, Image as ImageIcon, Trash2, Crown } from 'lucide-react';
 
 interface TeamActivityLogProps {
   activities: TeamActivity[];
@@ -14,6 +14,7 @@ interface TeamActivityLogProps {
 
 const getActivityIcon = (actionType: TeamActivity['actionType']) => {
   switch (actionType) {
+    case 'team_created': return <Crown className="h-4 w-4 text-amber-500" />;
     case 'member_added': return <UserPlus className="h-4 w-4 text-green-600" />;
     case 'member_removed': return <UserMinus className="h-4 w-4 text-red-600" />;
     case 'member_role_changed': return <UserCog className="h-4 w-4 text-blue-600" />;
@@ -28,31 +29,33 @@ const getActivityIcon = (actionType: TeamActivity['actionType']) => {
 
 const formatActivityDetails = (activity: TeamActivity): string => {
   const targetName = activity.targetName || (activity.targetType === 'user' ? 'a user' : activity.targetType === 'presentation' ? 'a presentation' : activity.targetType === 'asset' ? 'an asset' : 'the team profile');
+  const details = activity.details || {};
+  
   switch (activity.actionType) {
     case 'team_created':
-      return `created the team: "${activity.details?.teamName || targetName}".`;
+      return `created the team: "${details.teamName || targetName}".`;
     case 'member_added':
-      return `added ${activity.details?.memberName || targetName} (${activity.details?.memberEmail || ''}) as ${activity.details?.newRole || 'a member'}.`;
+      return `added ${details.memberName || targetName} (${details.memberEmail || ''}) as ${details.newRole || 'a member'}.`;
     case 'member_removed':
-      return `removed ${activity.details?.memberName || targetName} from the team.`;
+      const reason = details.reason ? ` (Reason: ${details.reason})` : '';
+      return `removed ${details.memberName || targetName} from the team${reason}.`;
     case 'member_role_changed':
-      return `changed ${activity.details?.memberName || targetName}'s role from ${activity.details?.oldRole || 'N/A'} to ${activity.details?.newRole || 'N/A'}.`;
+      return `changed ${details.memberName || targetName}'s role from ${details.oldRole || 'N/A'} to ${details.newRole || 'N/A'}.`;
     case 'team_profile_updated':
-      const fields = activity.details?.changedFields as string[] | undefined;
+      const fields = details.changedFields as string[] | undefined;
       return `updated the team profile${fields && fields.length > 0 ? ` (fields: ${fields.join(', ')})` : ''}.`;
     case 'presentation_created':
-      return `created a presentation: "${activity.details?.presentationTitle || targetName}".`;
+      return `created a presentation: "${details.presentationTitle || targetName}".`;
     case 'presentation_deleted':
-      return `deleted a presentation: "${activity.details?.presentationTitle || targetName}".`;
+      return `deleted a presentation: "${details.presentationTitle || targetName}".`;
     case 'asset_uploaded':
-      return `uploaded an asset: "${activity.details?.fileName || targetName}" (${activity.details?.assetType || 'file'}).`;
+      return `uploaded an asset: "${details.fileName || targetName}" (${details.assetType || 'file'}).`;
     case 'asset_deleted':
-      return `deleted an asset: "${activity.details?.fileName || targetName}".`;
+      return `deleted an asset: "${details.fileName || targetName}".`;
     default:
-      // Fallback for any unhandled or new activity types
       let message = `performed action '${activity.actionType}'`;
       if (activity.targetType) message += ` on ${activity.targetType}`;
-      if (targetName) message += `: ${targetName}`;
+      if (targetName && targetName !== activity.targetType) message += `: ${targetName}`; // Avoid redundant "team_profile: the team profile"
       return message + ".";
   }
 };
@@ -88,3 +91,5 @@ export function TeamActivityLog({ activities }: TeamActivityLogProps) {
     </ScrollArea>
   );
 }
+
+    

@@ -22,7 +22,10 @@ import {
 } from 'firebase/firestore';
 import { ref, deleteObject } from 'firebase/storage';
 import type { Presentation, Slide, SlideElement, SlideComment, User, Team, ActiveCollaboratorInfo, TeamRole, TeamMember, TeamActivity, TeamActivityType, PresentationActivity, PresentationActivityType, PresentationAccessRole, Asset, AssetType } from '@/types';
-import { logTeamActivityInMongoDB } from './mongoTeamService'; // Import MongoDB logger
+import { logTeamActivityInMongoDB } from './mongoTeamService'; // Import MongoDB logger for team activities
+
+// User and Team data management are now primarily in MongoDB.
+// Functions like createTeam, getTeamById, getUserProfile (Firestore versions) are removed.
 
 const USER_COLORS = [
   '#FF6B6B', '#4ECDC4', '#45B7D1', '#FED766', '#2AB7CA',
@@ -53,14 +56,10 @@ const convertTimestamps = (data: any): any => {
   return converted;
 };
 
-// Collections related to Presentations and Assets (remaining in Firestore for now)
 const presentationsCollection = collection(db, 'presentations');
 const presentationActivitiesCollection = collection(db, 'presentationActivities');
-const assetsCollection = collection(db, 'assets');
+const assetsCollection = collection(db, 'assets'); // Assets remain in Firestore for now
 
-// User and Team data management are now primarily in MongoDB.
-// Functions like createTeam, getTeamById, getUserProfile (Firestore versions),
-// getAllUsers, getAllTeams, logTeamActivity (Firestore version) are removed or will be.
 
 export async function createPresentation(userId: string, title: string, teamId?: string, description: string = ''): Promise<string> {
   const initialSlideId = `slide-initial-${Date.now()}`;
@@ -109,14 +108,11 @@ export async function createPresentation(userId: string, title: string, teamId?:
   await updateDoc(docRef, { slides: [finalSlide], lastUpdatedAt: serverTimestamp() });
 
   if (teamId) {
-    // Log presentation creation to MongoDB team activity log
     await logTeamActivityInMongoDB(teamId, userId, 'presentation_created', { presentationTitle: title }, 'presentation', docRef.id);
   }
   return docRef.id;
 }
 
-// getPresentationsForUser still needs to work with Firestore for presentations
-// It might need adjustment if user.teamId now comes from MongoDB context
 export async function getPresentationsForUser(userId: string, userTeamId?: string | null): Promise<Presentation[]> {
   const queries = [];
   queries.push(query(presentationsCollection, where('creatorId', '==', userId)));
@@ -134,7 +130,7 @@ export async function getPresentationsForUser(userId: string, userTeamId?: strin
       }
     });
   });
-  return Array.from(presentationsMap.values());
+  return Array.from(presentationsMap.values()).sort((a,b) => (b.lastUpdatedAt as Date).getTime() - (a.lastUpdatedAt as Date).getTime());
 }
 
 
@@ -158,7 +154,11 @@ export async function updatePresentation(presentationId: string, data: Partial<P
         const newSettings = data.settings;
         if (newSettings) {
           for (const settingKey in newSettings) {
-            updatePayload[`settings.${settingKey}`] = newSettings[settingKey as keyof Presentation['settings']];
+             if (settingKey === 'password' && newSettings.password === '') {
+                 updatePayload[`settings.password`] = deleteField(); // Remove password if empty string
+             } else if (newSettings[settingKey as keyof Presentation['settings']] !== undefined) {
+                 updatePayload[`settings.${settingKey}`] = newSettings[settingKey as keyof Presentation['settings']];
+             }
           }
         }
       } else if (typedKey === 'access') {
@@ -194,14 +194,14 @@ export async function updatePresentation(presentationId: string, data: Partial<P
       }
     }
   }
-  if (Object.keys(updatePayload).length > 1) {
+  if (Object.keys(updatePayload).length > 1) { // Ensure there's more than just lastUpdatedAt
     await updateDoc(docRef, updatePayload);
   }
 }
 
 export async function deletePresentation(presentationId: string, teamId?: string, actorId?: string): Promise<void> {
   const docRef = doc(db, 'presentations', presentationId);
-  const pres = await getPresentationById(presentationId); // Get title before deleting
+  const pres = await getPresentationById(presentationId); 
   await deleteDoc(docRef);
   if (teamId && actorId && pres) {
      await logTeamActivityInMongoDB(teamId, actorId, 'presentation_deleted', { presentationTitle: pres.title }, 'presentation', presentationId);
@@ -398,17 +398,9 @@ export async function releaseExpiredLocks(presentationId: string): Promise<void>
 export async function logPresentationActivity(
   presentationId: string, actorId: string, actionType: PresentationActivityType, details?: PresentationActivity['details']
 ): Promise<string> {
-  // This function might need to fetch actorName from MongoDB if not system/guest
-  // For simplicity, assuming actorName might be passed or handled client-side if needed for UI
   let actorNameResolved = 'System/Guest';
-  if (actorId !== 'system' && actorId !== 'guest' && actorId !== 'guest_password_verified') {
-    // Potentially fetch from MongoDB: const actor = await getUserFromMongoDB(actorId); actorNameResolved = actor?.name || 'Unknown User';
-    actorNameResolved = 'User'; // Placeholder
-  } else if (actorId === 'guest_password_verified') {
-    actorNameResolved = 'Guest (Password Verified)';
-  } else if (actorId === 'guest') {
-    actorNameResolved = 'Guest Viewer';
-  }
+  // In a real app, if actorId is a user UID, you might fetch their name from MongoDB
+  // For example: if (actorId !== 'system' && actorId !== 'guest') { const user = await getUserFromMongoDB(actorId); actorNameResolved = user?.name || 'User'; }
 
   const activityData: Omit<PresentationActivity, 'id'> = {
     presentationId, actorId, actorName: actorNameResolved, actionType, details: details || {}, createdAt: serverTimestamp() as Timestamp,
@@ -424,14 +416,13 @@ export async function getPresentationActivities(presentationId: string, limitCou
 }
 
 // --- Asset Management Firestore Services ---
-export async function createAssetMetadata(assetData: Omit<Asset, 'id' | 'createdAt'>): Promise<string> {
+export async function createAssetMetadata(assetData: Omit<Asset, 'id' | 'createdAt' | 'lastUpdatedAt'>): Promise<string> {
   const docRef = await addDoc(assetsCollection, {
     ...assetData,
     createdAt: serverTimestamp() as Timestamp,
     lastUpdatedAt: serverTimestamp() as Timestamp,
   });
   if (assetData.teamId && assetData.uploaderId) {
-    // Log to MongoDB team activity log
     await logTeamActivityInMongoDB(assetData.teamId, assetData.uploaderId, 'asset_uploaded', { fileName: assetData.fileName, assetType: assetData.assetType }, 'asset', docRef.id);
   }
   return docRef.id;
@@ -457,4 +448,18 @@ export async function deleteAsset(assetId: string, storagePath: string, teamId: 
   }
 }
 
+// Helper to get user from Firestore by email - for ShareDialog, presentation access
+// This function remains as presentations still use Firestore and might share to users not yet in a team/mongo
+export async function getUserByEmail(email: string): Promise<User | null> {
+    // This function is problematic as user profiles are now in MongoDB.
+    // For presentation sharing, we might need a different approach or ensure users exist in MongoDB first.
+    // For now, this is a placeholder and might not function as intended if users aren't in Firestore `users` collection.
+    // A more robust solution would be to query MongoDB.
+    console.warn("getUserByEmail in firestoreService is fetching from MongoDB due to data model migration. Ensure this is the intended behavior for presentation sharing.");
+    const userFromMongo = await getUserByEmailFromMongoDB(email); // This refers to the MongoDB user service
+    return userFromMongo;
+}
+
 export { getNextUserColor };
+
+    

@@ -8,13 +8,13 @@ import { GoogleAuthProvider, GithubAuthProvider } from 'firebase/auth';
 function mongoDocToAppUser(doc: UserDocument | null): AppUser | null {
   if (!doc) return null;
   const userObject = doc.toObject({ virtuals: true }) as any;
-  if (userObject._id && !userObject.id) {
-    userObject.id = userObject._id.toString();
-  }
+  // Ensure 'id' field is present and is the string representation of _id (Firebase UID)
+  userObject.id = userObject._id.toString(); 
+  
   delete userObject.__v;
+  // Ensure dates are Date objects
   return {
     ...userObject,
-    id: userObject.id || userObject._id.toString(),
     lastActive: userObject.lastActive instanceof Date ? userObject.lastActive : new Date(userObject.lastActive),
     createdAt: userObject.createdAt instanceof Date ? userObject.createdAt : new Date(userObject.createdAt),
     updatedAt: userObject.updatedAt instanceof Date ? userObject.updatedAt : new Date(userObject.updatedAt),
@@ -26,14 +26,13 @@ export async function createUserInMongoDB(firebaseUser: FirebaseUser, additional
   try {
     const existingUser = await UserModel.findById(firebaseUser.uid).exec();
     if (existingUser) {
-      // If user exists, update with any new info from Firebase or additionalData, esp. lastActive
       const updatesToApply: Partial<AppUser> = {
         name: firebaseUser.displayName || additionalData.name || existingUser.name,
         email: firebaseUser.email || additionalData.email || existingUser.email,
         profilePictureUrl: firebaseUser.photoURL || additionalData.profilePictureUrl || existingUser.profilePictureUrl,
         emailVerified: firebaseUser.emailVerified,
         lastActive: new Date(),
-        ...additionalData, // Apply other specific additionalData, like teamId, role
+        ...additionalData, 
       };
       if (firebaseUser.providerData.find(p => p.providerId === GoogleAuthProvider.PROVIDER_ID)) {
         updatesToApply.googleId = firebaseUser.providerData.find(p => p.providerId === GoogleAuthProvider.PROVIDER_ID)?.uid;
@@ -47,12 +46,12 @@ export async function createUserInMongoDB(firebaseUser: FirebaseUser, additional
     }
 
     const newUser = new UserModel({
-      _id: firebaseUser.uid,
+      _id: firebaseUser.uid, // Use Firebase UID as the document _id
       name: additionalData.name || firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Anonymous User',
       email: additionalData.email || firebaseUser.email,
       emailVerified: firebaseUser.emailVerified,
       profilePictureUrl: additionalData.profilePictureUrl || firebaseUser.photoURL || `https://placehold.co/100x100.png?text=${(additionalData.name || firebaseUser.displayName || firebaseUser.email || 'A').charAt(0).toUpperCase()}`,
-      role: additionalData.role || 'editor',
+      role: additionalData.role || 'guest', // Default to 'guest' if no team context yet
       teamId: additionalData.teamId || null,
       lastActive: new Date(),
       settings: additionalData.settings || { darkMode: false, aiFeatures: true, notifications: true },
@@ -60,22 +59,22 @@ export async function createUserInMongoDB(firebaseUser: FirebaseUser, additional
       googleId: firebaseUser.providerData.find(p => p.providerId === GoogleAuthProvider.PROVIDER_ID)?.uid || additionalData.googleId || null,
       githubId: firebaseUser.providerData.find(p => p.providerId === GithubAuthProvider.PROVIDER_ID)?.uid || additionalData.githubId || null,
       twoFactorEnabled: additionalData.twoFactorEnabled || false,
-      ...additionalData,
+      ...additionalData, // Ensure all passed additional data is applied
     });
     const savedUser = await newUser.save();
     return mongoDocToAppUser(savedUser);
   } catch (error: any) {
-    if (error.code === 11000) {
-      console.warn(`MongoDB duplicate key error for user ${firebaseUser.uid} or email ${firebaseUser.email}. Attempting to fetch by UID.`);
+    if (error.code === 11000) { // Duplicate key error
+      console.warn(`MongoDB duplicate key error for user ${firebaseUser.uid} or email ${firebaseUser.email}. Attempting to fetch existing.`);
       const userByUID = await getUserFromMongoDB(firebaseUser.uid);
       if (userByUID) return userByUID;
       const userByEmail = firebaseUser.email ? await getUserByEmailFromMongoDB(firebaseUser.email) : null;
-      if (userByEmail) return userByEmail;
+      if (userByEmail) return userByEmail; // This might return a different user if email is already in use by another UID
       console.error('MongoDB duplicate key error, and could not resolve existing user:', error);
     } else {
       console.error('Error creating/updating user in MongoDB:', error);
     }
-    throw error;
+    throw error; // Re-throw to be handled by the caller
   }
 }
 
@@ -86,7 +85,7 @@ export async function getUserFromMongoDB(userId: string): Promise<AppUser | null
     return mongoDocToAppUser(userDoc);
   } catch (error) {
     console.error('Error fetching user from MongoDB by ID:', error);
-    return null;
+    return null; // Or throw error
   }
 }
 
@@ -98,15 +97,17 @@ export async function getUserByEmailFromMongoDB(email: string): Promise<AppUser 
     return mongoDocToAppUser(userDoc);
   } catch (error) {
     console.error('Error fetching user by email from MongoDB:', error);
-    return null;
+    return null; // Or throw error
   }
 }
 
 export async function updateUserInMongoDB(userId: string, updates: Partial<AppUser>): Promise<AppUser | null> {
   await dbConnect();
   try {
+    // Ensure 'id' or '_id' from updates are not accidentally trying to change the document's _id
     const { id, _id, createdAt, updatedAt, ...safeUpdates } = updates;
     const updatePayload = { ...safeUpdates, lastActive: new Date() };
+    
     const updatedUserDoc = await UserModel.findByIdAndUpdate(
       userId,
       updatePayload,
@@ -115,13 +116,14 @@ export async function updateUserInMongoDB(userId: string, updates: Partial<AppUs
     return mongoDocToAppUser(updatedUserDoc);
   } catch (error) {
     console.error('Error updating user in MongoDB:', error);
-    throw error;
+    throw error; // Re-throw to be handled by the caller
   }
 }
 
-export async function updateUserTeamAndRoleInMongoDB(userId: string, teamId: string, role: TeamRole): Promise<AppUser | null> {
+export async function updateUserTeamAndRoleInMongoDB(userId: string, teamId: string | null, role: TeamRole | 'guest'): Promise<AppUser | null> {
   return updateUserInMongoDB(userId, { teamId, role });
 }
+
 
 export async function deleteUserFromMongoDB(userId: string): Promise<boolean> {
   await dbConnect();
@@ -130,7 +132,7 @@ export async function deleteUserFromMongoDB(userId: string): Promise<boolean> {
     return !!result;
   } catch (error) {
     console.error('Error deleting user from MongoDB:', error);
-    throw error;
+    throw error; // Re-throw
   }
 }
 
@@ -138,9 +140,12 @@ export async function getAllUsersFromMongoDB(): Promise<AppUser[]> {
   await dbConnect();
   try {
     const users = await UserModel.find({}).sort({ createdAt: -1 }).exec();
+    // Ensure mongoDocToAppUser correctly handles the conversion, especially dates
     return users.map(userDoc => mongoDocToAppUser(userDoc)).filter(u => u !== null) as AppUser[];
   } catch (error) {
     console.error('Error fetching all users from MongoDB:', error);
     return [];
   }
 }
+
+    

@@ -3,23 +3,25 @@ import mongoose, { Schema, Document, Model, Types } from 'mongoose';
 import type { Team as TeamType, TeamMember as TeamMemberType, TeamRole } from '@/types';
 
 // TeamMember subdocument schema
-// We store userId (which is Firebase UID) directly, not as a ref to User model in this subdoc
-// for easier querying if needed and to keep team document somewhat self-contained for members list.
-const TeamMemberSchema = new Schema<TeamMemberType & Document>({
+// We store userId (which is Firebase UID) directly as the key in the Map,
+// and denormalize some user info into the value for quick access.
+export interface TeamMemberDocument extends TeamMemberType, Document {} // Mongoose subdocument type
+
+const TeamMemberSchema = new Schema<TeamMemberDocument>({
   // userId is the key in the Map, so not needed as a field in the subdocument itself.
   role: { type: String, enum: ['owner', 'admin', 'editor', 'viewer'], required: true },
   joinedAt: { type: Date, default: Date.now },
   addedBy: { type: String, required: true }, // User.id (Firebase UID) of who added them
-  name: { type: String }, // Denormalized
-  email: { type: String }, // Denormalized
-  profilePictureUrl: { type: String }, // Denormalized
+  name: { type: String, trim: true }, // Denormalized
+  email: { type: String, lowercase: true, trim: true }, // Denormalized
+  profilePictureUrl: { type: String, trim: true }, // Denormalized
 }, { _id: false }); // No separate _id for subdocuments in the map values
 
 export interface TeamDocument extends Omit<TeamType, 'id' | 'members' | 'createdAt' | 'lastUpdatedAt'>, Document {
   _id: Types.ObjectId; // Mongoose will auto-generate this
   id?: string; // virtual getter
   ownerId: string; // User.id (Firebase UID)
-  members: Types.Map<TeamMemberType>; // Key is User.id (Firebase UID), value is TeamMemberType
+  members: Types.Map<TeamMemberDocument>; // Key is User.id (Firebase UID), value is TeamMemberDocument
   createdAt?: Date;
   lastUpdatedAt?: Date;
 }
@@ -68,3 +70,5 @@ if (mongoose.models.Team) {
 }
 
 export default TeamModel;
+
+    

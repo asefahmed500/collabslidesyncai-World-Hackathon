@@ -30,11 +30,11 @@ export type TeamRole = 'owner' | 'admin' | 'editor' | 'viewer';
 export interface TeamMember {
   // userId is the key in the members map
   role: TeamRole;
-  joinedAt: Date; // Changed for MongoDB
+  joinedAt: Date;
   addedBy: string; // User.id (Firebase UID) of who added them
-  name?: string; // Denormalized
-  email?: string; // Denormalized
-  profilePictureUrl?: string; // Denormalized
+  name?: string | null; // Denormalized
+  email?: string | null; // Denormalized
+  profilePictureUrl?: string | null; // Denormalized
 }
 
 export interface Team {
@@ -143,10 +143,10 @@ export type TeamActivityType =
   | 'member_removed'
   | 'member_role_changed'
   | 'team_profile_updated'
-  | 'presentation_created' // This might be logged if a presentation is explicitly tied to a team in MongoDB
+  | 'presentation_created'
   | 'presentation_deleted'
-  | 'asset_uploaded' // Logged via MongoDB service now
-  | 'asset_deleted';  // Logged via MongoDB service now
+  | 'asset_uploaded'
+  | 'asset_deleted';
 
 export interface TeamActivity {
   id: string; // Mongoose ObjectId as string
@@ -159,8 +159,8 @@ export interface TeamActivity {
   targetId?: string;
   targetName?: string;
   details?: {
-    oldRole?: TeamRole;
-    newRole?: TeamRole;
+    oldRole?: TeamRole | PresentationAccessRole;
+    newRole?: TeamRole | PresentationAccessRole;
     changedFields?: string[];
     teamName?: string;
     memberName?: string;
@@ -225,3 +225,5 @@ export interface Asset {
   createdAt: FirestoreTimestamp; // Firestore specific
   lastUpdatedAt?: FirestoreTimestamp; // Firestore specific
 }
+
+    

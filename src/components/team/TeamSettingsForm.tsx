@@ -22,13 +22,15 @@ import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import type { Team, User as AppUser } from "@/types";
 import { updateTeamProfile as serverUpdateTeamProfile } from '@/app/teams/actions';
-import { Loader2, Save, Palette, Settings as SettingsIcon, Image as ImageIcon } from "lucide-react"; // Renamed Settings to SettingsIcon
+import { Loader2, Save, Palette, Settings as SettingsIcon, Image as ImageIcon, Font } from "lucide-react"; // Renamed Settings to SettingsIcon
+
+const colorRegex = /^#([0-9A-Fa-f]{3,4}){1,2}$/; // Supports #RGB, #RGBA, #RRGGBB, #RRGGBBAA
 
 const formSchema = z.object({
   teamName: z.string().min(3, { message: "Team name must be at least 3 characters." }).max(50),
   logoUrl: z.string().url({ message: "Please enter a valid URL for the logo." }).optional().or(z.literal('')),
-  primaryColor: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/, { message: "Enter a valid hex color (e.g., #RRGGBB or #RGB)."}).optional().or(z.literal('')),
-  secondaryColor: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/, { message: "Enter a valid hex color (e.g., #RRGGBB or #RGB)."}).optional().or(z.literal('')),
+  primaryColor: z.string().regex(colorRegex, { message: "Enter a valid hex color (e.g., #RRGGBB or #RGB)."}).optional().or(z.literal('')),
+  secondaryColor: z.string().regex(colorRegex, { message: "Enter a valid hex color (e.g., #RRGGBB or #RGB)."}).optional().or(z.literal('')),
   fontPrimary: z.string().max(50, {message: "Font name too long."}).optional().or(z.literal('')),
   fontSecondary: z.string().max(50, {message: "Font name too long."}).optional().or(z.literal('')),
   allowGuestEdits: z.boolean().optional(),
@@ -77,6 +79,21 @@ export function TeamSettingsForm({ team, currentUser, onTeamUpdated }: TeamSetti
       aiFeaturesEnabled: team.settings?.aiFeaturesEnabled === undefined ? true : team.settings.aiFeaturesEnabled,
     },
   });
+  
+  useEffect(() => {
+    // Reset form if team prop changes
+    form.reset({
+      teamName: team.name || "",
+      logoUrl: team.branding?.logoUrl || "",
+      primaryColor: team.branding?.primaryColor || "#3F51B5",
+      secondaryColor: team.branding?.secondaryColor || "#FFC107",
+      fontPrimary: team.branding?.fontPrimary || "Space Grotesk",
+      fontSecondary: team.branding?.fontSecondary || "PT Sans",
+      allowGuestEdits: team.settings?.allowGuestEdits || false,
+      aiFeaturesEnabled: team.settings?.aiFeaturesEnabled === undefined ? true : team.settings.aiFeaturesEnabled,
+    });
+  }, [team, form]);
+
 
   useEffect(() => {
     if (formState.message) {
@@ -86,7 +103,6 @@ export function TeamSettingsForm({ team, currentUser, onTeamUpdated }: TeamSetti
           description: formState.message,
         });
         onTeamUpdated(formState.updatedTeam as Team);
-        // form.reset(formState.updatedTeam as FormSchemaType); // Re-sync form if needed
       } else if (!formState.success) {
         toast({
           title: "Update Failed",
@@ -95,7 +111,7 @@ export function TeamSettingsForm({ team, currentUser, onTeamUpdated }: TeamSetti
         });
       }
     }
-  }, [formState, toast, onTeamUpdated, form]);
+  }, [formState, toast, onTeamUpdated]);
 
   const canEdit = team.members[currentUser.id]?.role === 'owner' || team.members[currentUser.id]?.role === 'admin';
 
@@ -111,7 +127,7 @@ export function TeamSettingsForm({ team, currentUser, onTeamUpdated }: TeamSetti
           name="teamName"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Team Name</FormLabel>
+              <FormLabel className="text-base">Team Name</FormLabel>
               <FormControl>
                 <Input placeholder="Your Awesome Team" {...field} />
               </FormControl>
@@ -131,7 +147,7 @@ export function TeamSettingsForm({ team, currentUser, onTeamUpdated }: TeamSetti
                 <FormControl>
                     <Input placeholder="https://example.com/logo.png" {...field} />
                 </FormControl>
-                <FormDescription>Link to your team's logo image.</FormDescription>
+                <FormDescription>Link to your team's logo image. (Use a public URL)</FormDescription>
                 <FormMessage />
                 </FormItem>
             )}
@@ -156,7 +172,7 @@ export function TeamSettingsForm({ team, currentUser, onTeamUpdated }: TeamSetti
                 name="secondaryColor"
                 render={({ field }) => (
                     <FormItem>
-                    <FormLabel>Secondary Color</FormLabel>
+                    <FormLabel>Secondary (Accent) Color</FormLabel>
                      <div className="flex items-center gap-2">
                         <Input type="color" value={field.value} onChange={field.onChange} className="w-12 h-10 p-1"/>
                         <Input placeholder="#FFC107" {...field} />
@@ -172,11 +188,11 @@ export function TeamSettingsForm({ team, currentUser, onTeamUpdated }: TeamSetti
                 name="fontPrimary"
                 render={({ field }) => (
                     <FormItem>
-                    <FormLabel>Primary Font</FormLabel>
+                    <FormLabel className="flex items-center"><Font className="mr-2 h-4 w-4"/>Primary Font (Headlines)</FormLabel>
                     <FormControl>
                         <Input placeholder="Space Grotesk" {...field} />
                     </FormControl>
-                     <FormDescription>e.g., 'Arial', 'Verdana', 'Space Grotesk'</FormDescription>
+                     <FormDescription>e.g., 'Arial', 'Space Grotesk'. Ensure it's web-safe or imported in `layout.tsx`.</FormDescription>
                     <FormMessage />
                     </FormItem>
                 )}
@@ -186,11 +202,11 @@ export function TeamSettingsForm({ team, currentUser, onTeamUpdated }: TeamSetti
                 name="fontSecondary"
                 render={({ field }) => (
                     <FormItem>
-                    <FormLabel>Secondary Font</FormLabel>
+                    <FormLabel className="flex items-center"><Font className="mr-2 h-4 w-4"/>Secondary Font (Body)</FormLabel>
                     <FormControl>
                         <Input placeholder="PT Sans" {...field} />
                     </FormControl>
-                    <FormDescription>e.g., 'Times New Roman', 'PT Sans'</FormDescription>
+                    <FormDescription>e.g., 'PT Sans', 'Verdana'. Ensure it's web-safe or imported.</FormDescription>
                     <FormMessage />
                     </FormItem>
                 )}
@@ -207,16 +223,16 @@ export function TeamSettingsForm({ team, currentUser, onTeamUpdated }: TeamSetti
             render={({ field }) => (
                 <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4 shadow-sm bg-card">
                 <div className="space-y-0.5">
-                    <FormLabel className="text-base">Allow Guest Edits</FormLabel>
+                    <FormLabel className="text-base">Allow Guest Edits on Public Presentations</FormLabel>
                     <FormDescription>
-                    Permit users not formally in your team to edit public presentations (if link is shared).
+                    If a presentation is public, permit users not in your team to edit it (if they have the link and password, if set).
                     </FormDescription>
                 </div>
                 <FormControl>
                     <Switch
                     checked={field.value}
                     onCheckedChange={field.onChange}
-                    name={field.name} // Ensure name is passed for form submission
+                    name={field.name} 
                     />
                 </FormControl>
                 </FormItem>
@@ -228,16 +244,16 @@ export function TeamSettingsForm({ team, currentUser, onTeamUpdated }: TeamSetti
             render={({ field }) => (
                 <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4 shadow-sm bg-card">
                 <div className="space-y-0.5">
-                    <FormLabel className="text-base">Enable AI Features</FormLabel>
+                    <FormLabel className="text-base">Enable AI Assistant Features for Team</FormLabel>
                     <FormDescription>
-                    Allow team members to use AI-powered assistance for content and design.
+                    Allow team members to use AI-powered assistance for content generation, design suggestions, etc.
                     </FormDescription>
                 </div>
                 <FormControl>
                     <Switch
                     checked={field.value}
                     onCheckedChange={field.onChange}
-                    name={field.name} // Ensure name is passed for form submission
+                    name={field.name} 
                     />
                 </FormControl>
                 </FormItem>
@@ -255,3 +271,5 @@ export function TeamSettingsForm({ team, currentUser, onTeamUpdated }: TeamSetti
     </Form>
   );
 }
+
+    

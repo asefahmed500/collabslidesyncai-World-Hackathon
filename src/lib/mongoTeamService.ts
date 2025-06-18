@@ -5,35 +5,34 @@ import UserModel from '@/models/User'; // To fetch user details for denormalizat
 import TeamActivityModel from '@/models/TeamActivity';
 import type { Team, TeamMember, TeamRole, TeamActivity, TeamActivityType, User as AppUser } from '@/types';
 import { Types } from 'mongoose';
+import { updateUserTeamAndRoleInMongoDB } from './mongoUserService';
 
 function mongoTeamDocToTeam(doc: TeamDocument | null): Team | null {
   if (!doc) return null;
-  const teamObject = doc.toObject({ virtuals: true }) as any;
-  if (teamObject._id && !teamObject.id) {
-    teamObject.id = teamObject._id.toString();
-  }
-  // Convert members map values if they are Mongoose documents
-  if (teamObject.members && typeof teamObject.members.toObject === 'function') {
-    const membersPlain = teamObject.members.toObject();
-    teamObject.members = Object.fromEntries(
-        Object.entries(membersPlain).map(([key, value]: [string, any]) => [
-            key,
-            { ...value, joinedAt: new Date(value.joinedAt) }
-        ])
-    );
-  } else if (teamObject.members instanceof Map) {
+  const teamObject = doc.toObject({ virtuals: true }) as any; // Use virtuals to get 'id'
+  
+  // Ensure members map values are plain objects with Date for joinedAt
+  if (teamObject.members && teamObject.members instanceof Map) {
+    const newMembersObj: { [key: string]: any } = {};
+    teamObject.members.forEach((value: any, key: string) => {
+      const memberPlain = typeof value.toObject === 'function' ? value.toObject() : value;
+      newMembersObj[key] = { ...memberPlain, joinedAt: new Date(memberPlain.joinedAt) };
+    });
+    teamObject.members = newMembersObj;
+  } else if (teamObject.members && typeof teamObject.members === 'object' && !(teamObject.members instanceof Map)) {
+    // If it's already an object (e.g. from toObject())
      const newMembersObj: { [key: string]: any } = {};
-      teamObject.members.forEach((value: any, key: string) => {
+     Object.entries(teamObject.members).forEach(([key, value]: [string, any]) => {
         newMembersObj[key] = { ...value, joinedAt: new Date(value.joinedAt) };
-      });
-      teamObject.members = newMembersObj;
+     });
+     teamObject.members = newMembersObj;
   }
 
-
+  delete teamObject._id; // Use the virtual 'id'
   delete teamObject.__v;
   return {
     ...teamObject,
-    id: teamObject.id || teamObject._id.toString(),
+    id: teamObject.id, // Should be set by virtual
     createdAt: teamObject.createdAt instanceof Date ? teamObject.createdAt : new Date(teamObject.createdAt),
     lastUpdatedAt: teamObject.lastUpdatedAt instanceof Date ? teamObject.lastUpdatedAt : new Date(teamObject.lastUpdatedAt),
   } as Team;
@@ -53,7 +52,7 @@ export async function createTeamInMongoDB(teamName: string, ownerUser: AppUser):
   await dbConnect();
   try {
     if (!ownerUser || !ownerUser.id) {
-      throw new Error("Owner user or user ID is undefined");
+      throw new Error("Owner user or user ID is undefined for team creation.");
     }
     const ownerMemberInfo: TeamMember = {
       role: 'owner',
@@ -67,15 +66,15 @@ export async function createTeamInMongoDB(teamName: string, ownerUser: AppUser):
     const newTeam = new TeamModel({
       name: teamName,
       ownerId: ownerUser.id,
-      members: new Map([[ownerUser.id, ownerMemberInfo]]),
-      branding: { // Default branding
+      members: new Map([[ownerUser.id, ownerMemberInfo as TeamMemberDocument]]), // Cast to Mongoose subdoc type
+      branding: { 
         logoUrl: `https://placehold.co/200x100.png?text=${teamName.charAt(0).toUpperCase()}`,
         primaryColor: '#3F51B5',
         secondaryColor: '#FFC107',
         fontPrimary: 'Space Grotesk',
         fontSecondary: 'PT Sans',
       },
-      settings: { // Default settings
+      settings: { 
         allowGuestEdits: false,
         aiFeaturesEnabled: true,
       },
@@ -107,8 +106,23 @@ export async function getTeamFromMongoDB(teamId: string): Promise<Team | null> {
 export async function updateTeamInMongoDB(teamId: string, updates: Partial<Omit<Team, 'id' | 'ownerId' | 'members' | 'createdAt' | 'lastUpdatedAt'>>): Promise<Team | null> {
   await dbConnect();
   try {
-    const { id, ownerId, members, createdAt, lastUpdatedAt, ...safeUpdates } = updates as any;
-    const updatedTeamDoc = await TeamModel.findByIdAndUpdate(teamId, safeUpdates, { new: true }).exec();
+    // Ensure updates are structured correctly for nested objects like branding and settings
+    const updatePayload: any = {};
+    if (updates.name) updatePayload.name = updates.name;
+    if (updates.branding) {
+        for (const key in updates.branding) {
+            updatePayload[`branding.${key}`] = (updates.branding as any)[key];
+        }
+    }
+    if (updates.settings) {
+        for (const key in updates.settings) {
+            updatePayload[`settings.${key}`] = (updates.settings as any)[key];
+        }
+    }
+    updatePayload.lastUpdatedAt = new Date();
+
+
+    const updatedTeamDoc = await TeamModel.findByIdAndUpdate(teamId, updatePayload, { new: true }).exec();
     return mongoTeamDocToTeam(updatedTeamDoc);
   } catch (error) {
     console.error('Error updating team in MongoDB:', error);
@@ -131,9 +145,14 @@ export async function addMemberToTeamInMongoDB(teamId: string, userToAdd: AppUse
       email: userToAdd.email,
       profilePictureUrl: userToAdd.profilePictureUrl,
     };
-    team.members.set(userToAdd.id, newMember as TeamMemberDocument); // Cast to Mongoose subdoc type
+    team.members.set(userToAdd.id, newMember as TeamMemberDocument);
     team.lastUpdatedAt = new Date();
     await team.save();
+
+    // If user doesn't have a teamId or this is their first team, set it.
+    if (!userToAdd.teamId) {
+        await updateUserTeamAndRoleInMongoDB(userToAdd.id, team.id, role);
+    }
     return mongoTeamDocToTeam(team);
   } catch (error) {
     console.error('Error adding member to team in MongoDB:', error);
@@ -146,12 +165,20 @@ export async function removeMemberFromTeamInMongoDB(teamId: string, memberIdToRe
   try {
     const team = await TeamModel.findById(teamId).exec();
     if (!team) throw new Error('Team not found.');
-    if (!team.members.get(memberIdToRemove)) throw new Error('Member not found in team.');
+    const memberBeingRemoved = team.members.get(memberIdToRemove);
+    if (!memberBeingRemoved) throw new Error('Member not found in team.');
     if (team.ownerId === memberIdToRemove) throw new Error('Cannot remove the team owner.');
 
     team.members.delete(memberIdToRemove);
     team.lastUpdatedAt = new Date();
     await team.save();
+
+    // Update the user's record to remove teamId and set role to guest if this was their primary team
+    const user = await UserModel.findById(memberIdToRemove).exec();
+    if(user && user.teamId === teamId) {
+        await updateUserTeamAndRoleInMongoDB(memberIdToRemove, null, 'guest');
+    }
+
     return mongoTeamDocToTeam(team);
   } catch (error) {
     console.error('Error removing member from team in MongoDB:', error);
@@ -174,6 +201,13 @@ export async function updateMemberRoleInMongoDB(teamId: string, memberId: string
     team.members.set(memberId, member);
     team.lastUpdatedAt = new Date();
     await team.save();
+
+    // Update user's primary role if this team is their primary team
+    const user = await UserModel.findById(memberId).exec();
+    if (user && user.teamId === teamId) {
+        await updateUserTeamAndRoleInMongoDB(memberId, teamId, newRole);
+    }
+
     return mongoTeamDocToTeam(team);
   } catch (error) {
     console.error('Error updating member role in MongoDB:', error);
@@ -185,32 +219,38 @@ export async function logTeamActivityInMongoDB(
   teamId: string,
   actorId: string,
   actionType: TeamActivityType,
-  details?: object, // More generic for now
+  details?: object,
   targetType?: TeamActivity['targetType'],
   targetId?: string
 ): Promise<string> {
   await dbConnect();
   try {
-    const actor = await UserModel.findById(actorId).select('name').exec();
+    const actor = await UserModel.findById(actorId).select('name email').exec();
     
-    let targetName;
+    let targetNameResolved: string | undefined;
     if (targetType === 'user' && targetId) {
         const targetUser = await UserModel.findById(targetId).select('name email').exec();
-        targetName = targetUser?.name || targetId;
-        if (details && targetUser?.email) (details as any).memberEmail = targetUser.email;
+        targetNameResolved = targetUser?.name || targetUser?.email || targetId;
+        // Augment details if specific to user actions
+        if (details && targetUser?.email && actionType === 'member_added') (details as any).memberEmail = targetUser.email;
+        if (details && targetUser?.name && (actionType === 'member_added' || actionType === 'member_role_changed' || actionType === 'member_removed')) (details as any).memberName = targetUser.name;
+
+    } else if (targetType === 'presentation' && details && (details as any).presentationTitle) {
+        targetNameResolved = (details as any).presentationTitle;
+    } else if (targetType === 'asset' && details && (details as any).fileName) {
+        targetNameResolved = (details as any).fileName;
     }
-    // For presentation or asset, name might be passed in details already or fetched if needed.
+
 
     const activityData: Partial<TeamActivity> = {
       teamId,
       actorId,
-      actorName: actor?.name || 'Unknown User',
+      actorName: actor?.name || actor?.email || 'Unknown User',
       actionType,
       targetType,
       targetId,
-      targetName,
+      targetName: targetNameResolved,
       details,
-      // createdAt will be set by Mongoose timestamps
     };
 
     const activity = new TeamActivityModel(activityData);
@@ -246,3 +286,5 @@ export async function getAllTeamsFromMongoDB(): Promise<Team[]> {
     return [];
   }
 }
+
+    

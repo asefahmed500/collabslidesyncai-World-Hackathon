@@ -10,7 +10,7 @@ import {
     updateMemberRoleInMongoDB,
     logTeamActivityInMongoDB
 } from '@/lib/mongoTeamService';
-import { getUserByEmailFromMongoDB, getUserFromMongoDB } from '@/lib/mongoUserService';
+import { getUserByEmailFromMongoDB, getUserFromMongoDB, updateUserTeamAndRoleInMongoDB } from '@/lib/mongoUserService';
 import type { Team, TeamRole, TeamMember, User as AppUser } from '@/types';
 import { revalidatePath } from 'next/cache';
 
@@ -67,7 +67,7 @@ export async function updateTeamProfile(prevState: any, formData: FormData): Pro
     const updateData: Partial<Omit<Team, 'id' | 'ownerId' | 'members' | 'createdAt' | 'lastUpdatedAt'>> = {
         name: teamName,
         branding: {
-            logoUrl: logoUrl || undefined,
+            logoUrl: logoUrl || undefined, // Allow empty string to clear
             primaryColor: primaryColor || undefined,
             secondaryColor: secondaryColor || undefined,
             fontPrimary: fontPrimary || undefined,
@@ -104,7 +104,7 @@ export async function addTeamMemberByEmailAction(teamId: string, email: string, 
   if (!hasPermission) {
     return { success: false, message: 'You do not have permission to add members to this team.' };
   }
-  if (role === 'owner') {
+  if (role === 'owner') { // Prevent assigning owner role directly
       return { success: false, message: 'Cannot assign owner role directly. Transfer ownership instead.'}
   }
   if (role === 'admin' && !(await isTeamOwner(teamId, currentUserId))) {
@@ -115,18 +115,31 @@ export async function addTeamMemberByEmailAction(teamId: string, email: string, 
   try {
     const userToAdd = await getUserByEmailFromMongoDB(email);
     if (!userToAdd) {
-      return { success: false, message: `User with email ${email} not found.` };
+      return { success: false, message: `User with email ${email} not found. Users must have an existing CollabSlideSyncAI account.` };
     }
+    if (userToAdd.teamId && userToAdd.teamId !== teamId) {
+      // Handle case where user is already in another team.
+      // For now, we might prevent adding or require them to leave their current team first.
+      // This simplistic model assumes one primary team or the admin is overriding.
+      // Let's allow adding, but this could be refined.
+      console.warn(`User ${email} is already part of team ${userToAdd.teamId}. Adding to ${teamId}.`);
+    }
+
 
     const updatedTeam = await addMemberToTeamInMongoDB(teamId, userToAdd, role, currentUserId);
     if (!updatedTeam) {
         return { success: false, message: 'Failed to add member to team in database.' };
     }
     
-    await logTeamActivityInMongoDB(teamId, currentUserId, 'member_added', { newRole: role, memberEmail: email }, 'user', userToAdd.id);
+    // If the user wasn't part of any team, update their primary teamId and role
+    if (!userToAdd.teamId) {
+        await updateUserTeamAndRoleInMongoDB(userToAdd.id, teamId, role);
+    }
+
+    await logTeamActivityInMongoDB(teamId, currentUserId, 'member_added', { newRole: role }, 'user', userToAdd.id);
 
     revalidatePath(`/dashboard/manage-team`);
-    return { success: true, message: `${email} added to the team as ${role}.`, updatedTeamMembers: updatedTeam.members };
+    return { success: true, message: `${userToAdd.name || email} added to the team as ${role}.`, updatedTeamMembers: updatedTeam.members };
 
   } catch (error: any) {
     console.error("Error adding team member:", error);
@@ -152,10 +165,10 @@ export async function updateTeamMemberRoleAction(teamId: string, memberId: strin
   if (memberToUpdate.role === 'owner' && newRole !== 'owner') {
      return { success: false, message: 'Cannot change the role of the team owner directly. Use transfer ownership feature.' };
   }
-  if (newRole === 'owner' && memberToUpdate.role !== 'owner') {
-      return { success: false, message: 'To make someone an owner, use the "Transfer Ownership" feature.' };
+  if (newRole === 'owner' && memberToUpdate.role !== 'owner') { // Cannot promote to owner, must use transfer
+      return { success: false, message: 'To make someone an owner, use the "Transfer Ownership" feature (Not yet fully implemented).' };
   }
-  if (newRole === 'admin' && currentMemberInfo.role !== 'owner') {
+  if (newRole === 'admin' && currentMemberInfo.role !== 'owner') { // Only owner can make admins
       return { success: false, message: 'Only team owners can promote members to admin.' };
   }
   if (memberToUpdate.role === 'admin' && currentMemberInfo.role !== 'owner' && memberId !== currentUserId) { // Admin can't change another admin's role
@@ -172,7 +185,7 @@ export async function updateTeamMemberRoleAction(teamId: string, memberId: strin
         return { success: false, message: 'Failed to update member role in database.' };
     }
 
-  await logTeamActivityInMongoDB(teamId, currentUserId, 'member_role_changed', { oldRole, newRole, memberName: memberToUpdate.name || memberId }, 'user', memberId);
+  await logTeamActivityInMongoDB(teamId, currentUserId, 'member_role_changed', { oldRole, newRole }, 'user', memberId);
   
   revalidatePath(`/dashboard/manage-team`);
   return { success: true, message: `Role for ${memberToUpdate.name || memberId} updated to ${newRole}.`, updatedTeamMembers: updatedTeam.members };
@@ -192,7 +205,7 @@ export async function removeTeamMemberAction(teamId: string, memberIdToRemove: s
   }
 
   if (currentUserId === memberIdToRemove) {
-    return { success: false, message: 'You cannot remove yourself. Leave the team instead (feature not yet implemented).' };
+    return { success: false, message: 'You cannot remove yourself. Leave the team instead (feature not yet fully implemented).' };
   }
 
   const memberToRemove = team.members[memberIdToRemove];
@@ -210,7 +223,7 @@ export async function removeTeamMemberAction(teamId: string, memberIdToRemove: s
         return { success: false, message: 'Failed to remove member in database.' };
     }
 
-  await logTeamActivityInMongoDB(teamId, currentUserId, 'member_removed', { memberName: memberToRemove.name || memberIdToRemove }, 'user', memberIdToRemove);
+  await logTeamActivityInMongoDB(teamId, currentUserId, 'member_removed', { reason: 'Removed by admin/owner' }, 'user', memberIdToRemove);
   
   revalidatePath(`/dashboard/manage-team`);
   return { success: true, message: `${memberToRemove.name || memberIdToRemove} removed from the team.`, updatedTeamMembers: updatedTeam.members };
@@ -220,15 +233,27 @@ export async function removeTeamMemberAction(teamId: string, memberIdToRemove: s
 export async function transferTeamOwnershipAction(teamId: string, newOwnerId: string): Promise<TeamActionResponse> {
     const currentUserId = auth.currentUser?.uid;
     if (!currentUserId) return { success: false, message: "Authentication required."};
-    if (!(await isTeamOwner(teamId, currentUserId))) return { success: false, message: "Only the current team owner can transfer ownership."};
+    
+    const team = await getTeamFromMongoDB(teamId);
+    if (!team) return { success: false, message: "Team not found." };
+    if (team.ownerId !== currentUserId) return { success: false, message: "Only the current team owner can transfer ownership."};
     if (currentUserId === newOwnerId) return { success: false, message: "You are already the owner."};
     
-    // TODO: Implement actual logic:
-    // 1. Verify newOwnerId is a current member of the team.
-    // 2. Update old owner's role (e.g., to 'admin' or 'editor').
-    // 3. Update new owner's role to 'owner'.
-    // 4. Update team's ownerId field.
-    // 5. Log activity.
-    console.log(`Transfer ownership of team ${teamId} to ${newOwnerId} - NOT IMPLEMENTED`);
-    return { success: false, message: "Team ownership transfer is not yet implemented."};
+    const newOwnerMemberInfo = team.members[newOwnerId];
+    if (!newOwnerMemberInfo) return { success: false, message: "Target user is not a member of this team."};
+
+    // Actual logic:
+    // 1. Update old owner's role in team.members (e.g., to 'admin').
+    // 2. Update new owner's role in team.members to 'owner'.
+    // 3. Update team's root ownerId field.
+    // 4. Update old owner's primary role in their User document.
+    // 5. Update new owner's primary role in their User document.
+    // 6. Log activity.
+    // This needs to be a transaction.
+    console.warn(`Attempting to transfer ownership of team ${teamId} from ${currentUserId} to ${newOwnerId} - Full implementation is complex and currently stubbed.`);
+    
+    // For now, just return a message.
+    return { success: false, message: "Team ownership transfer is a complex operation and not fully implemented in this pass. This requires careful transactional updates across User and Team collections."};
 }
+
+    

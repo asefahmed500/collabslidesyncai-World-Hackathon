@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { useForm, Controller } from "react-hook-form";
+import { useForm, Controller, SubmitHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import type { Team, TeamMember, TeamRole, User as AppUser } from "@/types";
 import { 
@@ -20,8 +20,9 @@ import {
     removeTeamMemberAction,
     transferTeamOwnershipAction 
 } from '@/app/teams/actions';
-import { Loader2, UserPlus, Edit, Trash2, UserCircle, ShieldQuestion, Crown, Mail } from 'lucide-react';
+import { Loader2, UserPlus, Edit, Trash2, UserCircle, ShieldQuestion, Crown, Mail, Save, X } from 'lucide-react';
 import { Label } from '../ui/label';
+import { Form, FormControl, FormField, FormItem, FormMessage } from '../ui/form';
 
 const addMemberSchema = z.object({
   email: z.string().email({ message: "Invalid email address." }),
@@ -44,27 +45,27 @@ export function TeamMembersManager({ team, currentUser, onMembersUpdated }: Team
   
   const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
   const [selectedNewRole, setSelectedNewRole] = useState<TeamRole | ''>('');
-  const [memberToRemove, setMemberToRemove] = useState<({id: string, name?: string}) | null>(null);
-  const [transferTarget, setTransferTarget] = useState<string | null>(null);
+  const [memberToRemove, setMemberToRemove] = useState<({id: string, name?: string | null}) | null>(null);
+  const [transferTarget, setTransferTarget] = useState<({id: string, name?: string | null}) | null>(null);
 
 
-  const { control: addMemberControl, handleSubmit: handleAddMemberSubmit, reset: resetAddMemberForm, formState: { errors: addMemberErrors } } = useForm<AddMemberFormValues>({
+  const addMemberForm = useForm<AddMemberFormValues>({
     resolver: zodResolver(addMemberSchema),
     defaultValues: { email: "", role: "editor" },
   });
 
   const isCurrentUserOwner = team.members[currentUser.id]?.role === 'owner';
   const isCurrentUserAdmin = team.members[currentUser.id]?.role === 'admin';
-  const canManageHigherRoles = isCurrentUserOwner; // Only owner can make admins or transfer ownership
+  const canManageHigherRoles = isCurrentUserOwner; 
   const canManageMembers = isCurrentUserOwner || isCurrentUserAdmin;
 
-  const onAddMember = async (data: AddMemberFormValues) => {
+  const onAddMember: SubmitHandler<AddMemberFormValues> = async (data) => {
     setIsSubmitting(true);
     const result = await addTeamMemberByEmailAction(team.id, data.email, data.role);
     if (result.success && result.updatedTeamMembers) {
-      toast({ title: "Member Added", description: result.message });
+      toast({ title: "Member Action", description: result.message });
       onMembersUpdated(result.updatedTeamMembers);
-      resetAddMemberForm();
+      addMemberForm.reset();
       setIsAddMemberDialogOpen(false);
     } else {
       toast({ title: "Failed to Add Member", description: result.message, variant: "destructive" });
@@ -109,14 +110,13 @@ export function TeamMembersManager({ team, currentUser, onMembersUpdated }: Team
     setIsSubmitting(false);
   };
 
-  const handleTransferOwnership = async () => {
+  const handleConfirmTransferOwnership = async () => {
     if (!transferTarget) return;
     setIsSubmitting(true);
-    // This is a placeholder for a more complex flow which should include confirmations
-    const result = await transferTeamOwnershipAction(team.id, transferTarget);
-    toast({ title: result.success ? "Ownership Transfer Initiated" : "Ownership Transfer Failed", description: result.message, variant: result.success ? "default" : "destructive" });
-     if (result.success && result.updatedTeam) {
-      onMembersUpdated(result.updatedTeam.members); // Assuming the action returns the updated team
+    const result = await transferTeamOwnershipAction(team.id, transferTarget.id);
+    toast({ title: result.success ? "Ownership Transfer Complete" : "Ownership Transfer Failed", description: result.message, variant: result.success ? "default" : "destructive" });
+     if (result.success && result.updatedTeam) { // Action should return updatedTeam if successful
+      onMembersUpdated(result.updatedTeam.members);
     }
     setTransferTarget(null);
     setIsSubmitting(false);
@@ -125,7 +125,7 @@ export function TeamMembersManager({ team, currentUser, onMembersUpdated }: Team
   const teamMemberList = Object.entries(team.members).map(([id, memberData]) => ({
     id,
     ...memberData,
-  })).sort((a,b) => { // Owner first, then admins, then by name/email
+  })).sort((a,b) => { 
       if (a.role === 'owner') return -1; if (b.role === 'owner') return 1;
       if (a.role === 'admin' && b.role !== 'admin') return -1; if (b.role === 'admin' && a.role !== 'admin') return 1;
       return (a.name || a.email || '').localeCompare(b.name || b.email || '');
@@ -145,48 +145,54 @@ export function TeamMembersManager({ team, currentUser, onMembersUpdated }: Team
                 Enter the email address of the user to invite. They must have an existing CollabSlideSyncAI account.
               </DialogDescription>
             </DialogHeader>
-            <form onSubmit={handleAddMemberSubmit(onAddMember)} className="space-y-4 py-2">
-              <FormField
-                control={addMemberControl}
-                name="email"
-                render={({ field }) => (
-                  <FormItem>
-                    <Label htmlFor="add-member-email">Email Address</Label>
-                    <div className="relative">
-                        <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                        <Input id="add-member-email" type="email" placeholder="user@example.com" {...field} className="pl-10"/>
-                    </div>
-                    {addMemberErrors.email && <p className="text-xs text-destructive mt-1">{addMemberErrors.email.message}</p>}
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={addMemberControl}
-                name="role"
-                render={({ field }) => (
-                  <FormItem>
-                    <Label htmlFor="add-member-role">Assign Role</Label>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                        <SelectTrigger id="add-member-role" className="mt-1">
-                            <SelectValue placeholder="Select a role" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="editor">Editor</SelectItem>
-                            <SelectItem value="viewer">Viewer</SelectItem>
-                            {canManageHigherRoles && <SelectItem value="admin">Admin</SelectItem>}
-                        </SelectContent>
-                    </Select>
-                    {addMemberErrors.role && <p className="text-xs text-destructive mt-1">{addMemberErrors.role.message}</p>}
-                  </FormItem>
-                )}
-              />
-              <DialogFooter className="pt-4">
-                <Button type="button" variant="outline" onClick={() => {setIsAddMemberDialogOpen(false); resetAddMemberForm();}} disabled={isSubmitting}>Cancel</Button>
-                <Button type="submit" disabled={isSubmitting}>
-                  {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Add Member"}
-                </Button>
-              </DialogFooter>
-            </form>
+            <Form {...addMemberForm}>
+                <form onSubmit={addMemberForm.handleSubmit(onAddMember)} className="space-y-4 py-2">
+                <FormField
+                    control={addMemberForm.control}
+                    name="email"
+                    render={({ field }) => (
+                    <FormItem>
+                        <Label htmlFor="add-member-email">Email Address</Label>
+                        <div className="relative">
+                            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                            <FormControl>
+                                <Input id="add-member-email" type="email" placeholder="user@example.com" {...field} className="pl-10"/>
+                            </FormControl>
+                        </div>
+                        <FormMessage />
+                    </FormItem>
+                    )}
+                />
+                <FormField
+                    control={addMemberForm.control}
+                    name="role"
+                    render={({ field }) => (
+                    <FormItem>
+                        <Label htmlFor="add-member-role">Assign Role</Label>
+                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                            <FormControl>
+                                <SelectTrigger id="add-member-role" className="mt-1">
+                                    <SelectValue placeholder="Select a role" />
+                                </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                                <SelectItem value="editor">Editor</SelectItem>
+                                <SelectItem value="viewer">Viewer</SelectItem>
+                                {canManageHigherRoles && <SelectItem value="admin">Admin</SelectItem>}
+                            </SelectContent>
+                        </Select>
+                         <FormMessage />
+                    </FormItem>
+                    )}
+                />
+                <DialogFooter className="pt-4">
+                    <Button type="button" variant="outline" onClick={() => {setIsAddMemberDialogOpen(false); addMemberForm.reset();}} disabled={isSubmitting}>Cancel</Button>
+                    <Button type="submit" disabled={isSubmitting}>
+                    {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Add Member"}
+                    </Button>
+                </DialogFooter>
+                </form>
+            </Form>
           </DialogContent>
         </Dialog>
       )}
@@ -198,7 +204,7 @@ export function TeamMembersManager({ team, currentUser, onMembersUpdated }: Team
                 <TableHead className="w-[40%]">Member</TableHead>
                 <TableHead className="w-[25%]">Role</TableHead>
                 <TableHead className="hidden sm:table-cell w-[20%]">Joined</TableHead>
-                {canManageMembers && <TableHead className="text-right w-[15%]">Actions</TableHead>}
+                {(canManageMembers || isCurrentUserOwner) && <TableHead className="text-right w-[15%] min-w-[120px]">Actions</TableHead>}
             </TableRow>
             </TableHeader>
             <TableBody>
@@ -211,8 +217,8 @@ export function TeamMembersManager({ team, currentUser, onMembersUpdated }: Team
                         <AvatarFallback>{member.name ? member.name.charAt(0).toUpperCase() : <UserCircle size={18}/>}</AvatarFallback>
                     </Avatar>
                     <div>
-                        <p className="font-medium truncate max-w-[150px] sm:max-w-xs">{member.name || 'N/A'} {member.id === currentUser.id && <span className="text-xs text-muted-foreground">(You)</span>}</p>
-                        <p className="text-xs text-muted-foreground truncate  max-w-[150px] sm:max-w-xs">{member.email || 'N/A'}</p>
+                        <p className="font-medium truncate max-w-[120px] sm:max-w-xs">{member.name || 'N/A'} {member.id === currentUser.id && <span className="text-xs text-muted-foreground">(You)</span>}</p>
+                        <p className="text-xs text-muted-foreground truncate  max-w-[120px] sm:max-w-xs">{member.email || 'N/A'}</p>
                     </div>
                     </div>
                 </TableCell>
@@ -226,7 +232,6 @@ export function TeamMembersManager({ team, currentUser, onMembersUpdated }: Team
                                 <SelectItem value="viewer">Viewer</SelectItem>
                                 <SelectItem value="editor">Editor</SelectItem>
                                 {canManageHigherRoles && <SelectItem value="admin">Admin</SelectItem>}
-                                {/* Owner role cannot be assigned here, only via transfer */}
                                 {member.role === 'owner' && <SelectItem value="owner" disabled>Owner</SelectItem>}
                             </SelectContent>
                         </Select>
@@ -240,16 +245,15 @@ export function TeamMembersManager({ team, currentUser, onMembersUpdated }: Team
                 <TableCell className="hidden sm:table-cell text-xs text-muted-foreground">
                     {member.joinedAt ? new Date(member.joinedAt).toLocaleDateString() : 'N/A'}
                 </TableCell>
-                {canManageMembers && (
-                    <TableCell className="text-right">
+                {(canManageMembers || isCurrentUserOwner) && (
+                    <TableCell className="text-right space-x-1">
                     {editingMemberId === member.id ? (
-                        <div className="flex gap-1 justify-end">
-                            <Button size="sm" onClick={handleSaveRoleChange} disabled={isSubmitting || selectedNewRole === member.role}>Save</Button>
-                            <Button size="sm" variant="ghost" onClick={() => {setEditingMemberId(null); setSelectedNewRole('');}}>Cancel</Button>
-                        </div>
+                        <>
+                            <Button size="icon" variant="ghost" onClick={handleSaveRoleChange} disabled={isSubmitting || selectedNewRole === member.role} title="Save role change"><Save className="h-4 w-4"/></Button>
+                            <Button size="icon" variant="ghost" onClick={() => {setEditingMemberId(null); setSelectedNewRole('');}} title="Cancel edit"><X className="h-4 w-4"/></Button>
+                        </>
                     ) : (
                         <>
-                        {/* Conditions for showing Edit/Remove buttons */}
                         {member.id !== currentUser.id && member.role !== 'owner' && (isCurrentUserOwner || (isCurrentUserAdmin && member.role !== 'admin')) && (
                             <>
                             <Button variant="ghost" size="icon" onClick={() => handleInitiateRoleChange(member.id, member.role)} disabled={isSubmitting} title="Edit role">
@@ -260,9 +264,8 @@ export function TeamMembersManager({ team, currentUser, onMembersUpdated }: Team
                             </Button>
                             </>
                         )}
-                        {/* Placeholder for Transfer Ownership Button if current user is owner and member is not owner */}
                         {isCurrentUserOwner && member.role !== 'owner' && (
-                            <Button variant="ghost" size="icon" onClick={() => setTransferTarget(member.id)} disabled={isSubmitting} title="Transfer Ownership (Placeholder)">
+                            <Button variant="ghost" size="icon" onClick={() => setTransferTarget({id: member.id, name: member.name})} disabled={isSubmitting} title="Transfer Ownership (Stub)">
                                 <Crown className="h-4 w-4 text-amber-500" />
                             </Button>
                         )}
@@ -275,7 +278,7 @@ export function TeamMembersManager({ team, currentUser, onMembersUpdated }: Team
             </TableBody>
         </Table>
       </div>
-      {teamMemberList.length === 0 && <p className="text-center text-muted-foreground py-4">No members in this team yet (besides potentially yourself if you're the owner).</p>}
+      {teamMemberList.length === 0 && <p className="text-center text-muted-foreground py-4">No members in this team yet.</p>}
 
       {memberToRemove && (
         <AlertDialog open={!!memberToRemove} onOpenChange={(open) => !open && setMemberToRemove(null)}>
@@ -299,16 +302,17 @@ export function TeamMembersManager({ team, currentUser, onMembersUpdated }: Team
          <AlertDialog open={!!transferTarget} onOpenChange={(open) => !open && setTransferTarget(null)}>
             <AlertDialogContent>
                 <AlertDialogHeader>
-                <AlertDialogTitle>Transfer Ownership?</AlertDialogTitle>
+                <AlertDialogTitle>Transfer Ownership to {transferTarget.name || 'this member'}?</AlertDialogTitle>
                 <AlertDialogDescription>
-                    Are you sure you want to transfer ownership to {team.members[transferTarget]?.name || transferTarget}? This action is irreversible and you will become an admin.
-                    (Note: Full implementation pending.)
+                    Are you sure you want to transfer team ownership to {transferTarget.name || transferTarget.id}? 
+                    This action is irreversible and you will become an admin. 
+                    (Note: This feature's backend logic is complex and currently a placeholder.)
                 </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                 <AlertDialogCancel onClick={() => setTransferTarget(null)} disabled={isSubmitting}>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={handleTransferOwnership} className="bg-amber-500 hover:bg-amber-600 text-white" disabled={isSubmitting}>
-                    {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : "Transfer Ownership (Placeholder)"}
+                <AlertDialogAction onClick={handleConfirmTransferOwnership} className="bg-amber-500 hover:bg-amber-600 text-white" disabled={isSubmitting}>
+                    {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : "Confirm Transfer (Stub)"}
                 </AlertDialogAction>
                 </AlertDialogFooter>
             </AlertDialogContent>
@@ -317,3 +321,5 @@ export function TeamMembersManager({ team, currentUser, onMembersUpdated }: Team
     </div>
   );
 }
+
+    

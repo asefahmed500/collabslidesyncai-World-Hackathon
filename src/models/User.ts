@@ -1,10 +1,10 @@
 
 import mongoose, { Schema, Document, Model } from 'mongoose';
-import type { User as UserType } from '@/types';
+import type { User as UserType, TeamRole } from '@/types';
 
 export interface UserDocument extends Omit<UserType, 'id' | 'lastActive' | 'createdAt' | 'updatedAt' | '_id'>, Document {
   _id: string; // Firebase UID will be used as _id
-  role: 'owner' | 'admin' | 'editor' | 'viewer' | 'guest';
+  role: TeamRole | 'guest'; // Role within their primary team, or 'guest' if no team
   lastActive: Date;
   createdAt?: Date;
   updatedAt?: Date;
@@ -12,7 +12,7 @@ export interface UserDocument extends Omit<UserType, 'id' | 'lastActive' | 'crea
   githubId?: string | null;
   emailVerified?: boolean;
   twoFactorEnabled?: boolean;
-  teamId?: string | null; // Added teamId
+  teamId?: string | null; 
 }
 
 const UserSettingsSchema = new Schema({
@@ -23,19 +23,19 @@ const UserSettingsSchema = new Schema({
 
 const UserSchema = new Schema<UserDocument>(
   {
-    _id: { type: String, required: true },
+    _id: { type: String, required: true }, // Firebase UID
     name: { type: String, trim: true, index: true },
     email: {
       type: String,
       unique: true,
       lowercase: true,
       trim: true,
-      sparse: true
+      sparse: true // Allows multiple nulls for email if some users don't have one
     },
     emailVerified: { type: Boolean, default: false },
     profilePictureUrl: { type: String, trim: true },
     teamId: { type: String, index: true, sparse: true, default: null }, // User's primary team ID
-    role: { type: String, enum: ['owner', 'admin', 'editor', 'viewer', 'guest'], default: 'editor' }, // Role within their teamId
+    role: { type: String, enum: ['owner', 'admin', 'editor', 'viewer', 'guest'], default: 'guest' }, // Role within their teamId, 'guest' if no team
     lastActive: { type: Date, default: Date.now },
     settings: { type: UserSettingsSchema, default: () => ({ darkMode: false, aiFeatures: true, notifications: true }) },
     isAppAdmin: { type: Boolean, default: false },
@@ -44,8 +44,8 @@ const UserSchema = new Schema<UserDocument>(
     twoFactorEnabled: { type: Boolean, default: false },
   },
   {
-    timestamps: true,
-    _id: false, // Disable Mongoose's default ObjectId for _id as we use Firebase UID
+    timestamps: true, // Adds createdAt and updatedAt
+    _id: false, // We are using Firebase UID as _id
     toJSON: {
       virtuals: true,
       transform: function(doc, ret) {
@@ -78,3 +78,5 @@ if (mongoose.models && mongoose.models.User) {
 }
 
 export default UserModel;
+
+    

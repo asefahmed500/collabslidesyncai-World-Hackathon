@@ -12,7 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Loader2, ShieldAlert, Users, Settings, Activity, Briefcase } from 'lucide-react';
 import type { Team, User as AppUser, TeamActivity as TeamActivityType, TeamMember } from '@/types';
-import { getTeamFromMongoDB, getTeamActivitiesFromMongoDB } from '@/lib/mongoTeamService'; // Use MongoDB service
+import { getTeamFromMongoDB, getTeamActivitiesFromMongoDB } from '@/lib/mongoTeamService';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 
@@ -24,6 +24,7 @@ export default function ManageTeamPage() {
   const [teamActivities, setTeamActivities] = useState<TeamActivityType[]>([]);
   const [isLoadingTeam, setIsLoadingTeam] = useState(true);
   const [isLoadingActivities, setIsLoadingActivities] = useState(true);
+  const [hasManagementPermission, setHasManagementPermission] = useState(false);
 
   const fetchTeamData = useCallback(async () => {
     if (currentUser?.teamId) {
@@ -32,11 +33,16 @@ export default function ManageTeamPage() {
         const teamData = await getTeamFromMongoDB(currentUser.teamId);
         if (teamData) {
           const memberInfo = teamData.members[currentUser.id];
-          if (memberInfo && (memberInfo.role === 'owner' || memberInfo.role === 'admin')) {
+          const canManage = memberInfo && (memberInfo.role === 'owner' || memberInfo.role === 'admin');
+          setHasManagementPermission(canManage);
+          if (canManage) {
             setTeam(teamData);
           } else {
-            toast({ title: "Access Denied", description: "You don't have permission to manage this team.", variant: "destructive" });
-            router.push('/dashboard');
+            // If user is part of team but not owner/admin, allow viewing some info (e.g. activity log)
+            // but restrict access to sensitive tabs like settings/member management
+            // For now, we'll set the team data but rely on `hasManagementPermission` to control UI
+            setTeam(teamData); 
+            // toast({ title: "Limited Access", description: "You have view-only access for some team management features.", variant: "default" });
           }
         } else {
           toast({ title: "Error", description: "Team not found.", variant: "destructive" });
@@ -49,8 +55,11 @@ export default function ManageTeamPage() {
         setIsLoadingTeam(false);
       }
     } else if (!authLoading && currentUser && !currentUser.teamId) {
-      toast({ title: "No Team Found", description: "You are not currently part of a team.", variant: "info" });
-      router.push('/dashboard'); // Or a "create team" page
+      toast({ title: "No Team Found", description: "You are not currently part of a team. Create or join one!", variant: "info" });
+      router.push('/dashboard'); 
+      setIsLoadingTeam(false);
+    } else if (!authLoading && !currentUser) {
+      router.push('/login');
       setIsLoadingTeam(false);
     }
   }, [currentUser, authLoading, router, toast]);
@@ -76,9 +85,19 @@ export default function ManageTeamPage() {
       router.push('/login');
       setIsLoadingTeam(false);
       setIsLoadingActivities(false);
-    } else if (currentUser) {
-        fetchTeamData();
-        fetchActivities();
+      return;
+    }
+    
+    if (currentUser) { // User is loaded
+        if (currentUser.teamId) {
+            fetchTeamData();
+            fetchActivities();
+        } else if (!authLoading) { // User loaded, no teamId, not authLoading
+             toast({ title: "No Team Found", description: "You are not currently part of a team.", variant: "info" });
+             router.push('/dashboard');
+             setIsLoadingTeam(false);
+             setIsLoadingActivities(false);
+        }
     }
   }, [currentUser, authLoading, router, fetchTeamData, fetchActivities]);
 
@@ -95,19 +114,18 @@ export default function ManageTeamPage() {
     );
   }
 
-  if (!currentUser) { // Should be caught by authLoading, but as a fallback
+  if (!currentUser) {
      return <div className="flex min-h-screen flex-col items-center justify-center"><Loader2 className="h-12 w-12 animate-spin text-primary" /></div>;
   }
   
-  if (!team) { // This implies user has no teamId or access issues handled by fetchTeamData
+  if (!team) { 
     return (
       <div className="flex flex-col min-h-screen">
         <SiteHeader />
         <main className="flex-grow container mx-auto p-4 sm:p-6 lg:p-8 flex flex-col items-center justify-center text-center">
           <Briefcase className="h-16 w-16 text-muted-foreground mb-4" />
-          <h1 className="font-headline text-3xl font-bold mb-2">No Team Assigned</h1>
-          <p className="text-muted-foreground">You are not part of a team or could not load your team details.</p>
-          <p className="text-sm text-muted-foreground mt-1">If you just signed up, your team should be available.</p>
+          <h1 className="font-headline text-3xl font-bold mb-2">No Team Data</h1>
+          <p className="text-muted-foreground">Could not load your team details. You might not be part of a team or an error occurred.</p>
           <Button onClick={() => router.push('/dashboard')} className="mt-6">Go to Dashboard</Button>
         </main>
       </div>
@@ -115,15 +133,14 @@ export default function ManageTeamPage() {
   }
   
   const onTeamUpdated = (updatedTeam: Team) => {
-    setTeam(updatedTeam); // Update local state
-    fetchActivities(); // Re-fetch activities as team updates might generate new ones
+    setTeam(updatedTeam); 
+    fetchActivities(); 
     toast({ title: "Team Updated", description: "Your team settings have been saved." });
   };
   
   const onMembersUpdated = (updatedMembers: { [userId: string]: TeamMember }) => {
     setTeam(prevTeam => prevTeam ? { ...prevTeam, members: updatedMembers } : null);
-    fetchActivities(); // Re-fetch activities
-    // Toast for specific member actions will be handled in TeamMembersManager via server action responses
+    fetchActivities(); 
   };
 
 
@@ -139,7 +156,7 @@ export default function ManageTeamPage() {
         <Tabs defaultValue="members" className="w-full">
           <TabsList className="grid w-full grid-cols-1 sm:grid-cols-3 mb-6">
             <TabsTrigger value="members"><Users className="mr-2 h-4 w-4" />Members</TabsTrigger>
-            <TabsTrigger value="settings"><Settings className="mr-2 h-4 w-4" />Settings & Branding</TabsTrigger>
+            <TabsTrigger value="settings" disabled={!hasManagementPermission}><Settings className="mr-2 h-4 w-4" />Settings & Branding</TabsTrigger>
             <TabsTrigger value="activity"><Activity className="mr-2 h-4 w-4" />Activity Log</TabsTrigger>
           </TabsList>
 
@@ -162,21 +179,30 @@ export default function ManageTeamPage() {
           </TabsContent>
 
           <TabsContent value="settings">
-            <Card className="shadow-lg">
-              <CardHeader>
-                <CardTitle>Team Settings & Branding</CardTitle>
-                <CardDescription>Customize your team's appearance and general settings.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {currentUser && team && (
-                    <TeamSettingsForm 
-                        team={team} 
-                        currentUser={currentUser} 
-                        onTeamUpdated={onTeamUpdated}
-                    />
-                )}
-              </CardContent>
-            </Card>
+            {hasManagementPermission ? (
+                <Card className="shadow-lg">
+                <CardHeader>
+                    <CardTitle>Team Settings & Branding</CardTitle>
+                    <CardDescription>Customize your team's appearance and general settings.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    {currentUser && team && (
+                        <TeamSettingsForm 
+                            team={team} 
+                            currentUser={currentUser} 
+                            onTeamUpdated={onTeamUpdated}
+                        />
+                    )}
+                </CardContent>
+                </Card>
+            ) : (
+                <Card className="shadow-lg">
+                    <CardHeader><CardTitle>Access Denied</CardTitle></CardHeader>
+                    <CardContent>
+                        <p className="text-muted-foreground">You do not have permission to edit team settings.</p>
+                    </CardContent>
+                </Card>
+            )}
           </TabsContent>
           
           <TabsContent value="activity">
@@ -204,3 +230,5 @@ export default function ManageTeamPage() {
     </div>
   );
 }
+
+    

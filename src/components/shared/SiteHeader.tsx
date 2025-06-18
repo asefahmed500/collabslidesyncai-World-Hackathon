@@ -28,7 +28,7 @@ export function SiteHeader() {
     if (result.success) {
       toast({ title: 'Logged Out', description: 'You have been successfully logged out.' });
       router.push('/login');
-      router.refresh();
+      router.refresh(); // Ensure full state refresh
     } else {
       toast({ title: 'Logout Failed', description: result.message, variant: 'destructive' });
     }
@@ -38,13 +38,13 @@ export function SiteHeader() {
      return (
         <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
             <div className="container flex h-16 max-w-screen-2xl items-center justify-between px-4 sm:px-6 lg:px-8">
-                <Link href="/dashboard" className="flex items-center space-x-2">
+                <Link href={currentUser ? "/dashboard" : "/"} className="flex items-center space-x-2">
                     <Zap className="h-7 w-7 text-primary" />
                     <span className="font-headline text-2xl font-bold text-primary hidden sm:inline-block">
                         CollabSlideSyncAI
                     </span>
                 </Link>
-                <div className="h-9 w-9 bg-muted rounded-full animate-pulse"></div>
+                <div className="h-9 w-9 bg-muted rounded-full animate-pulse"></div> {/* Placeholder for avatar */}
             </div>
         </header>
      );
@@ -76,7 +76,7 @@ export function SiteHeader() {
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative h-9 w-9 rounded-full p-0">
                   <Avatar className="h-9 w-9">
-                    <AvatarImage src={currentUser.profilePictureUrl || `https://placehold.co/40x40.png?text=${currentUser.name?.charAt(0).toUpperCase()}`} alt={currentUser.name || 'User'} data-ai-hint="profile avatar"/>
+                    <AvatarImage src={currentUser.profilePictureUrl || undefined } alt={currentUser.name || 'User'} data-ai-hint="profile avatar"/>
                     <AvatarFallback>{currentUser.name ? currentUser.name.charAt(0).toUpperCase() : <UserIcon className="h-4 w-4"/>}</AvatarFallback>
                   </Avatar>
                 </Button>
@@ -99,7 +99,7 @@ export function SiteHeader() {
                   <LayoutDashboard className="mr-2 h-4 w-4" />
                   <span>Dashboard</span>
                 </DropdownMenuItem>
-                {currentUser.teamId && ( // Show Manage Team if user has a teamId, regardless of role for now; specific permissions handled on page
+                {canManageTeam && ( 
                   <DropdownMenuItem onClick={() => router.push(`/dashboard/manage-team`)}>
                     <Users className="mr-2 h-4 w-4" />
                     <span>Manage Team</span>
@@ -113,7 +113,7 @@ export function SiteHeader() {
                 )}
                  <DropdownMenuItem disabled>
                   <Settings className="mr-2 h-4 w-4" />
-                  <span>Settings (App)</span>
+                  <span>App Settings (soon)</span>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleSignOut}>
@@ -137,3 +137,5 @@ export function SiteHeader() {
     </header>
   );
 }
+
+    

@@ -1,6 +1,6 @@
 
 import mongoose, { Schema, Document, Model, Types } from 'mongoose';
-import type { TeamActivity as TeamActivityType, TeamActivityType as ActivityTypeEnum, TeamRole } from '@/types';
+import type { TeamActivity as TeamActivityType, TeamActivityType as ActivityTypeEnum, TeamRole, PresentationAccessRole } from '@/types';
 
 export interface TeamActivityDocument extends Omit<TeamActivityType, 'id' | 'createdAt'>, Document {
   _id: Types.ObjectId;
@@ -8,18 +8,9 @@ export interface TeamActivityDocument extends Omit<TeamActivityType, 'id' | 'cre
   createdAt: Date; // Mongoose timestamp
 }
 
-const TeamActivityDetailsSchema = new Schema({
-  oldRole: { type: String, enum: ['owner', 'admin', 'editor', 'viewer'] },
-  newRole: { type: String, enum: ['owner', 'admin', 'editor', 'viewer'] },
-  changedFields: [String],
-  teamName: String,
-  memberName: String,
-  memberEmail: String,
-  presentationTitle: String,
-  fileName: String,
-  assetType: String,
-  // Add any other specific detail fields you anticipate
-}, { _id: false, strict: false }); // strict: false to allow arbitrary details
+// Using Schema.Types.Mixed for details to allow flexibility
+const TeamActivityDetailsSchema = new Schema(Schema.Types.Mixed, { _id: false });
+
 
 const TeamActivitySchema = new Schema<TeamActivityDocument>(
   {
@@ -60,3 +51,5 @@ if (mongoose.models.TeamActivity) {
 }
 
 export default TeamActivityModel;
+
+    

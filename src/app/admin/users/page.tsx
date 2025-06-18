@@ -3,8 +3,7 @@
 
 import { useEffect, useState } from 'react';
 import type { User } from '@/types';
-// import { getAllUsers } from '@/lib/firestoreService'; // Firestore no longer source for all users
-import { getAllUsersFromMongoDB } from '@/lib/mongoUserService'; // Import MongoDB service
+import { getAllUsersFromMongoDB } from '@/lib/mongoUserService'; 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -75,7 +74,7 @@ export default function AdminUsersPage() {
                   <TableCell>{user.email}</TableCell>
                   <TableCell>
                     <Badge variant={user.role === 'owner' ? 'default' : user.role === 'admin' ? 'secondary' : 'outline'} className="capitalize">
-                      {user.role || 'N/A'}
+                      {user.role || 'guest'}
                     </Badge>
                   </TableCell>
                   <TableCell className="font-mono text-xs">{user.teamId || 'N/A'}</TableCell>
@@ -102,3 +101,5 @@ export default function AdminUsersPage() {
     </Card>
   );
 }
+
+    
