@@ -6,7 +6,7 @@ import TeamActivityModel from '@/models/TeamActivity';
 import type { Team, TeamMember, TeamRole, TeamActivity, TeamActivityType, User as AppUser } from '@/types';
 import { Types } from 'mongoose';
 import { updateUserTeamAndRoleInMongoDB } from './mongoUserService';
-import { createNotification } from './firestoreService'; // Import for notifications
+import { createNotification, removeTeamIdFromPresentations as removeTeamIdFromFsPresentations } from './firestoreService'; // Import for notifications & presentation updates
 
 function mongoTeamDocToTeam(doc: TeamDocument | null): Team | null {
   if (!doc) return null;
@@ -302,5 +302,49 @@ export async function getAllTeamsFromMongoDB(): Promise<Team[]> {
   } catch (error) {
     console.error('Error fetching all teams from MongoDB:', error);
     return [];
+  }
+}
+
+export async function deleteTeamFromMongoDB(teamId: string, actorId: string): Promise<boolean> {
+  await dbConnect();
+  const session = await mongoose.startSession();
+  session.startTransaction();
+  try {
+    const team = await TeamModel.findById(teamId).session(session);
+    if (!team) {
+      throw new Error('Team not found for deletion.');
+    }
+
+    // 1. Disassociate members from this team
+    const memberIds = Array.from(team.members.keys());
+    await UserModel.updateMany(
+      { _id: { $in: memberIds }, teamId: teamId }, // only update if this was their primary team
+      { $set: { teamId: null, role: 'guest' } }
+    ).session(session);
+
+    // 2. Disassociate presentations from this team in Firestore
+    // This requires a call to a firestoreService function.
+    // For simplicity, this interaction isn't directly in this transaction,
+    // but should be called by the API route handler.
+    // await removeTeamIdFromFsPresentations(teamId); // Called from API route
+
+    // 3. Delete team activities
+    await TeamActivityModel.deleteMany({ teamId }).session(session);
+
+    // 4. Delete the team itself
+    const deletionResult = await TeamModel.findByIdAndDelete(teamId).session(session);
+    
+    await session.commitTransaction();
+    
+    // Log the deletion after successful commit
+    await logTeamActivityInMongoDB(teamId, actorId, 'team_deleted', { teamName: team.name });
+
+    return !!deletionResult;
+  } catch (error) {
+    await session.abortTransaction();
+    console.error('Error deleting team from MongoDB and cascading:', error);
+    throw error;
+  } finally {
+    session.endSession();
   }
 }

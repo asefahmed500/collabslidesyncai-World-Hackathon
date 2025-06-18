@@ -773,7 +773,22 @@ export async function getAllPresentationsForAdmin(): Promise<Presentation[]> {
   return snapshot.docs.map(docSnap => ({ id: docSnap.id, ...convertTimestamps(docSnap.data()) } as Presentation));
 }
 
+export async function removeTeamIdFromPresentations(teamId: string): Promise<void> {
+  const q = query(presentationsCollection, where('teamId', '==', teamId));
+  const snapshot = await getDocs(q);
+  
+  if (snapshot.empty) {
+    return; // No presentations found for this team
+  }
+
+  const batch = writeBatch(db);
+  snapshot.docs.forEach(docSnap => {
+    batch.update(docSnap.ref, { teamId: deleteField(), lastUpdatedAt: serverTimestamp() });
+  });
+  await batch.commit();
+  console.log(`Removed teamId ${teamId} from ${snapshot.size} presentations.`);
+}
+
 
 export { getNextUserColor };
 export { uuidv4 };
-
