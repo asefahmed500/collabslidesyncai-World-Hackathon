@@ -349,6 +349,7 @@ export async function getOrCreateAppUserFromMongoDB(fbUserMinimal: FirebaseUserM
         profilePictureUrl: fbUserMinimal.photoURL,
         emailVerified: fbUserMinimal.emailVerified,
         role: 'guest', // Default for users not yet in a team or whose team status is unknown initially
+        isAppAdmin: false, // Default platform role is standard user
         teamId: null,
     };
     
@@ -366,3 +367,4 @@ export async function getOrCreateAppUserFromMongoDB(fbUserMinimal: FirebaseUserM
   }
   return appUser;
 }
+

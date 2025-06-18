@@ -55,11 +55,11 @@ export async function createUserInMongoDB(firebaseUser: FirebaseUser, additional
       email: additionalData.email || firebaseUser.email,
       emailVerified: firebaseUser.emailVerified,
       profilePictureUrl: additionalData.profilePictureUrl || firebaseUser.photoURL || `https://placehold.co/100x100.png?text=${(additionalData.name || firebaseUser.displayName || firebaseUser.email || 'A').charAt(0).toUpperCase()}`,
-      role: additionalData.role || 'guest',
+      role: additionalData.role || 'guest', // Default team role if no team association
       teamId: additionalData.teamId || null,
       lastActive: new Date(),
       settings: additionalData.settings || { darkMode: false, aiFeatures: true, notifications: true },
-      isAppAdmin: additionalData.isAppAdmin || false,
+      isAppAdmin: additionalData.isAppAdmin || false, // Default platform role
       disabled: additionalData.disabled || false,
       googleId: firebaseUser.providerData.find(p => p.providerId === GoogleAuthProvider.PROVIDER_ID)?.uid || additionalData.googleId || null,
       githubId: firebaseUser.providerData.find(p => p.providerId === GithubAuthProvider.PROVIDER_ID)?.uid || additionalData.githubId || null,
@@ -156,3 +156,4 @@ export async function getAllUsersFromMongoDB(): Promise<AppUser[]> {
     return [];
   }
 }
+
