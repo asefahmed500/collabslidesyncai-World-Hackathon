@@ -13,128 +13,150 @@ CollabSlideSyncAI is a powerful, collaborative presentation editor built with Ne
 *   **Generative AI:** Genkit (for AI flows like content generation, design suggestions, etc.)
 *   **Deployment:** Firebase App Hosting (configured)
 
-## User Features
+## How It Works
 
-### Account & Profile
-*   **Authentication:** Secure sign-up, login (email/password), Google social login.
-*   **Password Management:** Forgot password and password reset functionality.
-*   **Profile Management:** Update display name, profile picture URL, and change account password.
-*   **Account Deletion:** Users can delete their own accounts (with safeguards for team owners).
+This section details the architecture and flow for key User and Admin features.
 
-### Dashboard & Presentation Management
-*   **Personal Dashboard:** Overview of recent presentations and quick access to features.
-*   **User Analytics:** View personal stats like presentations created and total slides.
-*   **Create Presentations:** Easily start new presentations from the dashboard.
-*   **View & Organize:** List, search, filter, and sort presentations (by last updated, title, creation date).
-*   **Presentation Cards:** Visual previews and quick actions for each presentation.
+### User Features - How They Work
 
-### Presentation Editor
-*   **Intuitive WYSIWYG Editor:** Modern interface for slide creation and editing.
-*   **Slide Management:** Add, delete, duplicate, and reorder slides.
+#### 1. Account & Profile Management
+*   **Authentication (Sign Up, Login, Social Login):**
+    *   Firebase Authentication handles the core auth process (email/password, Google).
+    *   Next.js Server Actions (`src/app/(auth)/actions.ts`) interface with Firebase Auth SDK.
+    *   Upon successful Firebase authentication:
+        *   A user profile is created or retrieved in **MongoDB** via `mongoUserService.ts`. This profile stores user details like name, team associations, roles (within their team), and the `isAppAdmin` flag.
+        *   During email/password signup, a new team is also created in MongoDB for the user, and they are set as the owner.
+    *   The `useAuth` hook (`src/hooks/useAuth.tsx`) provides client-side access to the current user's Firebase Auth state and their MongoDB profile.
+*   **Password Management (Forgot/Reset, Change):**
+    *   Server Actions call Firebase Auth functions for sending reset emails or updating passwords.
+    *   Password changes require re-authentication for security.
+*   **Profile Updates (Display Name, Profile Picture):**
+    *   Server Actions update the Firebase Auth profile and the corresponding user document in MongoDB.
+*   **Account Deletion:**
+    *   A Server Action handles this:
+        *   Checks if the user is a team owner (prevents deletion if so, requiring team transfer/deletion first).
+        *   Removes the user from their team in MongoDB.
+        *   Deletes the user's profile from MongoDB.
+        *   Deletes the user from Firebase Authentication.
+
+#### 2. Dashboard & Presentation Management
+*   **Data Source:** Presentation metadata (title, creator, team, last updated, etc.) is primarily fetched from **Firestore** (`presentations` collection).
+*   **Dashboard Page (`src/app/dashboard/page.tsx`):**
+    *   Fetches presentations relevant to the logged-in user (created by them, shared with them, or accessible via their team) using `firestoreService.getPresentationsForUser()`.
+    *   Client-side filtering and sorting are applied to the fetched data.
+*   **Create Presentation:**
+    *   A button click triggers `firestoreService.createPresentation()`, which adds a new presentation document to Firestore with an initial slide. The creator is automatically set as the owner.
+*   **User Analytics (Presentations Created, Slides Created):**
+    *   Calculated client-side on the dashboard based on the fetched presentation data for the current user.
+
+#### 3. Presentation Editor
+*   **Core Data & Real-time Sync:** All slide content (elements, styles, positions, comments, speaker notes) is stored in **Firestore** within the specific presentation document.
+    *   **Real-time updates:** The editor page (`src/app/editor/[id]/page.tsx`) establishes a real-time listener (using `onSnapshot`) to the presentation document in Firestore. Any changes made by any collaborator are pushed to all connected clients.
 *   **Element Manipulation:**
-    *   Add and style text, images, and shapes (rectangles, circles).
-    *   (Placeholders for charts and icons).
-    *   Rich styling options: font family, size, color, alignment, fill/background color, border, opacity, rotation, stacking order (z-index).
-*   **Slide Background:** Customize slide background colors.
+    *   Adding, deleting, or modifying elements (text, images, shapes) triggers updates to the `slides` array within the presentation document in Firestore via functions in `firestoreService.ts` (e.g., `addElementToSlide`, `updateElementInSlide`).
+*   **Real-Time Collaboration:**
+    *   **Presence:** Each active user in the editor updates their presence (name, cursor color) in the `activeCollaborators` map within the presentation document in Firestore. This is handled by `firestoreService.updateUserPresence` and `removeUserPresence`.
+    *   **Live Cursors:** Mouse movements are throttled and sent to Firestore to update the `cursorPosition` for the user in the `activeCollaborators` map. Other clients read this to display cursors.
+    *   **Element Locking:** When a user selects an element, `firestoreService.acquireLock` attempts to set `lockedBy` (user ID) and `lockTimestamp` on that element in Firestore. Other users see the lock. Locks expire and are periodically checked/released by `releaseExpiredLocks`.
+*   **Comments:** Added to a `comments` array on the specific slide object within Firestore.
 
-### Real-Time Collaboration
-*   **Simultaneous Editing:** Multiple users can work on the same presentation concurrently (element-level locking prevents direct conflicts on the same element).
-*   **Live Cursors:** See where other collaborators are pointing on the current slide.
-*   **Presence Indicators:** View active collaborators in the editor.
-*   **Element Locking:** Elements being edited by one user are temporarily locked, preventing others from modifying them simultaneously.
-*   **In-Slide Comments:** Add, view, and resolve comments directly on slides for contextual feedback.
+#### 4. Sharing & Publishing
+*   **Share Dialog (`src/components/editor/ShareDialog.tsx`):**
+    *   Allows users to manage:
+        *   **Public Access & Password Protection:** Modifies `settings.isPublic` and `settings.passwordProtected` (and `settings.password`) in the presentation document (Firestore).
+        *   **Collaborator Invites:** Invites users by email. The system looks up the user in **MongoDB** (via `firestoreService.getUserByEmail`, which calls `mongoUserService`). If found, their ID and role are added to the `access` map in the presentation document (Firestore).
+*   **Access Control (Editor & Presentation View):**
+    *   When accessing `/editor/[id]` or `/present/[id]`, the system checks:
+        *   If the presentation is public (and if password-protected, prompts for password if not verified in session).
+        *   If the user is the creator.
+        *   If the user is listed in the `access` map.
+        *   If the presentation belongs to the user's team.
+        *   Platform Admins have override access (unless content is taken down).
+*   **Embed/Export:** Placeholders in the UI. Full implementation would require server-side rendering/conversion (e.g., using Puppeteer for PDF, or specific libraries for PPTX).
 
-### Sharing & Publishing
-*   **Share Dialog:** Centralized modal for managing presentation access.
-*   **Public Sharing:** Generate a view-only link for public access.
-*   **Password Protection:** Secure public links with a password.
-*   **Collaborator Invites:** Invite users by email with "editor" or "viewer" roles.
-*   **Manage Access:** View and modify collaborator roles or remove access.
-*   **Embed Presentations:** Generate iframe code to embed presentations on websites (view-only).
-*   **(Placeholders for Export):** PDF, PPT, and Image export options are planned.
+#### 5. Presentation Viewing Mode (`/present/[id]`)
+*   **Data Source:** Fetches the presentation from Firestore, including a real-time listener for live updates if collaborators are editing.
+*   **Navigation & Display:** Client-side logic handles slide transitions and rendering. Speaker notes are displayed from the slide data.
 
-### Presentation Viewing Mode (`/present/[id]`)
-*   **Focused View:** Dedicated mode for presenting slides.
-*   **Fullscreen Support:** Utilize browser fullscreen capabilities.
-*   **Navigation:**
-    *   Keyboard controls (Arrow keys, Spacebar).
-    *   Click-to-navigate (left/right screen areas).
-    *   On-screen navigation buttons.
-*   **Speaker Notes:** View presenter notes for the current slide.
-*   **Real-time Updates:** Viewers see live content changes if collaborators are editing.
-
-### Team & Asset Management
-*   **Team Creation:** Users create a team upon initial signup.
-*   **Team Management Dashboard (for Team Owners/Admins):**
-    *   Update team name, logo, branding colors, and fonts.
-    *   Manage team members: add new members by email, change roles (editor, viewer, admin), remove members.
-    *   View a log of team activities.
+#### 6. Team & Asset Management
+*   **Team Creation & Management:**
+    *   Teams are created in **MongoDB** during user signup or via a dedicated interface (if built).
+    *   The "Manage Team" page (`src/app/dashboard/manage-team/page.tsx`) uses **API Routes** (`/api/teams/...`) to:
+        *   Update team name, branding (MongoDB - `mongoTeamService.updateTeamInMongoDB`).
+        *   Add/remove members, change roles (MongoDB - `mongoTeamService.addMemberToTeamInMongoDB`, etc.).
 *   **Team Asset Library:**
-    *   Upload images to a shared team library.
-    *   View, search, and manage uploaded assets.
-    *   Delete assets from the library and storage.
+    *   Asset metadata (filename, URLs, uploader, teamId) is stored in **Firestore** (`assets` collection).
+    *   Actual asset files are uploaded to **Firebase Storage**.
+    *   The "Asset Library" page (`src/app/dashboard/assets/page.tsx`) fetches assets for the user's team from Firestore and allows uploads/deletions. Deletion also removes the file from Firebase Storage.
 
-### Notifications & Communication
-*   **In-App Notification Center:** Real-time alerts via a bell icon in the site header.
-    *   Notifications for team invitations, presentation shares, and new comments on owned/collaborated presentations.
-    *   Unread notification count and "Mark all as read" functionality.
-*   **(Email Notification Stubs):** Backend logic includes points for future email notification integration.
+#### 7. Notifications & Communication
+*   **In-App Notifications:**
+    *   Notifications are stored in a `notifications` collection in **Firestore**.
+    *   When an event occurs (e.g., team invite, presentation shared, new comment), a server action or API route calls `firestoreService.createNotification` to add a document for the recipient.
+    *   The `NotificationBell` component in the `SiteHeader` uses a real-time listener (`onSnapshot`) to fetch and display notifications for the current user.
+*   **Email Notifications:** Stubbed out. Would typically involve a backend service (e.g., Firebase Functions) triggered by Firestore events or called from API routes, integrated with an email provider (SendGrid, Resend, etc.).
 
-### AI-Powered Assistance (Genkit)
-*   **Design Suggestions:** Get AI-powered layout and color scheme ideas for slides.
-*   **Smart Tips:** Receive overall presentation improvement suggestions.
-*   **Text Improvement:** Enhance text for clarity, grammar, professionalism, or conciseness.
-*   **Content Generation:** Rewrite content, summarize, or generate bullet points from text or a topic.
-*   **Tone Adjustment:** Modify text to be formal, casual, enthusiastic, or neutral.
-*   **Speaker Notes Generation:** Automatically create speaker notes for slides.
-*   **Icon Generation:** Generate simple icons from text descriptions.
-*   **Chart Suggestions:** Get recommendations for chart types based on data descriptions.
+#### 8. AI-Powered Assistance (Genkit)
+*   **AI Flows (`src/ai/flows/...`):** Implemented as Genkit flows. These are server-side functions.
+*   **Invocation:** The client-side AI Assistant Panel (`src/components/editor/AIAssistantPanel.tsx`) makes calls to these Genkit flows (likely via Next.js API routes that wrap the Genkit calls or directly if Genkit's Next.js plugin is used effectively).
+*   **Functionality:** Genkit interacts with LLMs (e.g., Gemini via Vertex AI) to provide design suggestions, text improvements, content generation, etc., based on the input provided from the editor.
 
-### Support & Help
-*   **In-App Help Center Page:** Access FAQs and support options.
-*   **Feedback/Bug Reporting:** Submit feedback or bug reports via a dialog.
-*   **(Placeholders):** Sections for Tutorials, Live Chat, and a more interactive AI Chatbot Assistant are included for future development.
+#### 9. Support & Help
+*   **Help Center Page:** Static content page with FAQs.
+*   **Feedback/Bug Reporting:** A dialog collects user input. Currently, it logs to console; a real system would send this to a backend or ticketing service.
+*   **AI Chatbot:** Placeholder UI; a functional version would require a Genkit flow and an LLM backend.
+
+### Admin Features - How They Work
+
+Platform Admins (users with `isAppAdmin: true` in their MongoDB profile) have access to a separate `/admin` dashboard.
+
+#### 1. Admin Dashboard Layout & Access Control
+*   The layout `src/app/admin/layout.tsx` acts as a gatekeeper. It checks `currentUser.isAppAdmin` from the `useAuth` hook. If false, the user is redirected or shown an access denied message.
+
+#### 2. User Management (`/admin/users`)
+*   **Data Source:** Fetches all user documents directly from **MongoDB** using `mongoUserService.getAllUsersFromMongoDB()`.
+*   **Actions (Enable/Disable, Promote/Demote, Reset Password, Delete):**
+    *   Performed via **API Routes** (`/api/admin/users/[userId]/...`).
+    *   These API routes first verify the `actorUserId` (passed as a query param or in the body) is indeed a platform admin by checking their MongoDB profile.
+    *   Then, they call functions in `mongoUserService.ts` to modify user data in MongoDB.
+    *   Firebase Auth modifications (like actual password reset or disabling Firebase Auth user) are noted as placeholders requiring Firebase Admin SDK.
+
+#### 3. Team Oversight (`/admin/teams`)
+*   **Data Source:** Fetches all team documents directly from **MongoDB** using `mongoTeamService.getAllTeamsFromMongoDB()`.
+*   **Delete Team:**
+    *   Performed via the API Route `DELETE /api/admin/teams/[teamId]`.
+    *   Verifies admin status of the caller.
+    *   Calls `mongoTeamService.deleteTeamFromMongoDB` which:
+        *   Removes the team document from MongoDB.
+        *   Updates all member user documents in MongoDB to remove `teamId` and set their role to 'guest'.
+        *   Logs team activities.
+    *   Calls `firestoreService.removeTeamIdFromPresentations` to clear the `teamId` field from any presentations in Firestore that were associated with the deleted team.
+
+#### 4. Presentation Oversight (`/admin/presentations`)
+*   **Data Source:** Fetches all presentation documents from **Firestore** using `firestoreService.getAllPresentationsForAdmin()`. This function can fetch active or soft-deleted presentations.
+*   **Actions (Soft Delete, Restore, Permanent Delete, Change Moderation Status):**
+    *   Performed via **API Routes** (`/api/admin/presentations/[presentationId]/...`).
+    *   These API routes verify the admin status of the caller.
+    *   They call functions in `firestoreService.ts` (e.g., `softDeletePresentationInFirestore`, `restorePresentationInFirestore`, `updatePresentationModerationStatus`) to modify the presentation document in Firestore.
+    *   Activity logging is done via `logPresentationActivity` and `logTeamActivityInMongoDB` (if applicable).
+
+#### 5. Content Moderation (`/admin/moderation`)
+*   **Manual Moderation:** Platform Admins use the "All Presentations" page to change a presentation's `moderationStatus` (active, under_review, taken_down) via the `/api/admin/presentations/[presentationId]/status` API route.
+*   **Content Access:** Presentations marked `taken_down` are not accessible to regular users in the editor or presentation view mode (logic in `src/app/editor/[id]/page.tsx` and `src/app/present/[id]/page.tsx`).
+*   **Automated Scanning/Review Queue:** Placeholder page; full implementation would involve AI services and a more complex backend.
+
+#### 6. System Management (Billing, Security Logs, Stats, Global Activity)
+*   These are primarily placeholder pages in the admin dashboard.
+*   A full **Billing** system would require deep Stripe integration, webhook handling, and MongoDB schemas for subscriptions, plans, etc.
+*   **Security Logs, Usage Statistics, and Global Activity** would require dedicated logging and data aggregation pipelines, likely involving both Firebase and MongoDB data, and potentially specialized analytics services.
+
+This detailed breakdown should clarify how the different parts of the application interact to deliver the user and admin features. The combination of Next.js (frontend and API routes), MongoDB (user/team data), and Firebase (auth, real-time presentation data, storage, notifications) creates a powerful and scalable architecture.
+
+## User Features
+*Defined above in "How It Works"*
 
 ## Admin Features (Platform Level - `isAppAdmin`)
-
-### Dedicated Admin Dashboard (`/admin`)
-*   Separate interface for platform administrators.
-
-### User Management
-*   **View All Users:** List all registered users with search and filtering.
-*   **User Profiles:** Inspect individual user details (email, team, role, activity).
-*   **Account Control:**
-    *   Enable or disable user accounts.
-    *   (Placeholder for triggering user password resets).
-*   **Role Management:**
-    *   Promote regular users to Platform Admin status.
-    *   Demote Platform Admins to regular users.
-*   **Delete User Accounts:** Permanently remove user accounts from the system (with checks for team ownership).
-
-### Team Oversight
-*   **View All Teams:** List all teams created on the platform with search.
-*   **Delete Teams:** Platform Admins can delete any team. This action also disassociates members and updates presentation team links.
-
-### Presentation Oversight
-*   **View All Presentations:** Access and manage every presentation on the platform.
-*   **Search & Filter:** Basic filtering by Owner ID and Team ID.
-*   **Direct Access:** View, edit (opens in editor), or delete any presentation.
-*   **Soft Delete Management:**
-    *   Soft delete presentations (marks as deleted, hides from users).
-    *   View soft-deleted presentations.
-    *   Restore soft-deleted presentations.
-    *   Permanently delete presentations.
-
-### Content Moderation
-*   **Manual Moderation:** Platform Admins can change a presentation's moderation status (`active`, `under_review`, `taken_down`).
-*   **Content Takedown:** "Taken down" presentations are inaccessible to regular users.
-*   **(Placeholder Moderation Dashboard):** Outlines future features like automated content scanning and review queues.
-
-### System Management (Placeholders)
-*   **Billing & Subscriptions:** Placeholder page for future Stripe integration to manage plans, payments, and subscriptions.
-*   **Security Logs:** Placeholder for viewing system-wide security events.
-*   **Usage Statistics:** Placeholder for platform-level analytics.
-*   **Global Activity Feed:** Placeholder for viewing significant system-wide events.
+*Defined above in "How It Works"*
 
 ## Getting Started
 
@@ -192,3 +214,4 @@ CollabSlideSyncAI is a powerful, collaborative presentation editor built with Ne
 *   **Genkit:** If AI features are used, the necessary Google Cloud credentials/API keys for Genkit must be available in the runtime environment.
 
 This README provides a detailed overview of CollabSlideSyncAI's features and setup.
+```
