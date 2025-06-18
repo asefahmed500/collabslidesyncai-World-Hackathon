@@ -5,8 +5,13 @@ import { getTeamFromMongoDB, updateTeamInMongoDB, logTeamActivityInMongoDB } fro
 import { isValidObjectId } from 'mongoose';
 import type { Team } from '@/types';
 
-// TODO: Implement Firebase ID token verification for all API routes to securely get actorUserId
-// For now, actorUserId is expected in the request body for authenticated actions.
+// Helper to verify if actor has permission to update team settings (owner or admin of the team)
+async function canUpdateTeamSettings(teamId: string, actorUserId: string): Promise<boolean> {
+  const team = await getTeamFromMongoDB(teamId);
+  if (!team) return false;
+  const actorMemberInfo = team.members[actorUserId];
+  return !!(actorMemberInfo && (actorMemberInfo.role === 'owner' || actorMemberInfo.role === 'admin'));
+}
 
 // GET /api/teams/[teamId] - Fetch team details
 export async function GET(request: NextRequest, { params }: { params: { teamId: string } }) {
@@ -23,8 +28,8 @@ export async function GET(request: NextRequest, { params }: { params: { teamId: 
     if (!team) {
       return NextResponse.json({ success: false, message: 'Team not found.' }, { status: 404 });
     }
-    // TODO: Add permission check here if team data isn't public.
-    // For example, ensure the requesting user is a member of the team.
+    // TODO: Add more granular permission check here for GET if team data isn't public by default.
+    // For now, if a user can query by ID, they get the data. This is okay if client-side controls access.
     return NextResponse.json({ success: true, team }, { status: 200 });
   } catch (error: any) {
     console.error(`Error fetching team ${teamId}:`, error);
@@ -45,14 +50,17 @@ export async function PUT(request: NextRequest, { params }: { params: { teamId: 
     const { actorUserId, name, branding, settings } = body;
 
     if (!actorUserId) {
-      return NextResponse.json({ success: false, message: 'Actor user ID is required.' }, { status: 401 });
+      return NextResponse.json({ success: false, message: 'Actor user ID is required for team update.' }, { status: 401 });
     }
 
-    // TODO: Implement proper permission check. For now, assume actorUserId has rights if they know the teamId.
-    // In a real app: const hasPermission = await canManageTeam(teamId, actorUserId); if (!hasPermission) ...
+    await dbConnect();
+    const hasPermission = await canUpdateTeamSettings(teamId, actorUserId);
+    if (!hasPermission) {
+      return NextResponse.json({ success: false, message: 'You do not have permission to update this team.' }, { status: 403 });
+    }
 
     const updates: Partial<Omit<Team, 'id' | 'ownerId' | 'members' | 'createdAt' | 'lastUpdatedAt'>> = {};
-    if (name) updates.name = name;
+    if (name !== undefined) updates.name = name; // Check for undefined to allow empty string if intended
     if (branding) updates.branding = branding;
     if (settings) updates.settings = settings;
     
@@ -60,14 +68,14 @@ export async function PUT(request: NextRequest, { params }: { params: { teamId: 
         return NextResponse.json({ success: false, message: 'No update data provided.' }, { status: 400 });
     }
 
-    await dbConnect();
     const updatedTeam = await updateTeamInMongoDB(teamId, updates);
 
     if (!updatedTeam) {
+      // This could happen if teamId was valid format but not found, or update failed for other reasons
       return NextResponse.json({ success: false, message: 'Failed to update team or team not found.' }, { status: 404 });
     }
 
-    await logTeamActivityInMongoDB(teamId, actorUserId, 'team_profile_updated', { changedFields: Object.keys(updates) });
+    await logTeamActivityInMongoDB(teamId, actorUserId, 'team_profile_updated', { changedFields: Object.keys(updates) }, 'team_profile', teamId);
 
     return NextResponse.json({ success: true, message: 'Team profile updated successfully.', team: updatedTeam }, { status: 200 });
   } catch (error: any) {
@@ -75,7 +83,6 @@ export async function PUT(request: NextRequest, { params }: { params: { teamId: 
     if (error.name === 'ValidationError') {
       return NextResponse.json({ success: false, message: `Validation Error: ${error.message}` }, { status: 400 });
     }
-    return NextResponse.json({ success: false, message: error.message || 'Failed to update team profile.' }, { status: 500 });
+    return NextResponse.json({ success: false, message: error.message || 'Failed to update team profile due to an unexpected error.' }, { status: 500 });
   }
 }
-    

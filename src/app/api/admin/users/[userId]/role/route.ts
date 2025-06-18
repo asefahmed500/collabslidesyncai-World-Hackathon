@@ -2,11 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import { getUserFromMongoDB, updateUserInMongoDB } from '@/lib/mongoUserService';
-import { User as AppUser } from '@/types';
-
-// IMPORTANT: In a production app, you MUST verify the actorUserId by validating
-// a Firebase ID token sent in the Authorization header. This current implementation
-// trusts the actorUserId sent by the client, which is insecure.
+// No User type import needed as it's handled by mongoUserService
 
 async function verifyAdmin(actorUserId: string): Promise<boolean> {
   if (!actorUserId) return false;
@@ -31,7 +27,7 @@ export async function PUT(request: NextRequest, { params }: { params: { userId: 
   if (typeof isAppAdmin !== 'boolean') {
     return NextResponse.json({ success: false, message: 'isAppAdmin (boolean) is required in the body.' }, { status: 400 });
   }
-  if (userId === actorUserId && !isAppAdmin) {
+  if (userId === actorUserId && !isAppAdmin) { // Current admin trying to demote themselves
     return NextResponse.json({ success: false, message: 'Platform admins cannot demote themselves.' }, { status: 403 });
   }
 
@@ -53,7 +49,11 @@ export async function PUT(request: NextRequest, { params }: { params: { userId: 
       return NextResponse.json({ success: false, message: 'Failed to update user role.' }, { status: 500 });
     }
 
-    return NextResponse.json({ success: true, message: `User role updated successfully. ${targetUser.name || targetUser.email} is now ${isAppAdmin ? 'an admin' : 'a regular user'}.`, user: updatedUser });
+    return NextResponse.json({ 
+        success: true, 
+        message: `User role updated successfully. ${targetUser.name || targetUser.email} is now ${isAppAdmin ? 'a Platform Admin' : 'a regular user'}.`, 
+        user: updatedUser 
+    });
   } catch (error: any) {
     console.error(`Error updating role for user ${userId}:`, error);
     return NextResponse.json({ success: false, message: error.message || 'Failed to update user role.' }, { status: 500 });

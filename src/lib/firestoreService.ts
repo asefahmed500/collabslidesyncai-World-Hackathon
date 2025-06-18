@@ -11,22 +11,22 @@ import {
   query,
   where,
   serverTimestamp,
-  arrayUnion,
+  // arrayUnion, // Not used, consider removing if confirmed
   Timestamp,
   writeBatch,
   FieldValue,
-  deleteField,
+  deleteField, // Keep for Firestore field deletion
   orderBy,
   limit,
   runTransaction,
   or,
-  onSnapshot, // Import onSnapshot for real-time updates
+  onSnapshot, 
   Unsubscribe,
 } from 'firebase/firestore';
 import { ref, deleteObject } from 'firebase/storage';
-import type { Presentation, Slide, SlideElement, SlideComment, User, Team, ActiveCollaboratorInfo, TeamRole, TeamMember, TeamActivity, TeamActivityType, PresentationActivity, PresentationActivityType, PresentationAccessRole, Asset, AssetType, SlideElementType, Notification, NotificationType as NotificationEnumType, PresentationModerationStatus } from '@/types';
-import { logTeamActivityInMongoDB } from './mongoTeamService';
-import { getUserByEmailFromMongoDB } from './mongoUserService'; // Correctly points to MongoDB service
+import type { Presentation, Slide, SlideElement, SlideComment, User as AppUserTypeFromFirestore, Team, ActiveCollaboratorInfo, TeamRole, TeamMember, TeamActivity, TeamActivityType, PresentationActivity, PresentationActivityType, PresentationAccessRole, Asset, AssetType, SlideElementType, Notification, NotificationType as NotificationEnumType, PresentationModerationStatus } from '@/types';
+import { logTeamActivityInMongoDB } from './mongoTeamService'; // For logging team-related presentation/asset actions
+import { getUserByEmailFromMongoDB } from './mongoUserService'; 
 import { v4 as uuidv4 } from 'uuid';
 
 
@@ -36,7 +36,8 @@ const USER_COLORS = [
 ];
 let userColorIndex = 0;
 
-const getNextUserColor = () => {
+// This function might be better placed in a client-side utility or context if used for UI assignment
+export const getNextUserColor = () => {
   const color = USER_COLORS[userColorIndex % USER_COLORS.length];
   userColorIndex++;
   return color;
@@ -54,7 +55,9 @@ const convertTimestamps = (data: any): any => {
   }
   const converted: { [key: string]: any } = {};
   for (const key in data) {
-    converted[key] = convertTimestamps(data[key]);
+    if (Object.prototype.hasOwnProperty.call(data, key)) {
+        converted[key] = convertTimestamps(data[key]);
+    }
   }
   return converted;
 };
@@ -96,7 +99,7 @@ export async function createPresentation(userId: string, title: string, teamId?:
     title,
     description,
     creatorId: userId,
-    teamId: teamId || undefined,
+    teamId: teamId || undefined, // Ensure undefined if not provided
     access: { [userId]: 'owner' },
     settings: {
       isPublic: false,
@@ -107,7 +110,7 @@ export async function createPresentation(userId: string, title: string, teamId?:
     version: 1,
     deleted: false,
     deletedAt: null,
-    moderationStatus: 'active', // Initialize moderation status
+    moderationStatus: 'active', 
     moderationNotes: '',
     createdAt: serverTimestamp() as Timestamp,
     lastUpdatedAt: serverTimestamp() as Timestamp,
@@ -132,17 +135,25 @@ export async function createPresentation(userId: string, title: string, teamId?:
 export async function getPresentationsForUser(userId: string, userTeamId?: string | null): Promise<Presentation[]> {
   const baseConditions = [ 
     where('deleted', '==', false),
-    where('moderationStatus', '!=', 'taken_down') // Exclude taken_down presentations from normal user view
+    where('moderationStatus', '!=', 'taken_down') 
   ];
-  const userSpecificConditions = [
+  
+  const userAccessClauses = [
     where('creatorId', '==', userId),
     where(`access.${userId}`, 'in', ['owner', 'editor', 'viewer'])
   ];
+
   if (userTeamId) {
-    userSpecificConditions.push(where('teamId', '==', userTeamId));
+    // Users can also see presentations shared with their team if teamId matches
+    userAccessClauses.push(where('teamId', '==', userTeamId));
   }
 
-  const q = query(presentationsCollection, ...baseConditions, or(...userSpecificConditions), orderBy('lastUpdatedAt', 'desc'));
+  const q = query(
+    presentationsCollection, 
+    ...baseConditions, 
+    or(...userAccessClauses), 
+    orderBy('lastUpdatedAt', 'desc')
+  );
 
 
   const snapshot = await getDocs(q);
@@ -165,18 +176,17 @@ export async function getPresentationById(presentationId: string): Promise<Prese
   const docSnap = await getDoc(docRef);
   if (docSnap.exists()) {
     const data = docSnap.data() as Presentation;
-    if (data.deleted) return null; // Do not return soft-deleted presentations
-    // For normal users, also check moderation status before returning
-    // Admins might use a different function to bypass this
+    if (data.deleted) return null; 
     if (data.moderationStatus === 'taken_down') {
-        // Return a minimal object or null to indicate it's taken down
         return {
             id: docSnap.id,
             title: data.title,
+            creatorId: data.creatorId, // Keep creatorId for potential admin checks
             moderationStatus: 'taken_down',
-            creatorId: data.creatorId,
             settings: { isPublic: false, passwordProtected: false, commentsAllowed: false },
-            slides: [], // No content for taken down items
+            slides: [], 
+            access: {}, // Clear access map for taken down content
+            lastUpdatedAt: data.lastUpdatedAt, // Keep lastUpdatedAt
         } as Presentation;
     }
     return { id: docSnap.id, ...convertTimestamps(data) } as Presentation;
@@ -184,7 +194,6 @@ export async function getPresentationById(presentationId: string): Promise<Prese
   return null;
 }
 
-// For admin or recovery purposes, allows fetching a presentation even if soft-deleted or taken down
 export async function getPresentationByIdAdmin(presentationId: string): Promise<Presentation | null> {
   const docRef = doc(db, 'presentations', presentationId);
   const docSnap = await getDoc(docRef);
@@ -206,10 +215,11 @@ export async function updatePresentation(presentationId: string, data: Partial<P
         const newSettings = data.settings;
         if (newSettings) {
           for (const settingKey in newSettings) {
-             if (settingKey === 'password' && (newSettings.password === undefined || newSettings.password === null || newSettings.password === '')) {
-                 updatePayload[`settings.password`] = deleteField(); // Use deleteField for removal
-             } else if (newSettings[settingKey as keyof Presentation['settings']] !== undefined) {
-                 updatePayload[`settings.${settingKey}`] = newSettings[settingKey as keyof Presentation['settings']];
+             const typedSettingKey = settingKey as keyof Presentation['settings'];
+             if (typedSettingKey === 'password' && (newSettings.password === undefined || newSettings.password === null || newSettings.password === '')) {
+                 updatePayload[`settings.password`] = deleteField(); 
+             } else if (newSettings[typedSettingKey] !== undefined) {
+                 updatePayload[`settings.${typedSettingKey}`] = newSettings[typedSettingKey];
              }
           }
         }
@@ -217,7 +227,7 @@ export async function updatePresentation(presentationId: string, data: Partial<P
         const newAccess = data.access;
         if (newAccess) {
           for (const accessKey in newAccess) {
-             if (newAccess[accessKey] === null || newAccess[accessKey] === undefined || (newAccess[accessKey] as any) === deleteField()) { // Check for deleteField marker
+             if (newAccess[accessKey] === null || newAccess[accessKey] === undefined || (newAccess[accessKey] as any) === deleteField()) { 
                 updatePayload[`access.${accessKey}`] = deleteField();
              } else {
                 updatePayload[`access.${accessKey}`] = newAccess[accessKey];
@@ -256,15 +266,14 @@ export async function updatePresentation(presentationId: string, data: Partial<P
       }
     }
   }
-  if (Object.keys(updatePayload).length > 1) { // Ensure there's something to update besides timestamp
+  if (Object.keys(updatePayload).length > 1) { 
     await updateDoc(docRef, updatePayload);
   }
 }
 
 export async function deletePresentation(presentationId: string, teamId?: string, actorId?: string): Promise<void> {
-  // Soft delete
   const docRef = doc(db, 'presentations', presentationId);
-  const pres = await getPresentationByIdAdmin(presentationId); // Fetch even if already soft-deleted to get title
+  const pres = await getPresentationByIdAdmin(presentationId); 
   await updateDoc(docRef, {
     deleted: true,
     deletedAt: serverTimestamp(),
@@ -286,7 +295,7 @@ export async function restorePresentation(presentationId: string, actorId: strin
     deleted: false,
     deletedAt: deleteField(), 
     lastUpdatedAt: serverTimestamp(),
-    moderationStatus: 'active', // Also restore moderation status if it was taken down due to deletion
+    moderationStatus: 'active', 
     moderationNotes: 'Presentation restored from deletion.'
   });
   const pres = await getPresentationByIdAdmin(presentationId);
@@ -300,11 +309,11 @@ export async function restorePresentation(presentationId: string, actorId: strin
 
 export async function permanentlyDeletePresentation(presentationId: string, actorId?: string): Promise<void> {
   const docRef = doc(db, 'presentations', presentationId);
-  const pres = await getPresentationByIdAdmin(presentationId); // Get details before deleting
+  const pres = await getPresentationByIdAdmin(presentationId); 
   await deleteDoc(docRef);
 
-  // TODO: Delete associated assets from storage if any are directly tied (might be complex)
-  // TODO: Delete presentation activities related to this presentation
+  // TODO: Consider deleting associated assets from Firebase Storage if they are exclusively tied to this presentation.
+  // TODO: Delete all presentation activities associated with this presentationId.
 
   if (actorId && pres) {
     const activityDetails = { presentationTitle: pres.title };
@@ -328,7 +337,7 @@ export async function updatePresentationModerationStatus(
   const oldStatus = pres.moderationStatus;
   await updateDoc(docRef, {
     moderationStatus: status,
-    moderationNotes: notes || (status === 'active' ? 'Moderation status reset to active.' : ''), // Clear notes if reactivated without new ones
+    moderationNotes: notes || (status === 'active' ? 'Moderation status reset to active.' : ''), 
     lastUpdatedAt: serverTimestamp()
   });
   await logPresentationActivity(presentationId, actorId, 'moderation_status_changed', {
@@ -428,9 +437,9 @@ export async function duplicateSlideInPresentation(presentationId: string, slide
     const originalSlide = slides[originalSlideIndex];
     const newSlideId = uuidv4();
     const duplicatedElements = originalSlide.elements.map(el => ({
-      ...JSON.parse(JSON.stringify(el)), // Deep copy, consider structuredClone for modern environments
+      ...JSON.parse(JSON.stringify(el)), 
       id: uuidv4(),
-      lockedBy: null, // Ensure new elements are not locked
+      lockedBy: null, 
       lockTimestamp: null,
     }));
 
@@ -439,7 +448,7 @@ export async function duplicateSlideInPresentation(presentationId: string, slide
       id: newSlideId,
       slideNumber: 0, // Will be re-numbered
       elements: duplicatedElements,
-      comments: [], // Do not duplicate comments for now
+      comments: [], 
       thumbnailUrl: originalSlide.thumbnailUrl ? `${originalSlide.thumbnailUrl.split('?')[0]}?text=Copy` : `https://placehold.co/160x90.png?text=Copy`,
     };
 
@@ -476,7 +485,7 @@ export async function moveSlideInPresentation(presentationId: string, slideId: s
       slides[currentIndex] = slides[currentIndex + 1];
       slides[currentIndex + 1] = temp;
     } else {
-      return presentationData.slides; // No change possible
+      return presentationData.slides; 
     }
 
     const updatedSlides = renumberSlides(slides);
@@ -491,7 +500,7 @@ export async function addElementToSlide(presentationId: string, slideId: string,
   const newElement: SlideElement = {
     ...elementData,
     id: newElementId,
-    lockedBy: null, // Ensure new elements are not locked
+    lockedBy: null, 
     lockTimestamp: null,
    };
 
@@ -538,30 +547,35 @@ export async function deleteElementFromSlide(presentationId: string, slideId: st
 
 
 export async function updateElementInSlide(presentationId: string, slideId: string, updatedElementPartial: Partial<SlideElement>): Promise<void> {
-  if (!updatedElementPartial.id) return;
+  if (!updatedElementPartial.id) {
+    console.error("updateElementInSlide called without element ID.");
+    return;
+  }
   const presRef = doc(db, 'presentations', presentationId);
   await runTransaction(db, async (transaction) => {
     const presDoc = await transaction.get(presRef);
     if (!presDoc.exists()) throw new Error(`Presentation ${presentationId} not found.`);
     const presentation = presDoc.data() as Presentation;
     if (presentation.deleted || presentation.moderationStatus === 'taken_down') throw new Error("Cannot modify this presentation.");
+    
     let slideFound = false;
     const updatedSlides = presentation.slides.map(s => {
       if (s.id === slideId) {
-        slideFound = true; let elementFound = false;
+        slideFound = true; 
+        let elementFound = false;
         const newElements = s.elements.map(el => {
           if (el.id === updatedElementPartial.id) {
-            // Check lock before allowing update
-            if (el.lockedBy && el.lockedBy !== updatedElementPartial.lockedBy && updatedElementPartial.lockedBy !== null) { // Check if someone else is trying to update a locked element
-                 console.warn(`Element ${el.id} is locked by ${el.lockedBy}, update by ${updatedElementPartial.lockedBy} denied unless it's a lock release.`);
-                 // If it's not a lock release/acquire operation, deny.
-                 if (!(updatedElementPartial.hasOwnProperty('lockedBy'))) {
-                    throw new Error("Element is locked by another user.");
-                 }
-            }
             elementFound = true;
-            return { ...el, ...updatedElementPartial,
-              style: { ...(el.style || {}), ...(updatedElementPartial.style || {}),
+            // Lock check: Only allow update if not locked, or if the updater IS the locker,
+            // OR if the update is specifically to change the lock fields.
+            if (el.lockedBy && el.lockedBy !== updatedElementPartial.lockedBy && updatedElementPartial.lockedBy !== null && !(updatedElementPartial.hasOwnProperty('lockedBy'))) {
+                 console.warn(`Element ${el.id} is locked by ${el.lockedBy}, update by potential user ${updatedElementPartial.lockedBy || 'unknown'} denied unless it's a lock release/acquire.`);
+                 throw new Error("Element is locked by another user.");
+            }
+            
+            const newStyle = { 
+                ...(el.style || {}), 
+                ...(updatedElementPartial.style || {}),
                 fontFamily: updatedElementPartial.style?.fontFamily || el.style?.fontFamily || 'PT Sans',
                 fontSize: updatedElementPartial.style?.fontSize || el.style?.fontSize || '16px',
                 color: updatedElementPartial.style?.color || el.style?.color || '#000000',
@@ -572,12 +586,18 @@ export async function updateElementInSlide(presentationId: string, slideId: stri
                 textDecoration: updatedElementPartial.style?.textDecoration || el.style?.textDecoration || 'none',
                 opacity: updatedElementPartial.style?.opacity === undefined ? (el.style?.opacity === undefined ? 1 : el.style.opacity) : updatedElementPartial.style.opacity,
                 shapeType: updatedElementPartial.style?.shapeType || el.style?.shapeType || 'rectangle',
-              },
+            };
+
+            return { 
+              ...el, 
+              ...updatedElementPartial,
+              style: newStyle,
               zIndex: updatedElementPartial.zIndex === undefined ? (el.zIndex === undefined ? 0 : el.zIndex) : updatedElementPartial.zIndex,
               rotation: updatedElementPartial.rotation === undefined ? (el.rotation === undefined ? 0 : el.rotation) : updatedElementPartial.rotation,
-              // Explicitly handle lock fields if they are part of the partial update
               lockedBy: updatedElementPartial.hasOwnProperty('lockedBy') ? updatedElementPartial.lockedBy : el.lockedBy,
-              lockTimestamp: updatedElementPartial.hasOwnProperty('lockTimestamp') ? (updatedElementPartial.lockTimestamp === null ? null : serverTimestamp() as Timestamp) : el.lockTimestamp,
+              lockTimestamp: updatedElementPartial.hasOwnProperty('lockTimestamp') 
+                ? (updatedElementPartial.lockTimestamp === null ? null : serverTimestamp() as Timestamp) 
+                : el.lockTimestamp,
             };
           } return el;
         });
@@ -606,15 +626,13 @@ export async function addCommentToSlide(presentationId: string, slideId: string,
         updatedSlides[slideIndex] = targetSlide;
         transaction.update(presRef, { slides: updatedSlides, lastUpdatedAt: serverTimestamp() });
         
-        // Trigger notification for new comment
-        // For simplicity, notifying the presentation creator. Mentions would be more complex.
         if (presentationData.creatorId !== comment.userId) {
           await createNotification(
             presentationData.creatorId,
             'comment_new',
-            `New Comment`,
-            `${comment.userName} commented on slide ${targetSlide.slideNumber || slideIndex + 1} in "${presentationData.title}".`,
-            `/editor/${presentationId}?slide=${slideId}`, // Potentially link to the specific slide
+            `New Comment on "${presentationData.title}"`,
+            `${comment.userName} commented on slide ${targetSlide.slideNumber || slideIndex + 1}.`,
+            `/editor/${presentationId}?slide=${slideId}`, 
             comment.userId,
             comment.userName,
             comment.userAvatarUrl
@@ -649,16 +667,15 @@ export async function updateUserPresence(presentationId: string, userId: string,
     ...userInfo,
     id: userId,
     lastSeen: serverTimestamp() as Timestamp,
-    cursorPosition: null, // Initialize cursorPosition as null
+    cursorPosition: null, 
   };
   try {
     await updateDoc(presRef, {
       [`activeCollaborators.${userId}`]: dataToSet,
-      lastUpdatedAt: serverTimestamp()
+      lastUpdatedAt: serverTimestamp() // Also update main pres timestamp to trigger some listeners if needed
     });
   } catch (error) {
     console.error("Error updating user presence:", error);
-    // If presentation doc doesn't exist, this will fail. Consider creating it if it's a valid scenario.
   }
 }
 
@@ -666,7 +683,10 @@ export async function updateUserPresence(presentationId: string, userId: string,
 export async function removeUserPresence(presentationId: string, userId: string): Promise<void> {
   const presRef = doc(db, 'presentations', presentationId);
   try {
-    await updateDoc(presRef, { [`activeCollaborators.${userId}`]: deleteField(), lastUpdatedAt: serverTimestamp() });
+    await updateDoc(presRef, { 
+        [`activeCollaborators.${userId}`]: deleteField(), 
+        lastUpdatedAt: serverTimestamp() 
+    });
   } catch (error) {
       console.warn(`Error removing user presence for user ${userId} in presentation ${presentationId}. Document might not exist or field already deleted.`, error);
   }
@@ -675,16 +695,21 @@ export async function removeUserPresence(presentationId: string, userId: string)
 export async function updateUserCursorPosition(presentationId: string, userId: string, slideId: string, position: { x: number; y: number }): Promise<void> {
   const presRef = doc(db, 'presentations', presentationId);
   try {
-    await updateDoc(presRef, {
-      [`activeCollaborators.${userId}.cursorPosition`]: { slideId, ...position },
-      [`activeCollaborators.${userId}.lastSeen`]: serverTimestamp()
-    });
+    // Check if user still exists in activeCollaborators before updating cursor to avoid creating a new entry just for cursor
+    const presDoc = await getDoc(presRef);
+    if (presDoc.exists() && presDoc.data()?.activeCollaborators?.[userId]) {
+        await updateDoc(presRef, {
+        [`activeCollaborators.${userId}.cursorPosition`]: { slideId, ...position },
+        [`activeCollaborators.${userId}.lastSeen`]: serverTimestamp() 
+        // Don't update main presentation lastUpdatedAt for cursor moves to reduce noise
+        });
+    }
   } catch (error) {
       console.warn(`Error updating cursor position for user ${userId} in presentation ${presentationId}. User might not be active.`, error);
   }
 }
 
-const LOCK_DURATION_MS = 30 * 1000; // 30 seconds
+const LOCK_DURATION_MS = 30 * 1000; 
 
 export async function acquireLock(presentationId: string, slideId: string, elementId: string, userId: string): Promise<boolean> {
   const presRef = doc(db, 'presentations', presentationId);
@@ -694,26 +719,42 @@ export async function acquireLock(presentationId: string, slideId: string, eleme
         if (!presDoc.exists()) throw new Error("Presentation not found for lock.");
         const presentation = presDoc.data() as Presentation;
         if (presentation.deleted || presentation.moderationStatus === 'taken_down') throw new Error("Cannot lock elements in this presentation.");
-        let lockAcquired = false; let alreadyLockedByOther = false;
+        
+        let lockAcquired = false; 
+        let alreadyLockedByOther = false;
+        let targetElementExists = false;
+
         const updatedSlides = presentation.slides.map(s => {
           if (s.id === slideId) {
             return { ...s, elements: s.elements.map(el => {
                 if (el.id === elementId) {
+                  targetElementExists = true;
                   if (el.lockedBy && el.lockedBy !== userId && el.lockTimestamp && ((el.lockTimestamp as Timestamp).toMillis() + LOCK_DURATION_MS > Date.now())) {
-                    alreadyLockedByOther = true; return el;
+                    alreadyLockedByOther = true; 
+                    return el; // Return unchanged if locked by other and lock is active
                   }
-                  lockAcquired = true; return { ...el, lockedBy: userId, lockTimestamp: serverTimestamp() as Timestamp };
-                } return el;
+                  // Lock can be acquired (or re-acquired by same user)
+                  lockAcquired = true; 
+                  return { ...el, lockedBy: userId, lockTimestamp: serverTimestamp() as Timestamp };
+                } 
+                return el;
               })};
-          } return s;
+          } 
+          return s;
         });
-        if (alreadyLockedByOther) throw new Error("Element already locked by another user.");
-        if (!lockAcquired) throw new Error("Element not found to lock.");
+
+        if (!targetElementExists) throw new Error("Element not found to lock.");
+        if (alreadyLockedByOther) throw new Error("Element is currently locked by another user.");
+        if (!lockAcquired && targetElementExists) { 
+            // This case should ideally not be hit if targetElementExists is true and not alreadyLockedByOther
+            throw new Error("Failed to acquire lock for unknown reasons.");
+        }
         transaction.update(presRef, { slides: updatedSlides, lastUpdatedAt: serverTimestamp() });
-    }); return true;
-  } catch (error) {
-    console.error("Lock acquisition failed:", error);
-    return false;
+    }); 
+    return true;
+  } catch (error: any) {
+    console.error("Lock acquisition failed:", error.message);
+    throw error; // Re-throw to be caught by caller
   }
 }
 
@@ -723,14 +764,17 @@ export async function releaseLock(presentationId: string, slideId: string, eleme
      await runTransaction(db, async (transaction) => {
         const presDoc = await transaction.get(presRef); if (!presDoc.exists()) return;
         const presentation = presDoc.data() as Presentation;
-        // No need to check if presentation is deleted here, releasing lock is fine.
+        
         const updatedSlides = presentation.slides.map(s => {
           if (s.id === slideId) {
             return { ...s, elements: s.elements.map(el => {
-                if (el.id === elementId && el.lockedBy === userId) return { ...el, lockedBy: null, lockTimestamp: null };
+                if (el.id === elementId && el.lockedBy === userId) {
+                     return { ...el, lockedBy: null, lockTimestamp: null };
+                }
                 return el;
               })};
-          } return s;
+          } 
+          return s;
         });
         transaction.update(presRef, { slides: updatedSlides, lastUpdatedAt: serverTimestamp() });
     });
@@ -744,32 +788,37 @@ export async function releaseExpiredLocks(presentationId: string): Promise<void>
         const presDoc = await transaction.get(presRef); if (!presDoc.exists()) return;
         const presentation = presDoc.data() as Presentation;
         if (presentation.deleted || presentation.moderationStatus === 'taken_down') return;
-        let locksReleased = false;
+        
+        let locksReleasedCount = 0;
         const now = Date.now();
         const updatedSlides = presentation.slides.map(s => {
           let slideModified = false;
           const elements = s.elements.map(el => {
             if (el.lockedBy && el.lockTimestamp && ((el.lockTimestamp as Timestamp).toMillis() + LOCK_DURATION_MS < now)) {
-              slideModified = true; locksReleased = true; return { ...el, lockedBy: null, lockTimestamp: null };
-            } return el;
+              slideModified = true; 
+              locksReleasedCount++; 
+              return { ...el, lockedBy: null, lockTimestamp: null };
+            } 
+            return el;
           });
           return slideModified ? { ...s, elements } : s;
         });
-        if (locksReleased) {
-          console.log(`Released expired locks for presentation ${presentationId}`);
+
+        if (locksReleasedCount > 0) {
+          console.log(`Released ${locksReleasedCount} expired lock(s) for presentation ${presentationId}`);
           transaction.update(presRef, { slides: updatedSlides, lastUpdatedAt: serverTimestamp() });
         }
     });
-  } catch (error) { console.error("Expired lock release failed:", error); }
+  } catch (error) { console.error("Expired lock release check failed:", error); }
 }
 
 
 export async function logPresentationActivity(
   presentationId: string, actorId: string, actionType: PresentationActivityType, details?: PresentationActivity['details']
 ): Promise<string> {
-  let actorNameResolved = 'System/Guest';
-  // In a real app, you might fetch user profile here if actorId is not 'system' or 'guest'
-  // For now, assuming actorId is a Firebase UID and their name is passed in details if available or can be fetched from User model.
+  let actorNameResolved = 'System/Guest'; 
+  // In a real app, if actorId is a Firebase UID, you'd fetch from your User model in MongoDB.
+  // For now, this assumes actor name might be in details or defaults.
 
   const activityData: Omit<PresentationActivity, 'id'> = {
     presentationId, actorId, actorName: actorNameResolved, actionType, details: details || {}, createdAt: serverTimestamp() as Timestamp,
@@ -800,7 +849,7 @@ export async function createAssetMetadata(assetData: Omit<Asset, 'id' | 'created
 export async function getTeamAssets(teamId: string): Promise<Asset[]> {
   const q = query(assetsCollection, where('teamId', '==', teamId), orderBy('createdAt', 'desc'));
   const snapshot = await getDocs(q);
-  return snapshot.docs.map(doc => ({ id: doc.id, ...convertTimestamps(doc.data()) } as Asset));
+  return snapshot.docs.map(docSnap => ({ id: docSnap.id, ...convertTimestamps(docSnap.data()) } as Asset));
 }
 
 export async function deleteAsset(assetId: string, storagePath: string, teamId: string, actorId: string): Promise<void> {
@@ -808,11 +857,8 @@ export async function deleteAsset(assetId: string, storagePath: string, teamId: 
   const assetDocSnap = await getDoc(assetDocRef);
   const assetData = assetDocSnap.data() as Asset | undefined;
 
-  // Delete from Firebase Storage
   const fileRef = ref(fbStorage, storagePath);
   await deleteObject(fileRef);
-
-  // Delete metadata from Firestore
   await deleteDoc(assetDocRef);
 
   if (teamId && actorId && assetData) {
@@ -823,12 +869,12 @@ export async function deleteAsset(assetId: string, storagePath: string, teamId: 
 
 // --- Notification Management ---
 export async function createNotification(
-  userId: string,
+  userId: string, // Recipient's Firebase UID
   type: NotificationEnumType,
   title: string,
   message: string,
   link?: string,
-  actorId?: string,
+  actorId?: string, // Firebase UID of the person who triggered the notification
   actorName?: string,
   actorProfilePictureUrl?: string
 ): Promise<string> {
@@ -843,9 +889,9 @@ export async function createNotification(
     actorId: actorId || undefined,
     actorName: actorName || undefined,
     actorProfilePictureUrl: actorProfilePictureUrl || undefined,
+    // icon: string; // Optional: Lucide icon name string, or path to an image - can be derived client-side based on type
   };
   const docRef = await addDoc(notificationsCollection, notificationData);
-  // TODO: Consider sending an email notification here via a backend service
   return docRef.id;
 }
 
@@ -866,6 +912,9 @@ export function getUserNotifications(
       ...convertTimestamps(docSnap.data()),
     } as Notification));
     callback(notifications);
+  }, (error) => {
+    console.error("Error fetching notifications with listener:", error);
+    // Optionally, call callback with empty array or error state
   });
   return unsubscribe;
 }
@@ -878,6 +927,8 @@ export async function markNotificationAsRead(notificationId: string): Promise<vo
 export async function markAllNotificationsAsRead(userId: string): Promise<void> {
   const q = query(notificationsCollection, where('userId', '==', userId), where('isRead', '==', false));
   const snapshot = await getDocs(q);
+  if (snapshot.empty) return; // No unread notifications
+
   const batch = writeBatch(db);
   snapshot.docs.forEach(docSnap => {
     batch.update(docSnap.ref, { isRead: true });
@@ -886,10 +937,9 @@ export async function markAllNotificationsAsRead(userId: string): Promise<void> 
 }
 // --- End Notification Management ---
 
-
-// This function now correctly uses the MongoDB service to find users by email.
-export async function getUserByEmail(email: string): Promise<User | null> {
-    return getUserByEmailFromMongoDB(email);
+// Helper to get user by email from MongoDB via firestoreService (for consistency if needed by other FS functions)
+export async function getUserByEmail(email: string): Promise<AppUserTypeFromFirestore | null> {
+    return getUserByEmailFromMongoDB(email) as Promise<AppUserTypeFromFirestore | null>; // Cast as AppUser defined in types for Firestore
 }
 
 export async function getAllPresentationsForAdmin(includeDeleted = false): Promise<Presentation[]> {
@@ -897,8 +947,7 @@ export async function getAllPresentationsForAdmin(includeDeleted = false): Promi
   if (includeDeleted) {
     q = query(presentationsCollection, where('deleted', '==', true), orderBy('deletedAt', 'desc'));
   } else {
-    // When not including deleted, also filter out 'taken_down' for the general admin view
-    // A specific function or parameter could be added if admins need to see 'taken_down' separately from 'deleted'.
+    // When not showing deleted, we still want to see all other moderation statuses for admin
     q = query(presentationsCollection, where('deleted', '==', false), orderBy('lastUpdatedAt', 'desc'));
   }
   const snapshot = await getDocs(q);
@@ -906,12 +955,14 @@ export async function getAllPresentationsForAdmin(includeDeleted = false): Promi
 }
 
 
+// Used after a team is deleted from MongoDB to clean up Firestore presentations.
 export async function removeTeamIdFromPresentations(teamId: string): Promise<void> {
   const q = query(presentationsCollection, where('teamId', '==', teamId));
   const snapshot = await getDocs(q);
   
   if (snapshot.empty) {
-    return; // No presentations found for this team
+    console.log(`No presentations found associated with teamId ${teamId} in Firestore.`);
+    return; 
   }
 
   const batch = writeBatch(db);
@@ -919,12 +970,5 @@ export async function removeTeamIdFromPresentations(teamId: string): Promise<voi
     batch.update(docSnap.ref, { teamId: deleteField(), lastUpdatedAt: serverTimestamp() });
   });
   await batch.commit();
-  console.log(`Removed teamId ${teamId} from ${snapshot.size} presentations.`);
+  console.log(`Removed teamId ${teamId} from ${snapshot.size} presentations in Firestore.`);
 }
-
-
-export { getNextUserColor };
-export { uuidv4 };
-
-
-    

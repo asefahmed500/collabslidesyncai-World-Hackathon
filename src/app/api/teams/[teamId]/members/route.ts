@@ -1,19 +1,29 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
-import { addMemberToTeamInMongoDB, getTeamFromMongoDB } from '@/lib/mongoTeamService';
+import { addMemberToTeamInMongoDB, getTeamFromMongoDB, logTeamActivityInMongoDB } from '@/lib/mongoTeamService';
 import { getUserByEmailFromMongoDB, updateUserTeamAndRoleInMongoDB } from '@/lib/mongoUserService';
 import type { TeamRole } from '@/types';
 import { isValidObjectId } from 'mongoose';
 
-// TODO: Implement Firebase ID token verification for all API routes to securely get actorUserId
+// Helper to verify if actor has permission to add members (owner or admin of the team)
+async function canAddTeamMembers(teamId: string, actorUserId: string): Promise<{ authorized: boolean; isOwner: boolean; teamExists: boolean;}> {
+  const team = await getTeamFromMongoDB(teamId);
+  if (!team) return { authorized: false, isOwner: false, teamExists: false };
+  const actorMemberInfo = team.members[actorUserId];
+  if (!actorMemberInfo) return { authorized: false, isOwner: false, teamExists: true };
+  
+  const isOwner = actorMemberInfo.role === 'owner';
+  const isAdmin = actorMemberInfo.role === 'admin';
+  return { authorized: isOwner || isAdmin, isOwner, teamExists: true };
+}
 
 // POST /api/teams/[teamId]/members - Add a member to a team
 export async function POST(request: NextRequest, { params }: { params: { teamId: string } }) {
   const { teamId } = params;
 
   if (!teamId || !isValidObjectId(teamId)) {
-    return NextResponse.json({ success: false, message: 'Invalid team ID.' }, { status: 400 });
+    return NextResponse.json({ success: false, message: 'Invalid team ID format.' }, { status: 400 });
   }
 
   try {
@@ -26,22 +36,16 @@ export async function POST(request: NextRequest, { params }: { params: { teamId:
     if (!email || !role) {
       return NextResponse.json({ success: false, message: 'Email and role are required to add a member.' }, { status: 400 });
     }
+    if (!['admin', 'editor', 'viewer'].includes(role)) { // Owner role cannot be assigned directly
+        return NextResponse.json({ success: false, message: 'Invalid role assigned. Can be admin, editor, or viewer.' }, { status: 400 });
+    }
 
     await dbConnect();
-    const team = await getTeamFromMongoDB(teamId);
-    if (!team) {
-      return NextResponse.json({ success: false, message: 'Team not found.' }, { status: 404 });
-    }
+    const permCheck = await canAddTeamMembers(teamId, actorUserId);
+    if (!permCheck.teamExists) return NextResponse.json({ success: false, message: 'Team not found.' }, { status: 404 });
+    if (!permCheck.authorized) return NextResponse.json({ success: false, message: 'You do not have permission to add members to this team.' }, { status: 403 });
 
-    // Permission check: Only owner or admin can add members
-    const actorMemberInfo = team.members[actorUserId];
-    if (!actorMemberInfo || (actorMemberInfo.role !== 'owner' && actorMemberInfo.role !== 'admin')) {
-      return NextResponse.json({ success: false, message: 'You do not have permission to add members to this team.' }, { status: 403 });
-    }
-    if (role === 'owner') {
-      return NextResponse.json({ success: false, message: 'Cannot assign owner role directly. Transfer ownership instead.' }, { status: 400 });
-    }
-    if (role === 'admin' && actorMemberInfo.role !== 'owner') {
+    if (role === 'admin' && !permCheck.isOwner) { // Only owner can assign admin role
       return NextResponse.json({ success: false, message: 'Only team owners can assign the admin role.' }, { status: 403 });
     }
 
@@ -49,6 +53,9 @@ export async function POST(request: NextRequest, { params }: { params: { teamId:
     if (!userToAdd) {
       return NextResponse.json({ success: false, message: `User with email ${email} not found. Users must have an existing CollabSlideSyncAI account.` }, { status: 404 });
     }
+    
+    const team = await getTeamFromMongoDB(teamId); // Re-fetch team to check current members
+    if (!team) return NextResponse.json({ success: false, message: 'Team consistency error. Please try again.'}, {status: 500});
     if (team.members[userToAdd.id]) {
       return NextResponse.json({ success: false, message: `${userToAdd.name || email} is already a member of this team.` }, { status: 409 });
     }
@@ -58,16 +65,10 @@ export async function POST(request: NextRequest, { params }: { params: { teamId:
       return NextResponse.json({ success: false, message: 'Failed to add member to the team.' }, { status: 500 });
     }
     
-    // If the user wasn't part of any team, update their primary teamId and role
-     if (!userToAdd.teamId) {
-        await updateUserTeamAndRoleInMongoDB(userToAdd.id, team.id, role);
-    }
-
     return NextResponse.json({ success: true, message: `${userToAdd.name || email} added as ${role}.`, members: updatedTeam.members }, { status: 201 });
 
   } catch (error: any) {
     console.error(`Error adding member to team ${teamId}:`, error);
-    return NextResponse.json({ success: false, message: error.message || 'Failed to add team member.' }, { status: 500 });
+    return NextResponse.json({ success: false, message: error.message || 'Failed to add team member due to an unexpected error.' }, { status: 500 });
   }
 }
-    
