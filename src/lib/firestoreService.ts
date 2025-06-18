@@ -22,10 +22,9 @@ import {
 } from 'firebase/firestore';
 import { ref, deleteObject } from 'firebase/storage';
 import type { Presentation, Slide, SlideElement, SlideComment, User, Team, ActiveCollaboratorInfo, TeamRole, TeamMember, TeamActivity, TeamActivityType, PresentationActivity, PresentationActivityType, PresentationAccessRole, Asset, AssetType } from '@/types';
-import { logTeamActivityInMongoDB } from './mongoTeamService'; // Import MongoDB logger for team activities
+import { logTeamActivityInMongoDB } from './mongoTeamService'; 
+import { getUserByEmailFromMongoDB } from './mongoUserService';
 
-// User and Team data management are now primarily in MongoDB.
-// Functions like createTeam, getTeamById, getUserProfile (Firestore versions) are removed.
 
 const USER_COLORS = [
   '#FF6B6B', '#4ECDC4', '#45B7D1', '#FED766', '#2AB7CA',
@@ -58,10 +57,10 @@ const convertTimestamps = (data: any): any => {
 
 const presentationsCollection = collection(db, 'presentations');
 const presentationActivitiesCollection = collection(db, 'presentationActivities');
-const assetsCollection = collection(db, 'assets'); // Assets remain in Firestore for now
+const assetsCollection = collection(db, 'assets'); 
 
 
-export async function createPresentation(userId: string, title: string, teamId?: string, description: string = ''): Promise<string> {
+export async function createPresentation(userId: string, title: string, teamId?: string | null, description: string = ''): Promise<string> {
   const initialSlideId = `slide-initial-${Date.now()}`;
   const newSlide: Omit<Slide, 'presentationId'> = {
     id: initialSlideId,
@@ -110,27 +109,41 @@ export async function createPresentation(userId: string, title: string, teamId?:
   if (teamId) {
     await logTeamActivityInMongoDB(teamId, userId, 'presentation_created', { presentationTitle: title }, 'presentation', docRef.id);
   }
+  await logPresentationActivity(docRef.id, userId, 'presentation_created', { presentationTitle: title });
   return docRef.id;
 }
 
 export async function getPresentationsForUser(userId: string, userTeamId?: string | null): Promise<Presentation[]> {
   const queries = [];
-  queries.push(query(presentationsCollection, where('creatorId', '==', userId)));
-  queries.push(query(presentationsCollection, where(`access.${userId}`, 'in', ['owner', 'editor', 'viewer'])));
+  // Presentations created by the user
+  queries.push(query(presentationsCollection, where('creatorId', '==', userId), orderBy('lastUpdatedAt', 'desc')));
+  // Presentations explicitly shared with the user (owner, editor, viewer)
+  queries.push(query(presentationsCollection, where(`access.${userId}`, 'in', ['owner', 'editor', 'viewer']), orderBy('lastUpdatedAt', 'desc')));
+  
+  // Presentations shared with the user's team (if they are part of a team)
   if (userTeamId) {
-    queries.push(query(presentationsCollection, where('teamId', '==', userTeamId)));
+    queries.push(query(presentationsCollection, where('teamId', '==', userTeamId), orderBy('lastUpdatedAt', 'desc')));
   }
 
   const allSnapshots = await Promise.all(queries.map(q => getDocs(q)));
   const presentationsMap = new Map<string, Presentation>();
+  
   allSnapshots.forEach(snapshot => {
     snapshot.docs.forEach(docSnap => {
       if (!presentationsMap.has(docSnap.id)) {
-        presentationsMap.set(docSnap.id, { id: docSnap.id, ...convertTimestamps(docSnap.data()) } as Presentation);
+        const data = convertTimestamps(docSnap.data());
+        // Ensure access object exists before trying to read from it
+        if (!data.access) data.access = {}; 
+        presentationsMap.set(docSnap.id, { id: docSnap.id, ...data } as Presentation);
       }
     });
   });
-  return Array.from(presentationsMap.values()).sort((a,b) => (b.lastUpdatedAt as Date).getTime() - (a.lastUpdatedAt as Date).getTime());
+  
+  // Filter out presentations where the user is the creator AND it's a team presentation, if team filtering is already handled
+  // This avoids duplicates if a user created a team presentation.
+  // The primary sorting will be done client-side if needed, but fetching sorted helps.
+  // Default sort by lastUpdatedAt on the client for simplicity now.
+  return Array.from(presentationsMap.values());
 }
 
 
@@ -155,7 +168,7 @@ export async function updatePresentation(presentationId: string, data: Partial<P
         if (newSettings) {
           for (const settingKey in newSettings) {
              if (settingKey === 'password' && newSettings.password === '') {
-                 updatePayload[`settings.password`] = deleteField(); // Remove password if empty string
+                 updatePayload[`settings.password`] = deleteField(); 
              } else if (newSettings[settingKey as keyof Presentation['settings']] !== undefined) {
                  updatePayload[`settings.${settingKey}`] = newSettings[settingKey as keyof Presentation['settings']];
              }
@@ -194,17 +207,20 @@ export async function updatePresentation(presentationId: string, data: Partial<P
       }
     }
   }
-  if (Object.keys(updatePayload).length > 1) { // Ensure there's more than just lastUpdatedAt
+  if (Object.keys(updatePayload).length > 1) { 
     await updateDoc(docRef, updatePayload);
   }
 }
 
-export async function deletePresentation(presentationId: string, teamId?: string, actorId?: string): Promise<void> {
+export async function deletePresentation(presentationId: string, teamId?: string | null, actorId?: string): Promise<void> {
   const docRef = doc(db, 'presentations', presentationId);
   const pres = await getPresentationById(presentationId); 
   await deleteDoc(docRef);
   if (teamId && actorId && pres) {
      await logTeamActivityInMongoDB(teamId, actorId, 'presentation_deleted', { presentationTitle: pres.title }, 'presentation', presentationId);
+  }
+  if (actorId && pres){
+      await logPresentationActivity(presentationId, actorId, 'presentation_deleted', { presentationTitle: pres.title });
   }
 }
 
@@ -399,9 +415,9 @@ export async function logPresentationActivity(
   presentationId: string, actorId: string, actionType: PresentationActivityType, details?: PresentationActivity['details']
 ): Promise<string> {
   let actorNameResolved = 'System/Guest';
-  // In a real app, if actorId is a user UID, you might fetch their name from MongoDB
-  // For example: if (actorId !== 'system' && actorId !== 'guest') { const user = await getUserFromMongoDB(actorId); actorNameResolved = user?.name || 'User'; }
-
+  // Actor name fetching for presentation activity can be added if needed,
+  // currently user names are denormalized into TeamActivity.
+  
   const activityData: Omit<PresentationActivity, 'id'> = {
     presentationId, actorId, actorName: actorNameResolved, actionType, details: details || {}, createdAt: serverTimestamp() as Timestamp,
   };
@@ -415,7 +431,6 @@ export async function getPresentationActivities(presentationId: string, limitCou
     return snapshot.docs.map(docSnap => ({ id: docSnap.id, ...convertTimestamps(docSnap.data())} as PresentationActivity));
 }
 
-// --- Asset Management Firestore Services ---
 export async function createAssetMetadata(assetData: Omit<Asset, 'id' | 'createdAt' | 'lastUpdatedAt'>): Promise<string> {
   const docRef = await addDoc(assetsCollection, {
     ...assetData,
@@ -448,15 +463,9 @@ export async function deleteAsset(assetId: string, storagePath: string, teamId: 
   }
 }
 
-// Helper to get user from Firestore by email - for ShareDialog, presentation access
-// This function remains as presentations still use Firestore and might share to users not yet in a team/mongo
 export async function getUserByEmail(email: string): Promise<User | null> {
-    // This function is problematic as user profiles are now in MongoDB.
-    // For presentation sharing, we might need a different approach or ensure users exist in MongoDB first.
-    // For now, this is a placeholder and might not function as intended if users aren't in Firestore `users` collection.
-    // A more robust solution would be to query MongoDB.
-    console.warn("getUserByEmail in firestoreService is fetching from MongoDB due to data model migration. Ensure this is the intended behavior for presentation sharing.");
-    const userFromMongo = await getUserByEmailFromMongoDB(email); // This refers to the MongoDB user service
+    console.warn("getUserByEmail in firestoreService is fetching from MongoDB due to data model migration. This is generally correct for current auth flows.");
+    const userFromMongo = await getUserByEmailFromMongoDB(email); 
     return userFromMongo;
 }
 

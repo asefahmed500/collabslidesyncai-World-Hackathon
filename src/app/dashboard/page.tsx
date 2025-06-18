@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { SiteHeader } from '@/components/shared/SiteHeader';
@@ -9,13 +9,35 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PresentationCard } from '@/components/dashboard/PresentationCard';
 import type { Presentation, User as AppUser } from '@/types'; 
-import { PlusCircle, Search, Filter, List, Grid, Users, Activity, Loader2, FileWarning, Library } from 'lucide-react';
+import { PlusCircle, Search, Filter, List, Grid, Users, Activity, Loader2, FileWarning, Library, ArrowUpDown } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import Image from 'next/image';
 import { useAuth } from '@/hooks/useAuth';
-import { getPresentationsForUser, createPresentation as apiCreatePresentation } from '@/lib/firestoreService';
+import { getPresentationsForUser, createPresentation as apiCreatePresentation, deletePresentation as apiDeletePresentation } from '@/lib/firestoreService';
 import { useToast } from '@/hooks/use-toast';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+
+type SortOption = 'lastUpdatedAt_desc' | 'lastUpdatedAt_asc' | 'title_asc' | 'title_desc' | 'createdAt_desc' | 'createdAt_asc';
+
 
 export default function DashboardPage() {
   const { currentUser, loading: authLoading } = useAuth();
@@ -27,30 +49,34 @@ export default function DashboardPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filter, setFilter] = useState('all'); 
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [sortOption, setSortOption] = useState<SortOption>('lastUpdatedAt_desc');
+  const [presentationToDelete, setPresentationToDelete] = useState<Presentation | null>(null);
+
+
+  const fetchAndSetPresentations = useCallback(async () => {
+    if (currentUser) {
+      setIsLoading(true);
+      try {
+        const data = await getPresentationsForUser(currentUser.id, currentUser.teamId);
+        setPresentations(data);
+      } catch (error) {
+        console.error("Error fetching presentations:", error);
+        toast({ title: "Error", description: "Could not fetch presentations.", variant: "destructive" });
+      } finally {
+        setIsLoading(false);
+      }
+    }
+  }, [currentUser, toast]);
 
   useEffect(() => {
     if (!authLoading && !currentUser) {
       router.push('/login');
-    }
-  }, [currentUser, authLoading, router]);
-
-  useEffect(() => {
-    if (currentUser) {
-      setIsLoading(true);
-      getPresentationsForUser(currentUser.id)
-        .then(data => {
-          setPresentations(data);
-          setIsLoading(false);
-        })
-        .catch(error => {
-          console.error("Error fetching presentations:", error);
-          toast({ title: "Error", description: "Could not fetch presentations.", variant: "destructive" });
-          setIsLoading(false);
-        });
+    } else if (currentUser) {
+      fetchAndSetPresentations();
     } else if (!authLoading && !currentUser) {
         setIsLoading(false); 
     }
-  }, [currentUser, toast, authLoading]);
+  }, [currentUser, authLoading, router, fetchAndSetPresentations]);
 
   const handleCreateNewPresentation = async () => {
     if (!currentUser) {
@@ -58,27 +84,61 @@ export default function DashboardPage() {
       return;
     }
     try {
-      const newPresentationId = await apiCreatePresentation(currentUser.id, "Untitled Presentation", currentUser.teamId);
+      const newPresentationId = await apiCreatePresentation(currentUser.id, "Untitled Presentation", currentUser.teamId || undefined);
       toast({ title: "Presentation Created", description: "Redirecting to editor..." });
       router.push(`/editor/${newPresentationId}`);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error creating presentation:", error);
-      toast({ title: "Error", description: "Could not create presentation.", variant: "destructive" });
+      toast({ title: "Error", description: error.message || "Could not create presentation.", variant: "destructive" });
+    }
+  };
+  
+  const handleDeletePresentation = async () => {
+    if (!presentationToDelete || !currentUser) return;
+    try {
+      await apiDeletePresentation(presentationToDelete.id, presentationToDelete.teamId, currentUser.id);
+      toast({ title: "Presentation Deleted", description: `"${presentationToDelete.title}" has been removed.` });
+      setPresentations(prev => prev.filter(p => p.id !== presentationToDelete.id));
+    } catch (error: any) {
+      console.error("Error deleting presentation:", error);
+      toast({ title: "Error", description: error.message || "Could not delete presentation.", variant: "destructive" });
+    } finally {
+      setPresentationToDelete(null);
     }
   };
 
-  const filteredPresentations = presentations.filter(p => {
-    const matchesSearch = p.title.toLowerCase().includes(searchTerm.toLowerCase());
-    if (!currentUser) return false;
-    
-    const matchesFilter = filter === 'all' || 
-                         (filter === 'mine' && p.creatorId === currentUser.id) ||
-                         (filter === 'shared' && p.access && p.access[currentUser.id] && p.creatorId !== currentUser.id) ||
-                         (filter === 'team' && p.teamId && p.teamId === currentUser.teamId && p.creatorId !== currentUser.id); 
-    return matchesSearch && matchesFilter;
-  });
+
+  const sortedAndFilteredPresentations = presentations
+    .filter(p => {
+      const matchesSearch = p.title.toLowerCase().includes(searchTerm.toLowerCase()) || (p.description && p.description.toLowerCase().includes(searchTerm.toLowerCase()));
+      if (!currentUser) return false;
+      
+      const matchesFilter = filter === 'all' || 
+                           (filter === 'mine' && p.creatorId === currentUser.id) ||
+                           (filter === 'shared' && p.access && p.access[currentUser.id] && p.creatorId !== currentUser.id) ||
+                           (filter === 'team' && p.teamId && p.teamId === currentUser.teamId); // team filter is broad
+      return matchesSearch && matchesFilter;
+    })
+    .sort((a, b) => {
+        const getVal = (obj: Presentation, keyPart: string) => {
+            if (keyPart.startsWith('lastUpdatedAt') || keyPart.startsWith('createdAt')) {
+                const dateVal = obj[keyPart.split('_')[0] as 'lastUpdatedAt' | 'createdAt'];
+                return dateVal instanceof Date ? dateVal.getTime() : (dateVal as any)?.toDate ? (dateVal as any).toDate().getTime() : 0;
+            }
+            return obj[keyPart.split('_')[0] as 'title'];
+        };
+
+        const [key, order] = sortOption.split('_');
+        const valA = getVal(a, key);
+        const valB = getVal(b, key);
+
+        if (typeof valA === 'string' && typeof valB === 'string') {
+            return order === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+        }
+        return order === 'asc' ? (valA as number) - (valB as number) : (valB as number) - (valA as number);
+    });
   
-  const recentPresentations = [...filteredPresentations]
+  const recentPresentations = [...presentations] // Use all presentations before filtering for "Recent"
     .sort((a,b) => {
         const dateA = a.lastUpdatedAt instanceof Date ? a.lastUpdatedAt.getTime() : (a.lastUpdatedAt as any)?.toDate ? (a.lastUpdatedAt as any).toDate().getTime() : 0;
         const dateB = b.lastUpdatedAt instanceof Date ? b.lastUpdatedAt.getTime() : (b.lastUpdatedAt as any)?.toDate ? (b.lastUpdatedAt as any).toDate().getTime() : 0;
@@ -108,9 +168,8 @@ export default function DashboardPage() {
      );
   }
 
-
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col min-h-screen bg-background">
       <SiteHeader />
       <main className="flex-grow container mx-auto p-4 sm:p-6 lg:p-8">
         <div className="mb-8">
@@ -118,20 +177,20 @@ export default function DashboardPage() {
           <p className="text-muted-foreground">Welcome back, {currentUser?.name}! Manage your presentations and assets here.</p>
         </div>
 
-        <div className="mb-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="relative w-full sm:max-w-xs">
+        <div className="mb-6 flex flex-col sm:flex-row items-center justify-between gap-4 p-4 border rounded-lg shadow-sm bg-card">
+          <div className="relative w-full sm:max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               type="search"
-              placeholder="Search presentations..."
+              placeholder="Search by title or description..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-10"
             />
           </div>
-          <div className="flex items-center gap-2 w-full sm:w-auto">
+          <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto justify-between sm:justify-end">
             <Select value={filter} onValueChange={setFilter}>
-              <SelectTrigger className="w-full sm:w-[180px]">
+              <SelectTrigger className="w-full xs:w-auto sm:w-[160px]">
                 <Filter className="h-4 w-4 mr-2 text-muted-foreground" />
                 <SelectValue placeholder="Filter by..." />
               </SelectTrigger>
@@ -139,30 +198,52 @@ export default function DashboardPage() {
                 <SelectItem value="all">All Presentations</SelectItem>
                 <SelectItem value="mine">Created by Me</SelectItem>
                 <SelectItem value="shared">Shared with Me</SelectItem>
-                {currentUser?.teamId && <SelectItem value="team">My Team&apos;s</SelectItem>}
+                {currentUser?.teamId && <SelectItem value="team">My Team's</SelectItem>}
               </SelectContent>
             </Select>
-            <Button variant="outline" size="icon" onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')} aria-label="Toggle view mode">
+            
+            <Select value={sortOption} onValueChange={(value) => setSortOption(value as SortOption)}>
+                <SelectTrigger className="w-full xs:w-auto sm:w-[180px]">
+                    <ArrowUpDown className="h-4 w-4 mr-2 text-muted-foreground" />
+                    <SelectValue placeholder="Sort by..." />
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="lastUpdatedAt_desc">Last Updated (Newest)</SelectItem>
+                    <SelectItem value="lastUpdatedAt_asc">Last Updated (Oldest)</SelectItem>
+                    <SelectItem value="title_asc">Title (A-Z)</SelectItem>
+                    <SelectItem value="title_desc">Title (Z-A)</SelectItem>
+                    <SelectItem value="createdAt_desc">Date Created (Newest)</SelectItem>
+                    <SelectItem value="createdAt_asc">Date Created (Oldest)</SelectItem>
+                </SelectContent>
+            </Select>
+
+            <Button variant="outline" size="icon" onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')} aria-label="Toggle view mode" className="hidden sm:inline-flex">
               {viewMode === 'grid' ? <List className="h-4 w-4" /> : <Grid className="h-4 w-4" />}
             </Button>
-            <Button onClick={handleCreateNewPresentation}>
+            <Button onClick={handleCreateNewPresentation} className="w-full xs:w-auto">
               <PlusCircle className="mr-2 h-4 w-4" /> Create New
             </Button>
           </div>
         </div>
         
-        <section className="mb-8">
+        <section className="mb-10">
           <h2 className="font-headline text-2xl font-semibold mb-4">Recent Presentations</h2>
-          {isLoading ? <Loader2 className="h-8 w-8 animate-spin text-primary" /> : recentPresentations.length > 0 ? (
+          {isLoading ? <div className="flex justify-center py-4"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div> : recentPresentations.length > 0 ? (
              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {recentPresentations.map(p => <PresentationCard key={p.id} presentation={p} />)}
+              {recentPresentations.map(p => (
+                <PresentationCard 
+                    key={p.id} 
+                    presentation={p} 
+                    onDelete={() => setPresentationToDelete(p)}
+                />
+              ))}
             </div>
           ) : (
-             <Card className="flex flex-col items-center justify-center p-8 border-dashed">
+             <Card className="flex flex-col items-center justify-center p-8 border-dashed bg-muted/30">
                 <FileWarning className="w-16 h-16 text-muted-foreground mb-4" />
                 <h3 className="text-xl font-semibold text-muted-foreground">No Recent Presentations</h3>
                 <p className="text-sm text-muted-foreground mb-4">Start by creating a new presentation.</p>
-                <Button onClick={handleCreateNewPresentation}>
+                <Button onClick={handleCreateNewPresentation} variant="secondary">
                     <PlusCircle className="mr-2 h-4 w-4" /> Create Your First Presentation
                 </Button>
             </Card>
@@ -170,46 +251,88 @@ export default function DashboardPage() {
         </section>
 
         <section className="mb-12">
-          <h2 className="font-headline text-2xl font-semibold mb-4">All Presentations</h2>
-          {isLoading ? <Loader2 className="h-8 w-8 animate-spin text-primary" /> : filteredPresentations.length > 0 ? (
+          <h2 className="font-headline text-2xl font-semibold mb-4">All Presentations ({sortedAndFilteredPresentations.length})</h2>
+          {isLoading ? <div className="flex justify-center py-8"><Loader2 className="h-10 w-10 animate-spin text-primary" /></div> : sortedAndFilteredPresentations.length > 0 ? (
             <div className={`grid gap-6 ${viewMode === 'grid' ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4' : 'grid-cols-1'}`}>
-              {filteredPresentations.map((presentation: Presentation) => (
+              {sortedAndFilteredPresentations.map((presentation: Presentation) => (
                 viewMode === 'grid' ? (
-                  <PresentationCard key={presentation.id} presentation={presentation} />
+                  <PresentationCard 
+                    key={presentation.id} 
+                    presentation={presentation} 
+                    onDelete={() => setPresentationToDelete(presentation)}
+                  />
                 ) : (
+                  // List View Item
                   <Card key={presentation.id} className="hover:shadow-md transition-shadow">
-                    <CardContent className="p-4 flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <Image src={presentation.thumbnailUrl || "https://placehold.co/80x45.png"} alt={presentation.title} width={80} height={45} className="rounded" data-ai-hint="presentation thumbnail"/>
-                        <div>
-                          <h3 className="font-headline text-lg font-semibold">{presentation.title}</h3>
-                          <p className="text-sm text-muted-foreground">Last updated: {new Date(presentation.lastUpdatedAt as Date).toLocaleDateString()}</p>
+                    <CardContent className="p-3 sm:p-4 flex items-center justify-between gap-2 sm:gap-4">
+                      <div className="flex items-center gap-3 sm:gap-4 flex-grow min-w-0">
+                        <Image 
+                            src={presentation.thumbnailUrl || "https://placehold.co/80x45.png"} 
+                            alt={presentation.title} 
+                            width={80} 
+                            height={45} 
+                            className="rounded hidden sm:block flex-shrink-0" 
+                            data-ai-hint="presentation thumbnail small"
+                        />
+                        <div className="flex-grow min-w-0">
+                          <h3 className="font-headline text-lg font-semibold truncate" title={presentation.title}>{presentation.title}</h3>
+                          <p className="text-xs text-muted-foreground truncate">
+                            Last updated: {presentation.lastUpdatedAt ? new Date(presentation.lastUpdatedAt as any).toLocaleDateString() : 'N/A'}
+                            {presentation.teamId && ` | Team: ${currentUser?.teamId === presentation.teamId ? 'Your Team' : presentation.teamId.substring(0,8)}...`}
+                          </p>
                         </div>
                       </div>
-                      <Button variant="outline" size="sm" asChild>
-                        <Link href={`/editor/${presentation.id}`}>Open</Link>
-                      </Button>
+                      <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+                         {presentation.settings.isPublic && (
+                            <Badge variant="outline" className="hidden md:flex items-center text-xs h-7">
+                                <Eye className="w-3 h-3 mr-1" /> Public
+                            </Badge>
+                         )}
+                         <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                    <span className="sr-only">Open menu</span>
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                                <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                <DropdownMenuItem onClick={() => router.push(`/editor/${presentation.id}`)}>Open Editor</DropdownMenuItem>
+                                <DropdownMenuItem disabled>Duplicate (Soon)</DropdownMenuItem>
+                                <DropdownMenuItem disabled>Add to Favorites (Soon)</DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                 {presentation.creatorId === currentUser?.id && (
+                                    <DropdownMenuItem onClick={() => setPresentationToDelete(presentation)} className="text-destructive focus:bg-destructive/10 focus:text-destructive">
+                                        Delete Presentation
+                                    </DropdownMenuItem>
+                                 )}
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                        <Button variant="outline" size="sm" asChild className="h-8">
+                          <Link href={`/editor/${presentation.id}`}>Open</Link>
+                        </Button>
+                      </div>
                     </CardContent>
                   </Card>
                 )
               ))}
             </div>
           ) : (
-            <div className="text-center py-12">
+            <div className="text-center py-12 border-2 border-dashed rounded-lg bg-muted/20">
                {searchTerm || filter !== 'all' ? (
                  <>
                     <Search className="mx-auto h-16 w-16 text-muted-foreground mb-4" />
                     <p className="text-muted-foreground text-lg">No presentations match your search or filter.</p>
-                    <Button className="mt-4" onClick={() => { setSearchTerm(''); setFilter('all'); }}>
+                    <Button className="mt-4" variant="secondary" onClick={() => { setSearchTerm(''); setFilter('all'); setSortOption('lastUpdatedAt_desc'); }}>
                         Clear Search & Filters
                     </Button>
                  </>
                ) : (
-                 <Card className="flex flex-col items-center justify-center p-8 border-dashed">
+                 <Card className="flex flex-col items-center justify-center p-8 border-dashed bg-muted/30">
                     <FileWarning className="w-16 h-16 text-muted-foreground mb-4" />
                     <h3 className="text-xl font-semibold text-muted-foreground">No Presentations Yet</h3>
                     <p className="text-sm text-muted-foreground mb-4">It looks like you haven&apos;t created any presentations.</p>
-                    <Button onClick={handleCreateNewPresentation}>
+                    <Button onClick={handleCreateNewPresentation} variant="secondary">
                         <PlusCircle className="mr-2 h-4 w-4" /> Create a Presentation
                     </Button>
                 </Card>
@@ -219,17 +342,18 @@ export default function DashboardPage() {
         </section>
         
         <section className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
-          <Card>
+          <Card className="shadow-sm hover:shadow-md transition-shadow">
             <CardHeader>
-              <CardTitle className="font-headline text-2xl flex items-center">
+              <CardTitle className="font-headline text-xl flex items-center">
                 <Library className="mr-2 h-5 w-5 text-primary" />
                 Team Asset Library
               </CardTitle>
+               <CardDescription>Access shared images and files for your team.</CardDescription>
             </CardHeader>
             <CardContent>
                {currentUser?.teamId ? (
                 <>
-                  <p className="text-muted-foreground mb-4">
+                  <p className="text-muted-foreground mb-4 text-sm">
                       Manage your team's shared images and other files.
                   </p>
                   <Link href="/dashboard/assets" passHref legacyBehavior>
@@ -237,33 +361,60 @@ export default function DashboardPage() {
                   </Link>
                 </>
                ) : (
-                 <p className="text-muted-foreground">Create or join a team to use the asset library.</p>
+                 <p className="text-muted-foreground text-sm">Create or join a team to use the asset library. You can create a team when signing up or through team management (coming soon for existing users without teams).</p>
                )}
             </CardContent>
           </Card>
-           <Card>
+           <Card className="shadow-sm hover:shadow-md transition-shadow">
             <CardHeader>
-              <CardTitle className="font-headline text-2xl flex items-center">
-                <Activity className="mr-2 h-5 w-5 text-primary" />
-                Team Activity
+              <CardTitle className="font-headline text-xl flex items-center">
+                <Users className="mr-2 h-5 w-5 text-primary" />
+                Manage Team
               </CardTitle>
+              <CardDescription>Oversee members, settings, and activity.</CardDescription>
             </CardHeader>
             <CardContent>
                {currentUser?.teamId ? (
-                <p className="text-muted-foreground">
-                    View your team's recent activity in the <Link href="/dashboard/manage-team" className="text-primary hover:underline">Manage Team</Link> section.
+                <>
+                <p className="text-muted-foreground mb-4 text-sm">
+                    View your team's members, update settings, and see recent activity.
                 </p>
+                <Link href="/dashboard/manage-team" passHref legacyBehavior>
+                    <Button variant="outline">Manage Your Team</Button>
+                </Link>
+                </>
                ) : (
-                 <p className="text-muted-foreground">Create or join a team to see team activity.</p>
+                 <p className="text-muted-foreground text-sm">Once you are part of a team, you can manage it here. Teams are created during signup.</p>
                )}
             </CardContent>
           </Card>
         </section>
 
       </main>
-      <footer className="text-center p-4 text-muted-foreground text-sm border-t">
+      <footer className="text-center p-4 text-muted-foreground text-sm border-t mt-auto">
         © {new Date().getFullYear()} CollabSlideSyncAI.
       </footer>
+
+      {presentationToDelete && (
+        <AlertDialog open={!!presentationToDelete} onOpenChange={(open) => !open && setPresentationToDelete(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete "{presentationToDelete.title}"?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This action cannot be undone. This will permanently delete the presentation.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setPresentationToDelete(null)}>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={handleDeletePresentation} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">
+                Delete Presentation
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
     </div>
   );
 }
+
+    
