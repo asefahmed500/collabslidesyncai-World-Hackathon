@@ -61,36 +61,36 @@ export interface Team {
   lastUpdatedAt?: Date; // Mongoose timestamp
 }
 
-export type SlideElementType = 'text' | 'image' | 'shape' | 'chart' | 'icon'; 
+export type SlideElementType = 'text' | 'image' | 'shape' | 'chart' | 'icon';
 export type PresentationAccessRole = 'owner' | 'editor' | 'viewer';
 
 export interface SlideElementStyle {
-  color?: string; 
+  color?: string;
   fontFamily?: string;
-  fontSize?: string; 
-  backgroundColor?: string; 
-  borderColor?: string; 
+  fontSize?: string;
+  backgroundColor?: string;
+  borderColor?: string;
   textAlign?: 'left' | 'center' | 'right';
   fontWeight?: 'normal' | 'bold';
   fontStyle?: 'normal' | 'italic';
   textDecoration?: 'none' | 'underline' | 'line-through';
-  opacity?: number; 
-  shapeType?: 'rectangle' | 'circle' | 'triangle'; 
-  borderWidth?: number; 
-  borderRadius?: number; 
+  opacity?: number;
+  shapeType?: 'rectangle' | 'circle' | 'triangle';
+  borderWidth?: number;
+  borderRadius?: number;
 }
 
 export interface SlideElement {
   id: string;
   type: SlideElementType;
-  content: any; 
+  content: any;
   position: { x: number; y: number };
   size: { width: number; height: number };
   style: SlideElementStyle;
   zIndex?: number;
-  lockedBy?: string | null;
-  lockTimestamp?: FirestoreTimestamp | null; 
-  rotation?: number; 
+  lockedBy?: string | null; // UserID of the person editing
+  lockTimestamp?: FirestoreTimestamp | null; // Timestamp of when the lock was acquired
+  rotation?: number;
 }
 
 export interface SlideComment {
@@ -99,7 +99,7 @@ export interface SlideComment {
   userName: string;
   userAvatarUrl?: string;
   text: string;
-  createdAt: FirestoreTimestamp; 
+  createdAt: FirestoreTimestamp;
   resolved: boolean;
 }
 
@@ -120,8 +120,8 @@ export interface ActiveCollaboratorInfo {
   name: string;
   profilePictureUrl?: string;
   cursorPosition?: { slideId: string; x: number; y: number } | null;
-  lastSeen: FirestoreTimestamp; 
-  color: string;
+  lastSeen: FirestoreTimestamp;
+  color: string; // Unique color for this collaborator's cursor/presence
   email?: string;
 }
 
@@ -143,10 +143,10 @@ export interface Presentation {
   branding?: Team['branding']; // Store a copy of team branding at time of creation/last update
   thumbnailUrl?: string;
   version: number;
-  createdAt?: FirestoreTimestamp; 
-  lastUpdatedAt: FirestoreTimestamp; 
+  createdAt?: FirestoreTimestamp;
+  lastUpdatedAt: FirestoreTimestamp;
   slides: Slide[];
-  activeCollaborators?: { [userId: string]: ActiveCollaboratorInfo };
+  activeCollaborators?: { [userId: string]: ActiveCollaboratorInfo }; // Map of active users
   collaborators?: User[];
 }
 
@@ -162,10 +162,10 @@ export type TeamActivityType =
   | 'asset_deleted';
 
 export interface TeamActivity {
-  id: string; 
+  id: string;
   _id?: Types.ObjectId | string;
-  teamId: string; 
-  actorId: string; 
+  teamId: string;
+  actorId: string;
   actorName?: string;
   actionType: TeamActivityType;
   targetType?: 'user' | 'presentation' | 'team_profile' | 'asset';
@@ -183,7 +183,7 @@ export interface TeamActivity {
     assetType?: AssetType;
     [key: string]: any;
   };
-  createdAt: Date; 
+  createdAt: Date;
 }
 
 export type PresentationActivityType =
@@ -220,10 +220,10 @@ export interface PresentationActivity {
     accessMethod?: 'direct' | 'public_link' | 'team_access' | 'public_link_password' | 'public_link_anonymous';
     elementType?: SlideElementType;
     elementId?: string;
-    changedProperty?: string; 
+    changedProperty?: string;
     [key: string]: any;
   };
-  createdAt: FirestoreTimestamp; 
+  createdAt: FirestoreTimestamp;
 }
 
 export type AssetType = 'image' | 'video' | 'audio' | 'pdf' | 'other';
@@ -234,18 +234,16 @@ export interface Asset {
   uploaderId: string;
   uploaderName?: string;
   fileName: string;
-  fileType: string; 
-  assetType: AssetType; 
-  storagePath: string; 
+  fileType: string;
+  assetType: AssetType;
+  storagePath: string;
   downloadURL: string;
-  size: number; 
-  thumbnailURL?: string; 
-  dimensions?: { width: number; height: number }; 
-  duration?: number; 
+  size: number;
+  thumbnailURL?: string;
+  dimensions?: { width: number; height: number };
+  duration?: number;
   tags?: string[];
   description?: string;
   createdAt: FirestoreTimestamp;
   lastUpdatedAt?: FirestoreTimestamp;
 }
-
-    

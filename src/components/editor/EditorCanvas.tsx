@@ -36,8 +36,8 @@ const renderElement = (
   const elementRef = useRef<HTMLDivElement>(null);
 
   const isLockedByOther = element.lockedBy && element.lockedBy !== currentUserId;
-  const lockerName = isLockedByOther && activeCollaborators && activeCollaborators[element.lockedBy!]?.name 
-                     ? activeCollaborators[element.lockedBy!]?.name 
+  const lockerName = isLockedByOther && activeCollaborators && activeCollaborators[element.lockedBy!]?.name
+                     ? activeCollaborators[element.lockedBy!]?.name
                      : "another user";
 
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -54,10 +54,10 @@ const renderElement = (
 
       const dx = e.clientX - dragStart.x;
       const dy = e.clientY - dragStart.y;
-      
+
       const newX = dragStart.initialX + dx;
       const newY = dragStart.initialY + dy;
-      
+
       elementRef.current.style.left = `${newX}px`;
       elementRef.current.style.top = `${newY}px`;
     };
@@ -66,7 +66,7 @@ const renderElement = (
       if (isDragging && elementRef.current && !isLockedByOther) {
         setIsDragging(false);
         document.body.style.cursor = 'default';
-        
+
         const dx = e.clientX - dragStart.x;
         const dy = e.clientY - dragStart.y;
         const finalX = dragStart.initialX + dx;
@@ -121,22 +121,20 @@ const renderElement = (
 
   const selectAndPrepareDrag = (e: React.MouseEvent) => {
     if (disabled || isLockedByOther) return;
-    onSelect(e); 
-    if (isSelected) { 
-        handleMouseDown(e);
-    }
+    onSelect(e);
+    // Dragging will be initiated on mouse down if already selected
   };
 
   const commonProps = {
     key: element.id,
     ref: elementRef,
     style: baseStyle,
-    onClick: selectAndPrepareDrag,
-    onMouseDown: (isSelected && !disabled && !isLockedByOther) ? handleMouseDown : undefined,
+    onClick: selectAndPrepareDrag, // Select on click
+    onMouseDown: (isSelected && !disabled && !isLockedByOther) ? handleMouseDown : undefined, // Start drag if already selected
   };
 
   const lockIcon = isLockedByOther && (
-    <div 
+    <div
         title={`Locked by ${lockerName}`}
         className="absolute -top-2.5 -right-2.5 bg-destructive text-destructive-foreground p-0.5 rounded-full z-50 shadow"
     >
@@ -183,7 +181,7 @@ const renderElement = (
          {lockIcon}
         </div>
       );
-    case 'chart': 
+    case 'chart':
       return (
          <div
           {...commonProps}
@@ -194,7 +192,7 @@ const renderElement = (
           {lockIcon}
         </div>
       );
-     case 'icon': 
+     case 'icon':
       return (
          <div
           {...commonProps}
@@ -211,12 +209,12 @@ const renderElement = (
 };
 
 
-export function EditorCanvas({ 
-    slide, 
-    onElementSelect, 
+export function EditorCanvas({
+    slide,
+    onElementSelect,
     onCanvasClickToAddElement,
-    selectedElementId, 
-    onUpdateElement, 
+    selectedElementId,
+    onUpdateElement,
     disabled,
     activeCollaborators,
     currentUser,
@@ -225,9 +223,9 @@ export function EditorCanvas({
     canvasBaseHeight,
     selectedTool,
 }: EditorCanvasProps) {
-  const [zoom] = useState(1); 
+  const [zoom] = useState(1);
   const canvasRef = useRef<HTMLDivElement>(null);
-  
+
   const handleCanvasMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!canvasRef.current || disabled) {
       onMouseMove(null);
@@ -236,17 +234,15 @@ export function EditorCanvas({
     const rect = canvasRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    onMouseMove({ x: x / zoom, y: y / zoom }); 
+    onMouseMove({ x: x / zoom, y: y / zoom });
   };
 
   const handleCanvasMouseLeave = () => {
-    onMouseMove(null); 
+    onMouseMove(null);
   };
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (disabled) return;
-    // If the click target is an element itself, the element's onClick will handle selection.
-    // This check ensures that clicking on empty canvas space triggers deselection or element addition.
     if (e.target === canvasRef.current) {
       if (selectedTool) {
         const rect = canvasRef.current.getBoundingClientRect();
@@ -269,7 +265,7 @@ export function EditorCanvas({
   }
 
   return (
-    <div 
+    <div
         className="flex-grow flex items-center justify-center p-4 bg-gray-200 dark:bg-gray-800 overflow-auto"
         onMouseMove={handleCanvasMouseMove}
         onMouseLeave={handleCanvasMouseLeave}
@@ -283,15 +279,15 @@ export function EditorCanvas({
           height: `${canvasBaseHeight * zoom}px`,
           backgroundColor: slide.backgroundColor || '#FFFFFF',
         }}
-        onClick={handleCanvasClick} 
+        onClick={handleCanvasClick}
       >
-        {(slide.elements || []).map(element =>
+        {(slide.elements || []).sort((a,b) => (a.zIndex || 0) - (b.zIndex || 0)).map(element => // Sort by zIndex
           renderElement(
             element,
             selectedElementId === element.id,
             (e: React.MouseEvent) => {
               if (disabled) return;
-              e.stopPropagation(); 
+              e.stopPropagation();
               onElementSelect(element.id);
             },
             onUpdateElement,
@@ -311,8 +307,8 @@ export function EditorCanvas({
                     position: 'absolute',
                     left: `${(collaborator.cursorPosition?.x || 0) * zoom}px`,
                     top: `${(collaborator.cursorPosition?.y || 0) * zoom}px`,
-                    transform: 'translate(-2px, -2px)', 
-                    zIndex: 10000, 
+                    transform: 'translate(-2px, -2px)',
+                    zIndex: 99999, // Ensure cursors are on top
                     pointerEvents: 'none',
                 }}
             >

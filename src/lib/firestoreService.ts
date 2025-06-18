@@ -23,7 +23,7 @@ import {
 } from 'firebase/firestore';
 import { ref, deleteObject } from 'firebase/storage';
 import type { Presentation, Slide, SlideElement, SlideComment, User, Team, ActiveCollaboratorInfo, TeamRole, TeamMember, TeamActivity, TeamActivityType, PresentationActivity, PresentationActivityType, PresentationAccessRole, Asset, AssetType, SlideElementType } from '@/types';
-import { logTeamActivityInMongoDB } from './mongoTeamService'; 
+import { logTeamActivityInMongoDB } from './mongoTeamService';
 import { getUserByEmailFromMongoDB } from './mongoUserService';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -63,7 +63,7 @@ const renumberSlides = (slides: Slide[]): Slide[] => {
 
 const presentationsCollection = collection(db, 'presentations');
 const presentationActivitiesCollection = collection(db, 'presentationActivities');
-const assetsCollection = collection(db, 'assets'); 
+const assetsCollection = collection(db, 'assets');
 
 
 export async function createPresentation(userId: string, title: string, teamId?: string, description: string = ''): Promise<string> {
@@ -77,9 +77,11 @@ export async function createPresentation(userId: string, title: string, teamId?:
       content: `Welcome to '${title}'!`,
       position: { x: 50, y: 50 },
       size: { width: 700, height: 100 },
-      style: { fontFamily: 'Space Grotesk', fontSize: '36px', color: '#333333', backgroundColor: 'transparent', textAlign: 'left', fontWeight: 'bold' },
+      style: { fontFamily: 'Space Grotesk', fontSize: '36px', color: '#333333', backgroundColor: 'transparent', textAlign: 'left', fontWeight: 'bold', opacity: 1 },
       zIndex: 1,
       rotation: 0,
+      lockedBy: null,
+      lockTimestamp: null,
     }],
     speakerNotes: "",
     comments: [],
@@ -91,7 +93,7 @@ export async function createPresentation(userId: string, title: string, teamId?:
     title,
     description,
     creatorId: userId,
-    teamId: teamId || undefined, 
+    teamId: teamId || undefined,
     access: { [userId]: 'owner' },
     settings: {
       isPublic: false,
@@ -122,26 +124,26 @@ export async function createPresentation(userId: string, title: string, teamId?:
 
 export async function getPresentationsForUser(userId: string, userTeamId?: string | null): Promise<Presentation[]> {
   const conditions = [
-    where('creatorId', '==', userId), 
-    where(`access.${userId}`, 'in', ['owner', 'editor', 'viewer']) 
+    where('creatorId', '==', userId),
+    where(`access.${userId}`, 'in', ['owner', 'editor', 'viewer'])
   ];
   if (userTeamId) {
-    conditions.push(where('teamId', '==', userTeamId)); 
+    conditions.push(where('teamId', '==', userTeamId));
   }
-  
+
   const q = query(presentationsCollection, or(...conditions), orderBy('lastUpdatedAt', 'desc'));
 
   const snapshot = await getDocs(q);
   const presentationsMap = new Map<string, Presentation>();
-  
+
   snapshot.docs.forEach(docSnap => {
       if (!presentationsMap.has(docSnap.id)) {
         const data = convertTimestamps(docSnap.data());
-        if (!data.access) data.access = {}; 
+        if (!data.access) data.access = {};
         presentationsMap.set(docSnap.id, { id: docSnap.id, ...data } as Presentation);
       }
   });
-  
+
   return Array.from(presentationsMap.values());
 }
 
@@ -167,7 +169,7 @@ export async function updatePresentation(presentationId: string, data: Partial<P
         if (newSettings) {
           for (const settingKey in newSettings) {
              if (settingKey === 'password' && newSettings.password === '') {
-                 updatePayload[`settings.password`] = deleteField(); 
+                 updatePayload[`settings.password`] = deleteField();
              } else if (newSettings[settingKey as keyof Presentation['settings']] !== undefined) {
                  updatePayload[`settings.${settingKey}`] = newSettings[settingKey as keyof Presentation['settings']];
              }
@@ -216,14 +218,14 @@ export async function updatePresentation(presentationId: string, data: Partial<P
       }
     }
   }
-  if (Object.keys(updatePayload).length > 1) { 
+  if (Object.keys(updatePayload).length > 1) {
     await updateDoc(docRef, updatePayload);
   }
 }
 
 export async function deletePresentation(presentationId: string, teamId?: string, actorId?: string): Promise<void> {
   const docRef = doc(db, 'presentations', presentationId);
-  const pres = await getPresentationById(presentationId); 
+  const pres = await getPresentationById(presentationId);
   await deleteDoc(docRef);
   if (teamId && actorId && pres) {
      await logTeamActivityInMongoDB(teamId, actorId, 'presentation_deleted', { presentationTitle: pres.title }, 'presentation', presentationId);
@@ -238,33 +240,35 @@ export async function addSlideToPresentation(presentationId: string, newSlideDat
   return await runTransaction(db, async (transaction) => {
     const presDoc = await transaction.get(presRef);
     if (!presDoc.exists()) throw new Error("Presentation not found");
-    
+
     const presentationData = presDoc.data() as Presentation;
     let currentSlides = presentationData.slides || [];
-    
+
     const slideId = uuidv4();
-    const slideNumber = currentSlides.length + 1; 
+    const slideNumber = currentSlides.length + 1;
     const defaultElementId = uuidv4();
-    
+
     const defaultElement: SlideElement = {
       id: defaultElementId, type: 'text', content: `Slide ${slideNumber}`,
       position: { x: 50, y: 50 }, size: { width: 400, height: 50 },
-      style: { fontFamily: 'Space Grotesk', fontSize: '24px', color: '#333333', backgroundColor: 'transparent', textAlign: 'left' }, zIndex: 1, rotation: 0,
+      style: { fontFamily: 'Space Grotesk', fontSize: '24px', color: '#333333', backgroundColor: 'transparent', textAlign: 'left', opacity: 1 }, zIndex: 1, rotation: 0,
+      lockedBy: null, lockTimestamp: null,
     };
-    
+
     const newSlide: Slide = {
-      id: slideId, presentationId: presentationId, slideNumber: slideNumber, 
+      id: slideId, presentationId: presentationId, slideNumber: slideNumber,
       elements: newSlideData.elements || [defaultElement],
       speakerNotes: newSlideData.speakerNotes || "", comments: newSlideData.comments || [],
       thumbnailUrl: newSlideData.thumbnailUrl || `https://placehold.co/160x90.png?text=S${slideNumber}`,
-      backgroundColor: newSlideData.backgroundColor || '#FFFFFF', aiSuggestions: newSlideData.aiSuggestions || [],
+      backgroundColor: newSlideData.backgroundColor || '#FFFFFF',
+      // aiSuggestions: newSlideData.aiSuggestions || [], // Removed aiSuggestions if not actively used
     };
-    
+
     const updatedSlidesArray = [...currentSlides, newSlide];
     const finalSlides = renumberSlides(updatedSlidesArray);
-    
+
     transaction.update(presRef, { slides: finalSlides, lastUpdatedAt: serverTimestamp() });
-    return slideId; 
+    return slideId;
   });
 }
 
@@ -282,7 +286,7 @@ export async function deleteSlideFromPresentation(presentationId: string, slideI
 
     if (slides.length === initialLength) {
         console.warn(`Slide ${slideIdToDelete} not found in presentation ${presentationId} for deletion.`);
-        return presentationData.slides; 
+        return presentationData.slides;
     }
 
     const updatedSlides = renumberSlides(slides);
@@ -309,17 +313,19 @@ export async function duplicateSlideInPresentation(presentationId: string, slide
     const originalSlide = slides[originalSlideIndex];
     const newSlideId = uuidv4();
     const duplicatedElements = originalSlide.elements.map(el => ({
-      ...JSON.parse(JSON.stringify(el)), 
-      id: uuidv4(), 
+      ...JSON.parse(JSON.stringify(el)),
+      id: uuidv4(),
+      lockedBy: null, // Ensure new elements are not locked
+      lockTimestamp: null,
     }));
 
     const duplicatedSlide: Slide = {
-      ...JSON.parse(JSON.stringify(originalSlide)), 
-      id: newSlideId, 
-      slideNumber: 0, 
+      ...JSON.parse(JSON.stringify(originalSlide)),
+      id: newSlideId,
+      slideNumber: 0,
       elements: duplicatedElements,
-      comments: [], 
-      aiSuggestions: [], 
+      comments: [],
+      // aiSuggestions: [], // Reset suggestions for duplicated slide
       thumbnailUrl: originalSlide.thumbnailUrl ? `${originalSlide.thumbnailUrl.split('?')[0]}?text=Copy` : `https://placehold.co/160x90.png?text=Copy`,
     };
 
@@ -338,7 +344,7 @@ export async function moveSlideInPresentation(presentationId: string, slideId: s
     if (!presDoc.exists()) throw new Error("Presentation not found");
 
     const presentationData = presDoc.data() as Presentation;
-    let slides = [...(presentationData.slides || [])]; 
+    let slides = [...(presentationData.slides || [])];
     const currentIndex = slides.findIndex(s => s.id === slideId);
 
     if (currentIndex === -1) {
@@ -367,7 +373,12 @@ export async function moveSlideInPresentation(presentationId: string, slideId: s
 export async function addElementToSlide(presentationId: string, slideId: string, elementData: Omit<SlideElement, 'id'>): Promise<string> {
   const presRef = doc(db, 'presentations', presentationId);
   const newElementId = uuidv4();
-  const newElement: SlideElement = { ...elementData, id: newElementId };
+  const newElement: SlideElement = {
+    ...elementData,
+    id: newElementId,
+    lockedBy: null, // Ensure new elements are not locked
+    lockTimestamp: null,
+   };
 
   await runTransaction(db, async (transaction) => {
     const presDoc = await transaction.get(presRef);
@@ -398,12 +409,12 @@ export async function deleteElementFromSlide(presentationId: string, slideId: st
     const slideIndex = slides.findIndex(s => s.id === slideId);
 
     if (slideIndex === -1) throw new Error("Slide not found");
-    
+
     const updatedSlides = [...slides];
     const targetSlide = { ...updatedSlides[slideIndex] };
     targetSlide.elements = (targetSlide.elements || []).filter(el => el.id !== elementId);
     updatedSlides[slideIndex] = targetSlide;
-    
+
     transaction.update(presRef, { slides: updatedSlides, lastUpdatedAt: serverTimestamp() });
   });
 }
@@ -415,13 +426,20 @@ export async function updateElementInSlide(presentationId: string, slideId: stri
   await runTransaction(db, async (transaction) => {
     const presDoc = await transaction.get(presRef);
     if (!presDoc.exists()) throw new Error(`Presentation ${presentationId} not found.`);
-    const presentationData = presDoc.data() as Presentation;
-    let slideFound = false;
-    const updatedSlides = presentationData.slides.map(s => {
+    const presentation = presDoc.data() as Presentation; let slideFound = false;
+    const updatedSlides = presentation.slides.map(s => {
       if (s.id === slideId) {
         slideFound = true; let elementFound = false;
         const newElements = s.elements.map(el => {
           if (el.id === updatedElementPartial.id) {
+            // Check lock before allowing update
+            if (el.lockedBy && el.lockedBy !== updatedElementPartial.lockedBy && updatedElementPartial.lockedBy !== null) { // Check if someone else is trying to update a locked element
+                 console.warn(`Element ${el.id} is locked by ${el.lockedBy}, update by ${updatedElementPartial.lockedBy} denied unless it's a lock release.`);
+                 // If it's not a lock release/acquire operation, deny.
+                 if (!(updatedElementPartial.hasOwnProperty('lockedBy'))) {
+                    throw new Error("Element is locked by another user.");
+                 }
+            }
             elementFound = true;
             return { ...el, ...updatedElementPartial,
               style: { ...(el.style || {}), ...(updatedElementPartial.style || {}),
@@ -438,6 +456,9 @@ export async function updateElementInSlide(presentationId: string, slideId: stri
               },
               zIndex: updatedElementPartial.zIndex === undefined ? (el.zIndex === undefined ? 0 : el.zIndex) : updatedElementPartial.zIndex,
               rotation: updatedElementPartial.rotation === undefined ? (el.rotation === undefined ? 0 : el.rotation) : updatedElementPartial.rotation,
+              // Explicitly handle lock fields if they are part of the partial update
+              lockedBy: updatedElementPartial.hasOwnProperty('lockedBy') ? updatedElementPartial.lockedBy : el.lockedBy,
+              lockTimestamp: updatedElementPartial.hasOwnProperty('lockTimestamp') ? (updatedElementPartial.lockTimestamp === null ? null : serverTimestamp() as Timestamp) : el.lockTimestamp,
             };
           } return el;
         });
@@ -493,27 +514,40 @@ export async function updateUserPresence(presentationId: string, userId: string,
     lastSeen: serverTimestamp() as Timestamp,
     cursorPosition: null, // Initialize cursorPosition as null
   };
-  await updateDoc(presRef, {
-    [`activeCollaborators.${userId}`]: dataToSet,
-    lastUpdatedAt: serverTimestamp()
-  });
+  try {
+    await updateDoc(presRef, {
+      [`activeCollaborators.${userId}`]: dataToSet,
+      lastUpdatedAt: serverTimestamp()
+    });
+  } catch (error) {
+    console.error("Error updating user presence:", error);
+    // If presentation doc doesn't exist, this will fail. Consider creating it if it's a valid scenario.
+  }
 }
 
 
 export async function removeUserPresence(presentationId: string, userId: string): Promise<void> {
   const presRef = doc(db, 'presentations', presentationId);
-  await updateDoc(presRef, { [`activeCollaborators.${userId}`]: deleteField(), lastUpdatedAt: serverTimestamp() });
+  try {
+    await updateDoc(presRef, { [`activeCollaborators.${userId}`]: deleteField(), lastUpdatedAt: serverTimestamp() });
+  } catch (error) {
+      console.warn(`Error removing user presence for user ${userId} in presentation ${presentationId}. Document might not exist or field already deleted.`, error);
+  }
 }
 
 export async function updateUserCursorPosition(presentationId: string, userId: string, slideId: string, position: { x: number; y: number }): Promise<void> {
   const presRef = doc(db, 'presentations', presentationId);
-  await updateDoc(presRef, {
-    [`activeCollaborators.${userId}.cursorPosition`]: { slideId, ...position },
-    [`activeCollaborators.${userId}.lastSeen`]: serverTimestamp()
-  });
+  try {
+    await updateDoc(presRef, {
+      [`activeCollaborators.${userId}.cursorPosition`]: { slideId, ...position },
+      [`activeCollaborators.${userId}.lastSeen`]: serverTimestamp()
+    });
+  } catch (error) {
+      console.warn(`Error updating cursor position for user ${userId} in presentation ${presentationId}. User might not be active.`, error);
+  }
 }
 
-const LOCK_DURATION_MS = 30 * 1000;
+const LOCK_DURATION_MS = 30 * 1000; // 30 seconds
 
 export async function acquireLock(presentationId: string, slideId: string, elementId: string, userId: string): Promise<boolean> {
   const presRef = doc(db, 'presentations', presentationId);
@@ -526,7 +560,7 @@ export async function acquireLock(presentationId: string, slideId: string, eleme
           if (s.id === slideId) {
             return { ...s, elements: s.elements.map(el => {
                 if (el.id === elementId) {
-                  if (el.lockedBy && el.lockedBy !== userId && el.lockTimestamp && (el.lockTimestamp.toMillis() + LOCK_DURATION_MS > Date.now())) {
+                  if (el.lockedBy && el.lockedBy !== userId && el.lockTimestamp && ((el.lockTimestamp as Timestamp).toMillis() + LOCK_DURATION_MS > Date.now())) {
                     alreadyLockedByOther = true; return el;
                   }
                   lockAcquired = true; return { ...el, lockedBy: userId, lockTimestamp: serverTimestamp() as Timestamp };
@@ -534,11 +568,14 @@ export async function acquireLock(presentationId: string, slideId: string, eleme
               })};
           } return s;
         });
-        if (alreadyLockedByOther) throw new Error("Element already locked.");
+        if (alreadyLockedByOther) throw new Error("Element already locked by another user.");
         if (!lockAcquired) throw new Error("Element not found to lock.");
         transaction.update(presRef, { slides: updatedSlides, lastUpdatedAt: serverTimestamp() });
     }); return true;
-  } catch (error) { console.error("Lock acquisition failed:", error); return false; }
+  } catch (error) {
+    console.error("Lock acquisition failed:", error);
+    return false;
+  }
 }
 
 export async function releaseLock(presentationId: string, slideId: string, elementId: string, userId: string): Promise<void> {
@@ -566,16 +603,18 @@ export async function releaseExpiredLocks(presentationId: string): Promise<void>
     await runTransaction(db, async (transaction) => {
         const presDoc = await transaction.get(presRef); if (!presDoc.exists()) return;
         const presentation = presDoc.data() as Presentation; let locksReleased = false;
+        const now = Date.now();
         const updatedSlides = presentation.slides.map(s => {
           let slideModified = false;
           const elements = s.elements.map(el => {
-            if (el.lockedBy && el.lockTimestamp && (el.lockTimestamp.toMillis() + LOCK_DURATION_MS < Date.now())) {
+            if (el.lockedBy && el.lockTimestamp && ((el.lockTimestamp as Timestamp).toMillis() + LOCK_DURATION_MS < now)) {
               slideModified = true; locksReleased = true; return { ...el, lockedBy: null, lockTimestamp: null };
             } return el;
           });
           return slideModified ? { ...s, elements } : s;
         });
         if (locksReleased) {
+          console.log(`Released expired locks for presentation ${presentationId}`);
           transaction.update(presRef, { slides: updatedSlides, lastUpdatedAt: serverTimestamp() });
         }
     });
@@ -587,7 +626,9 @@ export async function logPresentationActivity(
   presentationId: string, actorId: string, actionType: PresentationActivityType, details?: PresentationActivity['details']
 ): Promise<string> {
   let actorNameResolved = 'System/Guest';
-  
+  // In a real app, you might fetch user profile here if actorId is not 'system' or 'guest'
+  // For now, keeping it simple or assuming name is passed in details if needed.
+
   const activityData: Omit<PresentationActivity, 'id'> = {
     presentationId, actorId, actorName: actorNameResolved, actionType, details: details || {}, createdAt: serverTimestamp() as Timestamp,
   };
@@ -640,9 +681,23 @@ export async function deleteAsset(assetId: string, storagePath: string, teamId: 
 
 export async function getUserByEmail(email: string): Promise<User | null> {
     console.warn("getUserByEmail in firestoreService is fetching from MongoDB due to data model migration. This is generally correct for current auth flows.");
-    const userFromMongo = await getUserByEmailFromMongoDB(email); 
+    const userFromMongo = await getUserByEmailFromMongoDB(email);
     return userFromMongo;
 }
+
+// This function seems to be removed or unused, keeping it for now if it's used elsewhere.
+// export async function getUserProfile(userId: string): Promise<User | null> {
+//   // Placeholder: Fetch user profile from Firestore or your user management system
+//   // This is just an example and likely needs to connect to your actual user data source
+//   console.warn("getUserProfile in firestoreService is a placeholder and might not fetch correct user data.");
+//   const userRef = doc(db, "users", userId); // Assuming you have a 'users' collection
+//   const userSnap = await getDoc(userRef);
+//   if (userSnap.exists()) {
+//     return { id: userSnap.id, ...convertTimestamps(userSnap.data()) } as User;
+//   }
+//   return null;
+// }
+
 
 export { getNextUserColor };
 export { uuidv4 };

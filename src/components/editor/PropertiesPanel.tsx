@@ -15,13 +15,13 @@ import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
 
 interface PropertiesPanelProps {
   selectedElement: SlideElement | null;
-  currentSlide: Slide | null; 
+  currentSlide: Slide | null;
   onUpdateElement: (updatedElementPartial: Partial<SlideElement>) => void;
   onDeleteElement: (elementId: string) => void;
   onAddComment: (text: string) => void;
   onResolveComment: (commentId: string) => void;
   onUpdateSlideBackgroundColor: (color: string) => void;
-  disabled?: boolean; 
+  disabled?: boolean;
   currentUserId: string;
 }
 
@@ -38,7 +38,7 @@ export function PropertiesPanel({
 }: PropertiesPanelProps) {
   const [newComment, setNewComment] = useState("");
   const [localStyle, setLocalStyle] = useState<SlideElementStyle | null>(null);
-  const [localContent, setLocalContent] = useState<string | null>(null);
+  const [localContent, setLocalContent] = useState<string | any | null>(null); // Can be string or object for chart
 
   useEffect(() => {
     if (selectedElement) {
@@ -57,20 +57,20 @@ export function PropertiesPanel({
     if (!selectedElement || effectiveDisabled) return;
     onUpdateElement({ id: selectedElement.id, [prop]: value });
   };
-  
+
   const handleStyleChange = (styleProp: keyof SlideElementStyle, value: any) => {
     if (!selectedElement || effectiveDisabled) return;
-    const updatedStyle = { ...(selectedElement.style || {}), [styleProp]: value };
-    setLocalStyle(updatedStyle); // Update local state for immediate UI feedback
+    const updatedStyle = { ...(localStyle || selectedElement.style || {}), [styleProp]: value };
+    setLocalStyle(updatedStyle);
     onUpdateElement({ id: selectedElement.id, style: updatedStyle });
   };
 
-  const handleContentChange = (value: string) => {
+  const handleContentChange = (value: string | any) => {
     if (!selectedElement || effectiveDisabled) return;
-    setLocalContent(value); // Update local state
+    setLocalContent(value);
     onUpdateElement({ id: selectedElement.id, content: value });
   }
-  
+
   const handleCommentSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (disabled || !newComment.trim()) return;
@@ -113,8 +113,8 @@ export function PropertiesPanel({
             </div>
         );
     }
-    
-    const currentProps = selectedElement; 
+
+    const currentProps = selectedElement;
     const currentStyle = localStyle || selectedElement.style || {}; // Use localStyle for immediate feedback
 
     return (
@@ -127,13 +127,14 @@ export function PropertiesPanel({
             {selectedElement.type === 'chart' && <Text className="mr-2 h-5 w-5" />}
             {selectedElement.type === 'icon' && <Text className="mr-2 h-5 w-5" />}
             Properties
-            {isElementLockedByOther && <Lock title="Locked by another user" className="ml-2 h-4 w-4 text-destructive" />}
+            {isElementLockedByOther && <Lock title={`Locked by ${selectedElement.lockedBy === currentUserId ? 'you' : 'another user'}`} className="ml-2 h-4 w-4 text-destructive" />}
             </h3>
             <Button variant="ghost" size="icon" onClick={handleDeleteSelectedElement} disabled={effectiveDisabled} title="Delete Element">
                 <Trash2 className="h-4 w-4 text-destructive"/>
             </Button>
         </div>
         <p className="text-xs text-muted-foreground -mt-3">ID: <span className="font-mono">{selectedElement.id.slice(0,8)}...</span></p>
+        {isElementLockedByOther && <p className="text-xs text-destructive">This element is locked by another user.</p>}
 
 
         <Accordion type="multiple" defaultValue={['content', 'appearance', 'layout']} className="w-full">
@@ -145,7 +146,7 @@ export function PropertiesPanel({
                         <Label htmlFor="content">Text</Label>
                         <Textarea
                         id="content"
-                        value={localContent || ''}
+                        value={typeof localContent === 'string' ? localContent : ''}
                         onChange={(e: ChangeEvent<HTMLTextAreaElement>) => handleContentChange(e.target.value)}
                         className="mt-1"
                         rows={4}
@@ -163,7 +164,7 @@ export function PropertiesPanel({
                     <Label htmlFor="imageUrl">Image URL</Label>
                     <Input
                         id="imageUrl"
-                        value={localContent || ''}
+                        value={typeof localContent === 'string' ? localContent : ''}
                         onChange={(e: ChangeEvent<HTMLInputElement>) => handleContentChange(e.target.value)}
                         className="mt-1"
                         placeholder="https://example.com/image.png"
@@ -231,13 +232,13 @@ export function PropertiesPanel({
                   </div>
                 </>
               )}
-              {(selectedElement.type === 'shape' || selectedElement.type === 'text' || selectedElement.type === 'icon') && ( 
+              {(selectedElement.type === 'shape' || selectedElement.type === 'text' || selectedElement.type === 'icon') && (
                 <div>
                   <Label htmlFor="backgroundColor">Fill / Background Color</Label>
                   <Input
                     id="backgroundColor"
                     type="color"
-                    value={currentStyle.backgroundColor || (selectedElement.type === 'shape' ? '#CCCCCC' : '#00000000') } 
+                    value={currentStyle.backgroundColor || (selectedElement.type === 'shape' ? '#CCCCCC' : '#00000000') }
                     onChange={(e) => handleStyleChange('backgroundColor', e.target.value)}
                     className="mt-1 h-10 p-1"
                     disabled={effectiveDisabled}
@@ -309,7 +310,7 @@ export function PropertiesPanel({
                         value={currentSlide?.backgroundColor || '#FFFFFF'}
                         onChange={(e) => currentSlide && onUpdateSlideBackgroundColor(e.target.value)}
                         className="mt-1 h-10 p-1"
-                        disabled={disabled || !currentSlide} 
+                        disabled={disabled || !currentSlide}
                     />
                 </div>
             </AccordionContent>
@@ -318,7 +319,7 @@ export function PropertiesPanel({
       </div>
     );
   };
-  
+
   const renderSlideComments = () => {
     if (!currentSlide) return null;
     const comments = currentSlide.comments || [];
@@ -328,7 +329,7 @@ export function PropertiesPanel({
         <h3 className="font-semibold text-lg mb-3 flex items-center">
           <MessageSquare className="mr-2 h-5 w-5" /> Comments ({comments.filter(c => !c.resolved).length} active)
         </h3>
-        <ScrollArea className="h-[200px] mb-3 pr-2"> 
+        <ScrollArea className="h-[200px] mb-3 pr-2">
           {comments.length === 0 && <p className="text-sm text-muted-foreground text-center pt-2">No comments on this slide yet.</p>}
           <ul className="space-y-3">
             {comments.map(comment => (
@@ -345,7 +346,7 @@ export function PropertiesPanel({
                     <p className={`text-xs text-muted-foreground ${comment.resolved ? 'line-through' : ''}`}>{comment.text}</p>
                   </div>
                   <span className="text-xs text-muted-foreground whitespace-nowrap">
-                    {comment.createdAt ? new Date(comment.createdAt as Date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit'}) : ''}
+                    {comment.createdAt ? new Date(comment.createdAt as any).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit'}) : ''}
                   </span>
                 </div>
                 {!comment.resolved && (
@@ -356,8 +357,8 @@ export function PropertiesPanel({
           </ul>
         </ScrollArea>
         <form onSubmit={handleCommentSubmit} className="space-y-2">
-          <Textarea 
-            placeholder="Add a comment..." 
+          <Textarea
+            placeholder="Add a comment..."
             value={newComment}
             onChange={(e) => setNewComment(e.target.value)}
             rows={2}
@@ -374,9 +375,9 @@ export function PropertiesPanel({
 
   return (
     <div className="bg-card border-l w-80 md:w-96 h-full flex flex-col shadow-md">
-      <ScrollArea className="flex-grow"> 
+      <ScrollArea className="flex-grow">
         {renderElementProperties()}
-        {currentSlide && renderSlideComments()} 
+        {currentSlide && renderSlideComments()}
       </ScrollArea>
     </div>
   );

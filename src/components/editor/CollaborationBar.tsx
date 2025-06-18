@@ -8,7 +8,7 @@ import { User as UserIcon } from 'lucide-react';
 
 interface CollaborationBarProps {
   activeCollaborators: { [userId: string]: ActiveCollaboratorInfo };
-  currentUser: User | null; 
+  currentUser: User | null;
 }
 
 export function CollaborationBar({ activeCollaborators, currentUser }: CollaborationBarProps) {
@@ -25,7 +25,10 @@ export function CollaborationBar({ activeCollaborators, currentUser }: Collabora
       if (a.id === currentUser.id) return -1;
       if (b.id === currentUser.id) return 1;
     }
-    return (a.name || '').localeCompare(b.name || '') || (b.lastSeen.toMillis() - a.lastSeen.toMillis());
+    // Ensure names are treated as strings for localeCompare
+    const nameA = a.name || '';
+    const nameB = b.name || '';
+    return nameA.localeCompare(nameB) || (b.lastSeen.toDate().getTime() - a.lastSeen.toDate().getTime());
   });
 
   const displayedCollaborators = sortedCollaborators.slice(0, maxAvatars);
@@ -39,7 +42,7 @@ export function CollaborationBar({ activeCollaborators, currentUser }: Collabora
             <Tooltip key={user.id}>
               <TooltipTrigger asChild>
                 <Avatar className={`h-8 w-8 border-2 ${currentUser && user.id === currentUser.id ? 'border-primary' : 'border-card'}`} style={{ borderColor: currentUser && user.id === currentUser.id ? 'hsl(var(--primary))' : user.color || 'hsl(var(--border))' }}>
-                  <AvatarImage src={user.profilePictureUrl || undefined} alt={user.name || 'User'} data-ai-hint="profile avatar" />
+                  <AvatarImage src={user.profilePictureUrl || undefined} alt={user.name || 'User'} data-ai-hint="profile avatar"/>
                   <AvatarFallback style={{ backgroundColor: user.color ? `${user.color}40` : 'hsl(var(--muted))' }}>
                     {user.name ? user.name.charAt(0).toUpperCase() : <UserIcon className="h-4 w-4" />}
                   </AvatarFallback>
