@@ -384,7 +384,7 @@ export default function DashboardPage() {
                {currentUser?.teamId ? (
                 <>
                   <p className="text-muted-foreground mb-4 text-sm">
-                      Manage your team's shared images and other files.
+                      Manage your team's shared images and other files. (Max 5MB per image)
                   </p>
                   <Link href="/dashboard/assets" passHref legacyBehavior>
                      <Button variant="outline">Go to Asset Library</Button>
@@ -446,5 +446,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-
-    

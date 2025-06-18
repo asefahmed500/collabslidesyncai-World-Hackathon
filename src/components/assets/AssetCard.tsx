@@ -12,7 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 
 interface AssetCardProps {
   asset: Asset;
-  onDelete: (assetId: string, storagePath: string) => void;
+  onDelete: (asset: Asset) => void; // Pass the whole asset object for deletion
 }
 
 const getAssetIcon = (assetType: Asset['assetType']) => {
@@ -33,6 +33,9 @@ export function AssetCard({ asset, onDelete }: AssetCardProps) {
       .then(() => toast({ title: "URL Copied!", description: "Asset download URL copied to clipboard." }))
       .catch(err => toast({ title: "Copy Failed", description: "Could not copy URL.", variant: "destructive" }));
   };
+
+  const createdAtDate = asset.createdAt instanceof Date ? asset.createdAt : (asset.createdAt as any)?.toDate();
+
 
   return (
     <Card className="flex flex-col h-full shadow-md hover:shadow-lg transition-shadow">
@@ -61,7 +64,7 @@ export function AssetCard({ asset, onDelete }: AssetCardProps) {
           Type: <Badge variant="outline" className="capitalize text-xs">{asset.assetType}</Badge> | Size: {(asset.size / 1024 / 1024).toFixed(2)} MB
         </CardDescription>
         <p className="text-xs text-muted-foreground mt-1">
-          Uploaded {formatDistanceToNow(new Date(asset.createdAt as Date), { addSuffix: true })}
+          Uploaded {createdAtDate ? formatDistanceToNow(createdAtDate, { addSuffix: true }) : 'N/A'}
           {asset.uploaderName && ` by ${asset.uploaderName}`}
         </p>
         {asset.description && <p className="text-xs text-muted-foreground mt-1 truncate" title={asset.description}>Desc: {asset.description}</p>}
@@ -81,7 +84,7 @@ export function AssetCard({ asset, onDelete }: AssetCardProps) {
                 <Download className="h-4 w-4" />
             </a>
         </Button>
-        <Button variant="ghost" size="icon" onClick={() => onDelete(asset.id, asset.storagePath)} title="Delete asset">
+        <Button variant="ghost" size="icon" onClick={() => onDelete(asset)} title="Delete asset">
           <Trash2 className="h-4 w-4 text-destructive" />
         </Button>
       </CardFooter>

@@ -1,0 +1,35 @@
+
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Default deny all reads and writes
+    // match /{allPaths=**} {
+    //  allow read, write: if false;
+    // }
+
+    // Assets: Allow authenticated users to upload to a path scoped by their team and user ID.
+    // Read access is granted if the user is authenticated and part of the team (requires teamId in custom claims or Firestore lookup).
+    // For simplicity now, we'll allow authenticated users to read if they know the path.
+    // Public assets could be handled by making downloadURLs public or using a separate "public" folder.
+    match /assets/{teamId}/{userId}/{fileName} {
+      allow read: if request.auth != null; // Or true if assets are generally public via URL
+      // User must be authenticated and their UID must match the {userId} in the path.
+      // Optionally, you could also verify if request.auth.token.teamId == teamId if you set custom claims.
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Profile Pictures: Allow users to upload/update their own profile pictures.
+    match /profilePictures/{userId}/{fileName} {
+      allow read: if true; // Profile pictures are generally public.
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Catch-all for any other paths - deny by default for safety.
+    // If you need other public buckets or specific paths, define them explicitly above this.
+    match /{allPaths=**} {
+      allow read: if false; // More secure default for reads
+      allow write: if false;
+    }
+  }
+}

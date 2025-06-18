@@ -601,6 +601,7 @@ export async function getPresentationActivities(presentationId: string, limitCou
     return snapshot.docs.map(docSnap => ({ id: docSnap.id, ...convertTimestamps(docSnap.data())} as PresentationActivity));
 }
 
+// --- Asset Management ---
 export async function createAssetMetadata(assetData: Omit<Asset, 'id' | 'createdAt' | 'lastUpdatedAt'>): Promise<string> {
   const docRef = await addDoc(assetsCollection, {
     ...assetData,
@@ -620,18 +621,22 @@ export async function getTeamAssets(teamId: string): Promise<Asset[]> {
 }
 
 export async function deleteAsset(assetId: string, storagePath: string, teamId: string, actorId: string): Promise<void> {
-  const assetRef = doc(db, 'assets', assetId);
-  const assetDoc = await getDoc(assetRef);
-  const assetData = assetDoc.data() as Asset | undefined;
+  const assetDocRef = doc(db, 'assets', assetId);
+  const assetDocSnap = await getDoc(assetDocRef);
+  const assetData = assetDocSnap.data() as Asset | undefined;
 
+  // Delete from Firebase Storage
   const fileRef = ref(fbStorage, storagePath);
   await deleteObject(fileRef);
-  await deleteDoc(assetRef);
+
+  // Delete metadata from Firestore
+  await deleteDoc(assetDocRef);
 
   if (teamId && actorId && assetData) {
     await logTeamActivityInMongoDB(teamId, actorId, 'asset_deleted', { fileName: assetData.fileName, assetType: assetData.assetType }, 'asset', assetId);
   }
 }
+// --- End Asset Management ---
 
 export async function getUserByEmail(email: string): Promise<User | null> {
     console.warn("getUserByEmail in firestoreService is fetching from MongoDB due to data model migration. This is generally correct for current auth flows.");

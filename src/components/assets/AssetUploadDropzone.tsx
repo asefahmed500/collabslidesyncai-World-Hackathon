@@ -4,7 +4,7 @@
 import { useState, useCallback } from 'react';
 import { useDropzone, type FileWithPath } from 'react-dropzone';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { storage as fbStorage } from '@/lib/firebaseConfig'; // Ensure storage is exported from firebaseConfig
+import { storage as fbStorage } from '@/lib/firebaseConfig'; 
 import { createAssetMetadataAction } from '@/app/dashboard/assets/actions';
 import type { Asset, AssetType } from '@/types';
 import { Button } from '@/components/ui/button';
@@ -20,6 +20,9 @@ interface AssetUploadDropzoneProps {
   onAssetUploaded: (asset: Asset) => void;
 }
 
+const MAX_FILE_SIZE_MB = 5;
+const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+
 export function AssetUploadDropzone({ teamId, uploaderId, uploaderName, onAssetUploaded }: AssetUploadDropzoneProps) {
   const [filesToUpload, setFilesToUpload] = useState<FileWithPath[]>([]);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
@@ -27,32 +30,42 @@ export function AssetUploadDropzone({ teamId, uploaderId, uploaderName, onAssetU
   const [uploadError, setUploadError] = useState<string | null>(null);
   const { toast } = useToast();
 
-  const getAssetType = (mimeType: string): AssetType => {
+  const getAssetTypeFromFile = (file: FileWithPath): AssetType => {
+    const mimeType = file.type;
     if (mimeType.startsWith('image/')) return 'image';
-    if (mimeType.startsWith('video/')) return 'video';
-    if (mimeType.startsWith('audio/')) return 'audio';
-    if (mimeType === 'application/pdf') return 'pdf';
+    // Future: Add video, audio, pdf checks
     return 'other';
   };
 
-  const onDrop = useCallback((acceptedFiles: FileWithPath[]) => {
-    // For now, let's handle one file at a time to simplify UI for progress/error
+  const onDrop = useCallback((acceptedFiles: FileWithPath[], rejectedFiles: any[]) => {
+    if (rejectedFiles.length > 0) {
+        rejectedFiles.forEach(rejectedFile => {
+            rejectedFile.errors.forEach((error: any) => {
+                if (error.code === 'file-too-large') {
+                    toast({ title: "Upload Error", description: `File "${rejectedFile.file.name}" is too large. Max size is ${MAX_FILE_SIZE_MB}MB.`, variant: "destructive" });
+                } else {
+                    toast({ title: "Upload Error", description: `File "${rejectedFile.file.name}": ${error.message}`, variant: "destructive" });
+                }
+            });
+        });
+        setFilesToUpload([]);
+        return;
+    }
+
     if (acceptedFiles.length > 0) {
-      setFilesToUpload([acceptedFiles[0]]); // Replace current selection
+      setFilesToUpload([acceptedFiles[0]]); 
       setUploadError(null);
       setUploadProgress(null);
     }
-  }, []);
+  }, [toast]);
 
-  const { getRootProps, getInputProps, isDragActive, acceptedFiles } = useDropzone({
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: {
       'image/*': ['.jpeg', '.jpg', '.png', '.gif', '.webp'],
-      // 'application/pdf': ['.pdf'],
-      // 'video/*': ['.mp4', '.mov', '.avi'],
-      // 'audio/*': ['.mp3', '.wav']
     },
-    multiple: false, // Handle one file at a time for now
+    multiple: false, 
+    maxSize: MAX_FILE_SIZE_BYTES,
   });
 
   const handleUpload = async () => {
@@ -85,7 +98,7 @@ export function AssetUploadDropzone({ teamId, uploaderId, uploaderName, onAssetU
       async () => {
         try {
           const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-          const assetType = getAssetType(file.type);
+          const assetType = getAssetTypeFromFile(file);
           
           const assetMetadata: Omit<Asset, 'id' | 'createdAt' | 'lastUpdatedAt'> = {
             teamId,
@@ -97,6 +110,7 @@ export function AssetUploadDropzone({ teamId, uploaderId, uploaderName, onAssetU
             storagePath,
             downloadURL,
             size: file.size,
+            // thumbnailURL and dimensions will be set for images
           };
           
           if (assetType === 'image') {
@@ -108,7 +122,8 @@ export function AssetUploadDropzone({ teamId, uploaderId, uploaderName, onAssetU
                     image.src = URL.createObjectURL(file);
                 });
                 assetMetadata.dimensions = { width: img.width, height: img.height };
-                assetMetadata.thumbnailURL = downloadURL; // For images, full URL can be thumbnail
+                // For images, full URL can be thumbnail. Could generate smaller one with Cloud Functions.
+                assetMetadata.thumbnailURL = downloadURL; 
                 URL.revokeObjectURL(img.src);
             } catch (e) { console.warn("Could not get image dimensions for", file.name); }
           }
@@ -118,14 +133,14 @@ export function AssetUploadDropzone({ teamId, uploaderId, uploaderName, onAssetU
 
           if (result.success && result.assetId) {
             toast({ title: "Upload Successful", description: `${file.name} has been uploaded.` });
-            // Construct a temporary Asset object to pass to onAssetUploaded for immediate UI update
-            const newAsset: Asset = {
+            const newAssetForCallback: Asset = {
                 ...assetMetadata,
                 id: result.assetId,
-                createdAt: new Date() as any, // Placeholder, Firestore service sets serverTimestamp
+                createdAt: new Date() as any, 
+                thumbnailURL: assetMetadata.thumbnailURL || downloadURL, // Ensure thumbnail is passed
             };
-            onAssetUploaded(newAsset);
-            setFilesToUpload([]); // Clear selection
+            onAssetUploaded(newAssetForCallback);
+            setFilesToUpload([]); 
           } else {
             throw new Error(result.message || "Failed to save asset metadata.");
           }
@@ -133,7 +148,6 @@ export function AssetUploadDropzone({ teamId, uploaderId, uploaderName, onAssetU
           console.error("Error saving asset metadata:", error);
           setUploadError(`Metadata save failed: ${error.message}`);
           toast({ title: "Metadata Save Failed", description: error.message, variant: "destructive" });
-           // TODO: Consider deleting the uploaded file from storage if metadata fails
         } finally {
           setIsUploading(false);
           setUploadProgress(null);
@@ -152,11 +166,11 @@ export function AssetUploadDropzone({ teamId, uploaderId, uploaderName, onAssetU
         <input {...getInputProps()} />
         <UploadCloud className="mx-auto h-12 w-12 text-muted-foreground mb-3" />
         {isDragActive ? (
-          <p className="text-primary">Drop the file here ...</p>
+          <p className="text-primary">Drop the image file here ...</p>
         ) : (
           <p className="text-muted-foreground">Drag & drop an image here, or click to select file</p>
         )}
-        <p className="text-xs text-muted-foreground mt-1">Supports: JPG, PNG, GIF, WEBP (Max 5MB)</p>
+        <p className="text-xs text-muted-foreground mt-1">Supports: JPG, PNG, GIF, WEBP (Max {MAX_FILE_SIZE_MB}MB)</p>
       </div>
 
       {filesToUpload.length > 0 && (

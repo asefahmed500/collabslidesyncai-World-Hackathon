@@ -12,7 +12,8 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2, Search, Library, FileWarning, ShieldAlert, Trash2 } from 'lucide-react';
 import type { Asset } from '@/types';
-import { getTeamAssets, deleteAsset as apiDeleteAsset } from '@/lib/firestoreService';
+import { getTeamAssets } from '@/lib/firestoreService'; // Directly use firestoreService
+import { deleteAssetAction } from './actions'; // Use server action for delete
 import { useToast } from '@/hooks/use-toast';
 import {
   AlertDialog,
@@ -23,7 +24,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
 export default function AssetLibraryPage() {
@@ -62,16 +62,20 @@ export default function AssetLibraryPage() {
   }, [currentUser, authLoading, router, toast, fetchAssets]);
 
   const handleAssetUploaded = (newAsset: Asset) => {
-    setAssets(prevAssets => [newAsset, ...prevAssets]);
-    fetchAssets(); // Re-fetch to ensure correct sorting and any server-side updates
+    // Optimistically add or re-fetch
+    fetchAssets(); 
   };
 
-  const handleDeleteAsset = async () => {
+  const handleDeleteAssetConfirm = async () => {
     if (!assetToDelete || !currentUser || !currentUser.teamId) return;
     try {
-      await apiDeleteAsset(assetToDelete.id, assetToDelete.storagePath, currentUser.teamId, currentUser.id);
-      setAssets(prev => prev.filter(asset => asset.id !== assetToDelete.id));
-      toast({ title: "Asset Deleted", description: `${assetToDelete.fileName} has been removed.` });
+      const result = await deleteAssetAction(assetToDelete.id, assetToDelete.storagePath);
+      if (result.success) {
+        setAssets(prev => prev.filter(asset => asset.id !== assetToDelete.id));
+        toast({ title: "Asset Deleted", description: `${assetToDelete.fileName} has been removed.` });
+      } else {
+        throw new Error(result.message || "Could not delete asset.");
+      }
     } catch (error: any) {
       console.error("Error deleting asset:", error);
       toast({ title: "Error", description: error.message || "Could not delete asset.", variant: "destructive" });
@@ -128,17 +132,17 @@ export default function AssetLibraryPage() {
         <Card className="mb-8 shadow-lg">
           <CardHeader>
             <CardTitle>Upload New Asset</CardTitle>
-            <CardDescription>Add images to your team's library. Other file types support coming soon.</CardDescription>
+            <CardDescription>Add images to your team's library. Max file size: 5MB.</CardDescription>
           </CardHeader>
           <CardContent>
             <AssetUploadDropzone 
               teamId={currentUser.teamId} 
               uploaderId={currentUser.id}
-              uploaderName={currentUser.name || 'Anonymous'}
+              uploaderName={currentUser.name || 'Unknown User'} // Pass uploaderName
               onAssetUploaded={handleAssetUploaded} 
             />
             <p className="text-xs text-muted-foreground mt-2">
-              Note: Ensure your Firebase Storage rules allow writes for authenticated users (e.g., `allow write: if request.auth != null;` for path `assets/{teamId}/{userId}/{fileName}`).
+              Ensure your Firebase Storage rules allow writes for authenticated users to `assets/{currentUser.teamId}/{currentUser.id}/{'{fileName}'}`.
             </p>
           </CardContent>
         </Card>
@@ -205,7 +209,7 @@ export default function AssetLibraryPage() {
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel onClick={() => setAssetToDelete(null)}>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={handleDeleteAsset} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">
+              <AlertDialogAction onClick={handleDeleteAssetConfirm} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">
                 Delete Asset
               </AlertDialogAction>
             </AlertDialogFooter>

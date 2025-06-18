@@ -229,20 +229,20 @@ export type AssetType = 'image' | 'video' | 'audio' | 'pdf' | 'other';
 
 export interface Asset {
   id: string;
-  teamId: string; // This is Firestore based for now
+  teamId: string;
   uploaderId: string;
   uploaderName?: string;
   fileName: string;
-  fileType: string;
-  assetType: AssetType;
-  storagePath: string;
+  fileType: string; // MIME type e.g. "image/png"
+  assetType: AssetType; // Simplified category
+  storagePath: string; // Full path in Firebase Storage
   downloadURL: string;
-  size: number;
-  thumbnailURL?: string;
-  dimensions?: { width: number; height: number };
-  duration?: number;
+  size: number; // in bytes
+  thumbnailURL?: string; // Optional: for non-image assets or smaller image versions
+  dimensions?: { width: number; height: number }; // For images
+  duration?: number; // For video/audio in seconds
   tags?: string[];
   description?: string;
-  createdAt: FirestoreTimestamp; // Firestore specific
-  lastUpdatedAt?: FirestoreTimestamp; // Firestore specific
+  createdAt: FirestoreTimestamp;
+  lastUpdatedAt?: FirestoreTimestamp;
 }
