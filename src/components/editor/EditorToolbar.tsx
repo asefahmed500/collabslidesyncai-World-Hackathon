@@ -160,3 +160,4 @@ export function EditorToolbar({ presentationId, onToolSelect, onAction, onShowSl
     </TooltipProvider>
   );
 }
+

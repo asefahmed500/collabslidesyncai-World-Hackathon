@@ -659,7 +659,6 @@ export default function EditorPage() {
     }
     
     // Re-fetch or re-evaluate access based on presentation data already loaded or to be reloaded by listener
-    // The onSnapshot listener should re-evaluate access if presentation data changes or if passwordVerifiedInSession changes.
     // No explicit fetch needed here as the listener should pick up.
     setIsLoading(false); // Allow UI to proceed
   };

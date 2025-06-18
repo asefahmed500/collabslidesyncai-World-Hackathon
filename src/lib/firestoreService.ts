@@ -972,3 +972,6 @@ export async function removeTeamIdFromPresentations(teamId: string): Promise<voi
   await batch.commit();
   console.log(`Removed teamId ${teamId} from ${snapshot.size} presentations in Firestore.`);
 }
+
+// Export uuidv4 if needed by other client-side components importing from this service
+export { uuidv4 };
