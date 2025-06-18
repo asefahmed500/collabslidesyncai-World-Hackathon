@@ -17,6 +17,7 @@ import {
 import { useAuth } from '@/hooks/useAuth';
 import { signOut } from '@/app/(auth)/actions';
 import { useToast } from '@/hooks/use-toast';
+import { NotificationBell } from '@/components/notifications/NotificationBell'; // Import NotificationBell
 
 export function SiteHeader() {
   const { currentUser, loading } = useAuth();
@@ -64,12 +65,15 @@ export function SiteHeader() {
 
         <nav className="flex items-center space-x-2 sm:space-x-4">
           {currentUser && (
-             <Link href="/dashboard" passHref legacyBehavior>
-                <Button variant="ghost" className="hidden md:inline-flex text-sm">
-                  <LayoutDashboard className="mr-2 h-4 w-4" />
-                  Dashboard
-                </Button>
-            </Link>
+            <>
+              <Link href="/dashboard" passHref legacyBehavior>
+                  <Button variant="ghost" className="hidden md:inline-flex text-sm">
+                    <LayoutDashboard className="mr-2 h-4 w-4" />
+                    Dashboard
+                  </Button>
+              </Link>
+              <NotificationBell /> {/* Add NotificationBell here */}
+            </>
           )}
           {currentUser ? (
             <DropdownMenu>
@@ -137,5 +141,3 @@ export function SiteHeader() {
     </header>
   );
 }
-
-    

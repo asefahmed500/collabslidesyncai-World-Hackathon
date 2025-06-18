@@ -6,6 +6,7 @@ import TeamActivityModel from '@/models/TeamActivity';
 import type { Team, TeamMember, TeamRole, TeamActivity, TeamActivityType, User as AppUser } from '@/types';
 import { Types } from 'mongoose';
 import { updateUserTeamAndRoleInMongoDB } from './mongoUserService';
+import { createNotification } from './firestoreService'; // Import for notifications
 
 function mongoTeamDocToTeam(doc: TeamDocument | null): Team | null {
   if (!doc) return null;
@@ -153,6 +154,21 @@ export async function addMemberToTeamInMongoDB(teamId: string, userToAdd: AppUse
     if (!userToAdd.teamId) {
         await updateUserTeamAndRoleInMongoDB(userToAdd.id, team.id, role);
     }
+    
+    // Create notification for the added user
+    const actor = await UserModel.findById(addedByUserId).select('name profilePictureUrl').exec();
+    await createNotification(
+      userToAdd.id,
+      'team_invite',
+      `Added to Team "${team.name}"`,
+      `${actor?.name || 'An admin'} added you to the team "${team.name}" as a ${role}.`,
+      `/dashboard/manage-team`, // Or simply /dashboard
+      addedByUserId,
+      actor?.name || undefined,
+      actor?.profilePictureUrl || undefined
+    );
+    // TODO: Trigger email notification for team invite
+
     return mongoTeamDocToTeam(team);
   } catch (error) {
     console.error('Error adding member to team in MongoDB:', error);
@@ -178,6 +194,7 @@ export async function removeMemberFromTeamInMongoDB(teamId: string, memberIdToRe
     if(user && user.teamId === teamId) {
         await updateUserTeamAndRoleInMongoDB(memberIdToRemove, null, 'guest');
     }
+    // TODO: Consider sending a notification to the removed user (optional)
 
     return mongoTeamDocToTeam(team);
   } catch (error) {
@@ -207,6 +224,7 @@ export async function updateMemberRoleInMongoDB(teamId: string, memberId: string
     if (user && user.teamId === teamId) {
         await updateUserTeamAndRoleInMongoDB(memberId, teamId, newRole);
     }
+    // TODO: Create notification for the user whose role changed
 
     return mongoTeamDocToTeam(team);
   } catch (error) {
@@ -286,5 +304,3 @@ export async function getAllTeamsFromMongoDB(): Promise<Team[]> {
     return [];
   }
 }
-
-    

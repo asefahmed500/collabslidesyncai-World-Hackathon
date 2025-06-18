@@ -19,10 +19,12 @@ import {
   orderBy,
   limit,
   runTransaction,
-  or
+  or,
+  onSnapshot, // Import onSnapshot for real-time updates
+  Unsubscribe,
 } from 'firebase/firestore';
 import { ref, deleteObject } from 'firebase/storage';
-import type { Presentation, Slide, SlideElement, SlideComment, User, Team, ActiveCollaboratorInfo, TeamRole, TeamMember, TeamActivity, TeamActivityType, PresentationActivity, PresentationActivityType, PresentationAccessRole, Asset, AssetType, SlideElementType } from '@/types';
+import type { Presentation, Slide, SlideElement, SlideComment, User, Team, ActiveCollaboratorInfo, TeamRole, TeamMember, TeamActivity, TeamActivityType, PresentationActivity, PresentationActivityType, PresentationAccessRole, Asset, AssetType, SlideElementType, Notification, NotificationType } from '@/types';
 import { logTeamActivityInMongoDB } from './mongoTeamService';
 import { getUserByEmailFromMongoDB } from './mongoUserService'; // Correctly points to MongoDB service
 import { v4 as uuidv4 } from 'uuid';
@@ -64,6 +66,7 @@ const renumberSlides = (slides: Slide[]): Slide[] => {
 const presentationsCollection = collection(db, 'presentations');
 const presentationActivitiesCollection = collection(db, 'presentationActivities');
 const assetsCollection = collection(db, 'assets');
+const notificationsCollection = collection(db, 'notifications');
 
 
 export async function createPresentation(userId: string, title: string, teamId?: string, description: string = ''): Promise<string> {
@@ -483,6 +486,22 @@ export async function addCommentToSlide(presentationId: string, slideId: string,
         targetSlide.comments = [...(targetSlide.comments || []), newComment];
         updatedSlides[slideIndex] = targetSlide;
         transaction.update(presRef, { slides: updatedSlides, lastUpdatedAt: serverTimestamp() });
+        
+        // Trigger notification for new comment
+        // For simplicity, notifying the presentation creator. Mentions would be more complex.
+        if (presentationData.creatorId !== comment.userId) {
+          await createNotification(
+            presentationData.creatorId,
+            'comment_new',
+            `New Comment`,
+            `${comment.userName} commented on slide ${targetSlide.slideNumber || slideIndex + 1} in "${presentationData.title}".`,
+            `/editor/${presentationId}?slide=${slideId}`, // Potentially link to the specific slide
+            comment.userId,
+            comment.userName,
+            comment.userAvatarUrl
+          );
+        }
+        // TODO: Add logic for @mentions if implemented
     } else console.warn(`Slide ${slideId} not found in presentation ${presentationId}`);
   });
 }
@@ -676,6 +695,72 @@ export async function deleteAsset(assetId: string, storagePath: string, teamId: 
   }
 }
 // --- End Asset Management ---
+
+// --- Notification Management ---
+export async function createNotification(
+  userId: string,
+  type: NotificationType,
+  title: string,
+  message: string,
+  link?: string,
+  actorId?: string,
+  actorName?: string,
+  actorProfilePictureUrl?: string
+): Promise<string> {
+  const notificationData: Omit<Notification, 'id'> = {
+    userId,
+    type,
+    title,
+    message,
+    link: link || undefined,
+    isRead: false,
+    createdAt: serverTimestamp() as Timestamp,
+    actorId: actorId || undefined,
+    actorName: actorName || undefined,
+    actorProfilePictureUrl: actorProfilePictureUrl || undefined,
+  };
+  const docRef = await addDoc(notificationsCollection, notificationData);
+  // TODO: Consider sending an email notification here via a backend service
+  return docRef.id;
+}
+
+export function getUserNotifications(
+  userId: string,
+  callback: (notifications: Notification[]) => void,
+  limitCount = 10
+): Unsubscribe {
+  const q = query(
+    notificationsCollection,
+    where('userId', '==', userId),
+    orderBy('createdAt', 'desc'),
+    limit(limitCount)
+  );
+  const unsubscribe = onSnapshot(q, (snapshot) => {
+    const notifications = snapshot.docs.map(docSnap => ({
+      id: docSnap.id,
+      ...convertTimestamps(docSnap.data()),
+    } as Notification));
+    callback(notifications);
+  });
+  return unsubscribe;
+}
+
+export async function markNotificationAsRead(notificationId: string): Promise<void> {
+  const docRef = doc(db, 'notifications', notificationId);
+  await updateDoc(docRef, { isRead: true });
+}
+
+export async function markAllNotificationsAsRead(userId: string): Promise<void> {
+  const q = query(notificationsCollection, where('userId', '==', userId), where('isRead', '==', false));
+  const snapshot = await getDocs(q);
+  const batch = writeBatch(db);
+  snapshot.docs.forEach(docSnap => {
+    batch.update(docSnap.ref, { isRead: true });
+  });
+  await batch.commit();
+}
+// --- End Notification Management ---
+
 
 // This function now correctly uses the MongoDB service to find users by email.
 export async function getUserByEmail(email: string): Promise<User | null> {

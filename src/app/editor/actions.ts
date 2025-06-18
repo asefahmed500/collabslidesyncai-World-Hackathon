@@ -7,8 +7,9 @@ import {
   getPresentationById,
   getUserByEmail, // This correctly uses mongoUserService via firestoreService
   logPresentationActivity,
+  createNotification, // Import for notifications
 } from '@/lib/firestoreService';
-import type { Presentation, PresentationAccessRole, User as AppUser } from '@/types';
+import type { Presentation, PresentationAccessRole, User as AppUser, NotificationType } from '@/types';
 import { revalidatePath } from 'next/cache';
 import { deleteField } from 'firebase/firestore';
 
@@ -27,10 +28,14 @@ export async function updatePresentationShareSettingsAction(
   prevState: any,
   formData: FormData
 ): Promise<ShareSettingsActionResponse> {
-  const currentUserId = auth.currentUser?.uid;
-  if (!currentUserId) {
+  const currentFirebaseUser = auth.currentUser; // Get current Firebase User
+  if (!currentFirebaseUser) {
     return { success: false, message: 'Authentication required.' };
   }
+  const currentUserId = currentFirebaseUser.uid;
+  const currentUserName = currentFirebaseUser.displayName; // Get current user's name
+  const currentUserProfilePic = currentFirebaseUser.photoURL;
+
 
   const presentationId = formData.get('presentationId') as string;
   if (!presentationId) {
@@ -104,7 +109,7 @@ export async function updatePresentationShareSettingsAction(
   const inviteRole = formData.get('inviteRole') as PresentationAccessRole;
 
   if (inviteEmail && inviteRole) {
-    const userToInvite = await getUserByEmail(inviteEmail); // This calls mongoUserService
+    const userToInvite = await getUserByEmail(inviteEmail); // This calls mongoUserService via firestoreService
     if (!userToInvite) {
       return { success: false, message: `User with email ${inviteEmail} not found.` };
     }
@@ -118,6 +123,20 @@ export async function updatePresentationShareSettingsAction(
         targetUserName: userToInvite.name || userToInvite.email,
         newRole: inviteRole,
     });
+    
+    // Create notification for the invited user
+    await createNotification(
+      userToInvite.id,
+      'presentation_shared',
+      `Presentation Shared: "${presentation.title}"`,
+      `${currentUserName || 'Someone'} shared the presentation "${presentation.title}" with you as an ${inviteRole}.`,
+      `/editor/${presentationId}`,
+      currentUserId,
+      currentUserName || undefined,
+      currentUserProfilePic || undefined
+    );
+    // TODO: Trigger email notification for presentation shared
+
     mainActionType = 'collaborator_update'; // Indicate a collaborator change happened
   }
 
@@ -142,6 +161,8 @@ export async function updatePresentationShareSettingsAction(
                 oldRole: oldRole
             });
             collaboratorChanged = true;
+            // TODO: Create notification for the removed user (optional)
+            // TODO: Trigger email notification for collaborator removal
         }
       } else if (['editor', 'viewer'].includes(newRoleOrAction) && updates.access![userId] !== newRoleOrAction) {
          const oldRole = presentation.access[userId];
@@ -153,6 +174,8 @@ export async function updatePresentationShareSettingsAction(
             newRole: newRoleOrAction as PresentationAccessRole
          });
          collaboratorChanged = true;
+         // TODO: Create notification for role change
+         // TODO: Trigger email notification for role change
       }
     }
   }

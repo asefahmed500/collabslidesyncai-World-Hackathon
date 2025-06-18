@@ -245,3 +245,26 @@ export interface Asset {
   createdAt: FirestoreTimestamp;
   lastUpdatedAt?: FirestoreTimestamp;
 }
+
+export type NotificationType =
+  | 'team_invite'
+  | 'comment_new' // Generic for new comments
+  | 'comment_mention' // For @mentions, future enhancement
+  | 'presentation_shared'
+  | 'ai_suggestion_ready' // Placeholder
+  | 'generic_info'; // For general app info/updates
+
+export interface Notification {
+  id: string;
+  userId: string; // The ID of the user who should receive this notification
+  type: NotificationType;
+  title: string; // A concise title for the notification
+  message: string; // Detailed message
+  link?: string; // Optional URL to navigate to when clicked
+  isRead: boolean;
+  createdAt: FirestoreTimestamp;
+  icon?: string; // Optional: Lucide icon name string, or path to an image
+  actorId?: string; // User ID of who performed the action (optional)
+  actorName?: string; // Name of the actor (optional)
+  actorProfilePictureUrl?: string; // Profile picture of the actor (optional)
+}
