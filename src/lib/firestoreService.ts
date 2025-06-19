@@ -955,6 +955,18 @@ export async function getAllPresentationsForAdmin(includeDeleted = false): Promi
   return snapshot.docs.map(docSnap => ({ id: docSnap.id, ...convertTimestamps(docSnap.data()) } as Presentation));
 }
 
+export async function getPresentationsForModerationReview(): Promise<Presentation[]> {
+  const q = query(
+    presentationsCollection,
+    where('moderationStatus', '==', 'under_review'),
+    where('deleted', '==', false), // Typically, you'd only review active, non-deleted presentations
+    orderBy('lastUpdatedAt', 'desc') // Or a specific 'flaggedAt' timestamp if you add one
+  );
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(docSnap => ({ id: docSnap.id, ...convertTimestamps(docSnap.data()) } as Presentation));
+}
+
+
 export async function removeTeamIdFromPresentations(teamId: string): Promise<void> {
   const q = query(presentationsCollection, where('teamId', '==', teamId));
   const snapshot = await getDocs(q);
@@ -972,3 +984,4 @@ export async function removeTeamIdFromPresentations(teamId: string): Promise<voi
   console.log(`Removed teamId ${teamId} from ${snapshot.size} presentations in Firestore.`);
 }
 export { uuidv4 };
+
