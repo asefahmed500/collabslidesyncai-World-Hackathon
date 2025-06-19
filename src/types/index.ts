@@ -332,7 +332,7 @@ export interface Notification {
   actorName?: string; // Name of the actor (optional)
   actorProfilePictureUrl?: string; // Profile picture of the actor (optional)
   // For actionable notifications like team invitations
-  teamIdForAction?: string; 
+  teamIdForAction?: string;
   roleForAction?: TeamRole;
 }
 
@@ -347,6 +347,7 @@ export interface FeedbackSubmission {
   subject: string;
   description: string;
   createdAt: FirestoreTimestamp;
+  updatedAt?: FirestoreTimestamp; // For tracking when status was last changed
   status?: 'new' | 'seen' | 'in_progress' | 'resolved' | 'wont_fix'; // For admin tracking
   userAgent?: string; // Optional: from client
   pageUrl?: string; // Optional: URL where feedback was submitted from

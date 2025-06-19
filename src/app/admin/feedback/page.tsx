@@ -14,6 +14,8 @@ import { format, formatDistanceToNowStrict } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+
 
 const getFeedbackTypeIcon = (type: FeedbackType) => {
   switch (type) {
@@ -24,23 +26,16 @@ const getFeedbackTypeIcon = (type: FeedbackType) => {
   }
 };
 
-const getStatusBadgeVariant = (status?: FeedbackSubmission['status']): "default" | "secondary" | "outline" | "destructive" => {
-    switch (status) {
-        case 'new': return "default"; // Primary highlight
-        case 'seen': return "secondary";
-        case 'in_progress': return "outline";
-        case 'resolved': return "default"; // Green if you theme it, or just distinct
-        case 'wont_fix': return "destructive";
-        default: return "outline";
+const getStatusBadgeColorClass = (status?: FeedbackSubmission['status']): string => {
+     switch (status) {
+        case 'new': return "bg-blue-500 hover:bg-blue-600 text-white"; 
+        case 'resolved': return "bg-green-500 hover:bg-green-600 text-white";
+        case 'in_progress': return "bg-yellow-500 hover:bg-yellow-600 text-black";
+        case 'seen': return "bg-gray-300 hover:bg-gray-400 text-black";
+        case 'wont_fix': return "bg-red-200 hover:bg-red-300 text-red-800";
+        default: return "bg-gray-200 hover:bg-gray-300";
     }
 };
-const getStatusBadgeColor = (status?: FeedbackSubmission['status']): string => {
-     switch (status) {
-        case 'new': return "bg-blue-500 hover:bg-blue-600"; 
-        case 'resolved': return "bg-green-500 hover:bg-green-600";
-        default: return "";
-    }
-}
 
 
 export default function AdminFeedbackPage() {
@@ -53,6 +48,23 @@ export default function AdminFeedbackPage() {
     setIsLoading(true);
     try {
       const items = await getFeedbackSubmissions();
+      // Sort by createdAt descending, then by status (new first)
+      items.sort((a, b) => {
+        const statusOrder = (s?: FeedbackSubmission['status']) => {
+          switch (s) {
+            case 'new': return 1;
+            case 'seen': return 2;
+            case 'in_progress': return 3;
+            case 'resolved': return 4;
+            case 'wont_fix': return 5;
+            default: return 6;
+          }
+        };
+        if (statusOrder(a.status) !== statusOrder(b.status)) {
+          return statusOrder(a.status) - statusOrder(b.status);
+        }
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      });
       setFeedbackItems(items);
     } catch (error) {
       console.error("Error fetching feedback submissions:", error);
@@ -70,15 +82,23 @@ export default function AdminFeedbackPage() {
 
   const handleStatusChange = async (feedbackId: string, newStatus: FeedbackSubmission['status']) => {
     if (!feedbackId || !newStatus) return;
+    const originalStatus = feedbackItems.find(item => item.id === feedbackId)?.status;
+    // Optimistically update UI
+    setFeedbackItems(prevItems => 
+      prevItems.map(item => item.id === feedbackId ? { ...item, status: newStatus, updatedAt: new Date() as any } : item)
+    );
     try {
       await updateFeedbackStatus(feedbackId, newStatus);
       toast({ title: "Status Updated", description: `Feedback status changed to ${newStatus}.` });
-      setFeedbackItems(prevItems => 
-        prevItems.map(item => item.id === feedbackId ? { ...item, status: newStatus } : item)
-      );
+      // Optional: refetch to ensure consistency, though optimistic update handles UI
+      // fetchFeedback(); 
     } catch (error) {
       console.error("Error updating feedback status:", error);
       toast({ title: "Error", description: "Could not update status.", variant: "destructive" });
+      // Revert optimistic update on error
+      setFeedbackItems(prevItems => 
+        prevItems.map(item => item.id === feedbackId ? { ...item, status: originalStatus } : item)
+      );
     }
   };
 
@@ -108,38 +128,48 @@ export default function AdminFeedbackPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Subject</TableHead>
-                  <TableHead>User</TableHead>
-                  <TableHead>Submitted</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="w-[30%]">Description</TableHead>
+                  <TableHead className="w-[120px]">Type</TableHead>
+                  <TableHead className="w-[200px]">Subject</TableHead>
+                  <TableHead className="w-[200px]">User</TableHead>
+                  <TableHead className="w-[150px]">Submitted</TableHead>
+                  <TableHead className="w-[150px]">Status</TableHead>
+                  <TableHead>Description</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {feedbackItems.map((item) => (
-                  <TableRow key={item.id}>
+                  <TableRow key={item.id} className={item.status === 'resolved' || item.status === 'wont_fix' ? 'opacity-60' : ''}>
                     <TableCell>
                       <Badge variant="outline" className="capitalize flex items-center w-max">
                         {getFeedbackTypeIcon(item.type)}
                         <span className="ml-1.5">{item.type.replace('_', ' ')}</span>
                       </Badge>
                     </TableCell>
-                    <TableCell className="font-medium max-w-xs truncate" title={item.subject}>{item.subject}</TableCell>
+                    <TableCell className="font-medium max-w-[200px] truncate" title={item.subject}>{item.subject}</TableCell>
                     <TableCell className="text-xs">
                       {item.userName || 'Anonymous'}
-                      {item.userEmail && <div className="text-muted-foreground truncate max-w-[150px]">{item.userEmail}</div>}
-                      {item.userId && <div className="text-muted-foreground font-mono text-[10px] truncate max-w-[100px]">{item.userId.substring(0,8)}...</div>}
+                      {item.userEmail && <div className="text-muted-foreground truncate max-w-[180px]" title={item.userEmail}>{item.userEmail}</div>}
+                      {item.userId && <div className="text-muted-foreground font-mono text-[10px] truncate max-w-[100px]" title={item.userId}>UID: {item.userId.substring(0,8)}...</div>}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
-                      {item.createdAt ? formatDistanceToNowStrict(new Date(item.createdAt), { addSuffix: true }) : 'N/A'}
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger>
+                            {formatDistanceToNowStrict(new Date(item.createdAt), { addSuffix: true })}
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>{new Date(item.createdAt).toLocaleString()}</p>
+                            {item.updatedAt && <p>Updated: {new Date(item.updatedAt).toLocaleString()}</p>}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     </TableCell>
                     <TableCell>
                         <Select 
-                            defaultValue={item.status || 'new'} 
+                            value={item.status || 'new'} 
                             onValueChange={(value) => handleStatusChange(item.id!, value as FeedbackSubmission['status'])}
                         >
-                            <SelectTrigger className={`h-8 text-xs w-[120px] ${getStatusBadgeColor(item.status || 'new')}`}>
+                            <SelectTrigger className={`h-8 text-xs w-[120px] ${getStatusBadgeColorClass(item.status || 'new')} border-none`}>
                                 <SelectValue/>
                             </SelectTrigger>
                             <SelectContent>
@@ -169,8 +199,12 @@ export default function AdminFeedbackPage() {
             </Table>
           </ScrollArea>
         )}
+         <div className="p-4 border-t mt-4 text-center">
+            <p className="text-xs text-muted-foreground">
+              Further enhancements like ticket assignment and direct responses are planned for a future update.
+            </p>
+        </div>
       </CardContent>
     </Card>
   );
 }
-

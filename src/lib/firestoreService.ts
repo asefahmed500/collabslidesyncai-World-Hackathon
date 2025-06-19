@@ -1117,7 +1117,7 @@ export async function getFeedbackSubmissions(limitCount = 50): Promise<FeedbackS
 
 export async function updateFeedbackStatus(feedbackId: string, status: FeedbackSubmission['status']): Promise<void> {
     const docRef = doc(db, 'feedbackSubmissions', feedbackId);
-    await updateDoc(docRef, { status: status, updatedAt: serverTimestamp() }); // Assuming you might want an updatedAt for feedback
+    await updateDoc(docRef, { status: status, updatedAt: serverTimestamp() as Timestamp });
 }
 
 
