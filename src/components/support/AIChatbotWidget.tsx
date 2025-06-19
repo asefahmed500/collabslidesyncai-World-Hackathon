@@ -1,14 +1,17 @@
 
 "use client";
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger, SheetClose } from '@/components/ui/sheet';
-import { Bot, User, Send, MessageSquareDashed } from 'lucide-react';
+import { Bot, User, Send, MessageSquareDashed, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { chatbotAssistant, ChatbotAssistantInput, ChatbotAssistantOutput } from '@/ai/flows/chatbot-assistant-flow';
+import { useToast } from '@/hooks/use-toast';
+
 
 interface AIChatbotWidgetProps {
   isOpen: boolean;
@@ -24,10 +27,23 @@ interface ChatMessage {
 
 export function AIChatbotWidget({ isOpen, onOpenChange }: AIChatbotWidgetProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([
-    { id: '1', sender: 'bot', text: "Hello! I'm the CollabSlideSyncAI Assistant. How can I help you today? (Note: I'm currently under development for full interaction.)", timestamp: new Date() }
+    { id: 'initial-bot-message', sender: 'bot', text: "Hello! I'm the CollabSlideSyncAI Assistant. How can I help you with our presentation tool today?", timestamp: new Date() }
   ]);
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const { toast } = useToast();
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+
+   useEffect(() => {
+    if (scrollAreaRef.current) {
+      // Access the viewport element directly
+      const viewport = scrollAreaRef.current.querySelector('[data-radix-scroll-area-viewport]');
+      if (viewport) {
+        viewport.scrollTop = viewport.scrollHeight;
+      }
+    }
+  }, [messages]);
+
 
   const handleSendMessage = async () => {
     if (!inputText.trim()) return;
@@ -39,32 +55,50 @@ export function AIChatbotWidget({ isOpen, onOpenChange }: AIChatbotWidgetProps) 
       timestamp: new Date(),
     };
     setMessages(prev => [...prev, userMessage]);
+    const currentMessageForAI = inputText;
     setInputText('');
     setIsTyping(true);
 
-    // Simulate bot response (placeholder)
-    setTimeout(() => {
+    try {
+      const aiInput: ChatbotAssistantInput = { userMessage: currentMessageForAI };
+      const aiResponse: ChatbotAssistantOutput = await chatbotAssistant(aiInput);
+      
       const botResponse: ChatMessage = {
         id: (Date.now() + 1).toString(),
         sender: 'bot',
-        text: "Thanks for your message! I'm still learning. For complex issues, please check our FAQ or contact support. What else can I help you with?",
+        text: aiResponse.botResponse,
         timestamp: new Date(),
       };
       setMessages(prev => [...prev, botResponse]);
+
+    } catch (error: any) {
+      console.error("Error calling chatbot flow:", error);
+      toast({
+        title: "AI Error",
+        description: error.message || "Could not get a response from the AI assistant. Please try again.",
+        variant: "destructive",
+      });
+       const errorBotResponse: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        sender: 'bot',
+        text: "I'm sorry, I'm having trouble connecting right now. Please try again in a moment.",
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, errorBotResponse]);
+    } finally {
       setIsTyping(false);
-    }, 1500);
+    }
   };
 
   return (
     <Sheet open={isOpen} onOpenChange={onOpenChange}>
-      {/* Trigger is handled by the parent page */}
       <SheetContent side="right" className="w-full sm:max-w-md p-0 flex flex-col">
         <SheetHeader className="p-4 border-b">
           <SheetTitle className="flex items-center text-lg">
             <Bot className="mr-2 h-6 w-6 text-primary" /> AI Support Assistant
           </SheetTitle>
         </SheetHeader>
-        <ScrollArea className="flex-grow p-4 space-y-4">
+        <ScrollArea className="flex-grow p-4 space-y-4" ref={scrollAreaRef as any}>
           {messages.map((msg) => (
             <div
               key={msg.id}

@@ -10,3 +10,4 @@ import '@/ai/flows/tone-adjustment-flow.ts';
 import '@/ai/flows/speaker-notes-flow.ts';
 import '@/ai/flows/generate-icon-flow.ts';
 import '@/ai/flows/generate-chart-flow.ts';
+import '@/ai/flows/chatbot-assistant-flow.ts'; // Added new chatbot flow
