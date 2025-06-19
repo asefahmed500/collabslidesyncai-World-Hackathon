@@ -2,7 +2,7 @@
 "use client";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { BarChart, Users, Shield, CreditCard, Activity, FileText, ShieldAlertIcon, MessageSquareWarning } from "lucide-react";
+import { BarChart, Users, Shield, CreditCard, Activity, FileText, ShieldAlertIcon, MessageSquareWarning, Zap } from "lucide-react";
 import Link from "next/link";
 
 export default function AdminDashboardPage() {
@@ -122,13 +122,13 @@ export default function AdminDashboardPage() {
         <Link href="/admin/stats" passHref>
           <Card className="hover:shadow-lg transition-shadow cursor-pointer">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Usage Statistics</CardTitle>
-              <BarChart className="h-5 w-5 text-muted-foreground" />
+              <CardTitle className="text-sm font-medium">AI Analytics</CardTitle>
+              <Zap className="h-5 w-5 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">Platform Analytics</div>
+              <div className="text-2xl font-bold">AI Usage & Control</div>
               <p className="text-xs text-muted-foreground">
-                (Monitor platform usage - Placeholder)
+                (Monitor AI usage - Placeholder)
               </p>
             </CardContent>
           </Card>

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { LayoutDashboard, Users, Shield, CreditCard, BarChart, Activity, FileText, ShieldAlertIcon, MessageSquareWarning } from "lucide-react";
+import { LayoutDashboard, Users, Shield, CreditCard, BarChart, Activity, FileText, ShieldAlertIcon, MessageSquareWarning, Zap } from "lucide-react";
 
 const navItems = [
   { href: "/admin", label: "Overview", icon: LayoutDashboard },
@@ -16,7 +16,7 @@ const navItems = [
   { href: "/admin/feedback", label: "User Feedback", icon: MessageSquareWarning },
   { href: "/admin/billing", label: "Billing", icon: CreditCard },
   { href: "/admin/security", label: "Security Logs", icon: Shield },
-  { href: "/admin/stats", label: "Usage Statistics", icon: BarChart },
+  { href: "/admin/stats", label: "AI Analytics", icon: Zap }, // Changed Icon to Zap and Label
   { href: "/admin/activities", label: "Global Activity", icon: Activity },
 ];
 
