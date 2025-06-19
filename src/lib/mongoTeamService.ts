@@ -187,19 +187,27 @@ export async function addMemberToTeamInMongoDB(teamId: string, userToInvite: App
     if (userToInvite.email && inviter) {
         // For now, the email link will be generic; a token-based link is for more advanced email verification
         const teamLink = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:9002'}/dashboard`;
-        const emailContent = createTeamInviteEmail(
+        let emailContent = createTeamInviteEmail( // Use let to modify subject
             userToInvite.name || userToInvite.email,
             inviter.name || 'Team Admin',
             team.name,
             teamLink,
             role
         );
-        emailContent.htmlBody = emailContent.htmlBody.replace("added you to the team", "invited you to join the team");
-        emailContent.htmlBody += `<p>You can accept or decline this invitation from your dashboard notifications.</p>`;
+        // Modify the body and subject directly for clarity of invitation
+        emailContent.subject = `You're invited to join Team "${team.name}" on CollabSlideSyncAI`;
+        emailContent.htmlBody = `
+          <p>Hi ${userToInvite.name || userToInvite.email},</p>
+          <p>${inviter.name || 'A team admin'} has invited you to join the team "<strong>${team.name}</strong>" as a <strong>${role}</strong> on CollabSlideSyncAI.</p>
+          <p>You can accept or decline this invitation from your CollabSlideSyncAI dashboard notifications.</p>
+          <p>If you don't have an account yet with this email, please sign up first.</p>
+          <p>Access your dashboard: <a href="${teamLink}">${teamLink}</a></p>
+          <p>The CollabSlideSyncAI Team</p>
+        `;
         try {
             await sendEmail({
                 to: userToInvite.email,
-                subject: `You're invited to join Team "${team.name}"`,
+                subject: emailContent.subject,
                 htmlBody: emailContent.htmlBody,
             });
         } catch (emailError) {
@@ -254,10 +262,10 @@ export async function processTeamInvitation(
     if (!invitedUser) throw new Error('Invited user not found.');
 
     if (accepted) {
-      if (invitedUser.teamId && invitedUser.teamId !== team.id) {
+      if (invitedUser.teamId && invitedUser.teamId.toString() !== team.id.toString()) { // Check if teamId is ObjectId string
         throw new Error(`User ${invitedUser.name || invitedUser.email} is already part of another team.`);
       }
-      if (invitedUser.teamId === team.id) { // Should not happen if pending invite exists, but good check
+      if (invitedUser.teamId && invitedUser.teamId.toString() === team.id.toString()) { // Should not happen if pending invite exists, but good check
          console.warn(`User ${invitedUserId} is already a member of team ${teamId}. Accepting again.`);
       }
 
@@ -272,7 +280,7 @@ export async function processTeamInvitation(
       };
       team.members.set(invitedUserId, newMember as TeamMemberDocument);
       
-      invitedUser.teamId = team.id;
+      invitedUser.teamId = team.id.toString(); // Ensure it's string if team.id is ObjectId
       invitedUser.role = roleToAssign;
       await invitedUser.save({ session });
 
@@ -523,3 +531,4 @@ export async function getPendingTeamInvitationsForUserById(userId: string): Prom
         return [];
     }
 }
+
