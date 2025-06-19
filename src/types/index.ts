@@ -298,12 +298,13 @@ export interface Asset {
   lastUpdatedAt?: FirestoreTimestamp;
 }
 
-export type NotificationType =
+export type NotificationEnumType =
   | 'team_invite' // Old: now might mean direct add or processed invite
   | 'team_invitation' // New: for pending invitation requiring accept/decline
   | 'comment_new' // Generic for new comments
   | 'comment_mention' // For @mentions, future enhancement
   | 'presentation_shared'
+  | 'role_changed' // New type for when a user's role on a presentation is changed
   | 'ai_suggestion_ready' // Placeholder
   | 'moderation_update' // For moderation status changes
   | 'generic_info'; // For general app info/updates
@@ -311,7 +312,7 @@ export type NotificationType =
 export interface Notification {
   id: string;
   userId: string; // The ID of the user who should receive this notification
-  type: NotificationType;
+  type: NotificationEnumType;
   title: string; // A concise title for the notification
   message: string; // Detailed message
   link?: string; // Optional URL to navigate to when clicked

@@ -9,7 +9,7 @@ import {
   logPresentationActivity,
   createNotification, // Import for notifications
 } from '@/lib/firestoreService';
-import type { Presentation, PresentationAccessRole, User as AppUser, NotificationType } from '@/types';
+import type { Presentation, PresentationAccessRole, User as AppUser, NotificationType, NotificationEnumType } from '@/types'; // Added NotificationEnumType
 import { revalidatePath } from 'next/cache';
 import { deleteField } from 'firebase/firestore';
 import { sendEmail, createCollaborationInviteEmail, createRoleChangeEmail, createCollaboratorRemovedEmail } from '@/lib/emailService'; // Import email service
@@ -222,8 +222,8 @@ export async function updatePresentationShareSettingsAction(
                 await sendEmail({ to: collaboratorUser.email, subject: emailContent.subject, htmlBody: emailContent.htmlBody });
                  await createNotification(
                     collaboratorUser.id,
-                    'generic_info',
-                    `Role Changed for "${presentation.title}"`,
+                    'role_changed', // Use new specific type
+                    `Your Role Changed for "${presentation.title}"`,
                     `${currentUserName} changed your role to ${newRoleOrAction as PresentationAccessRole} for "${presentation.title}".`,
                     `/editor/${presentationId}`,
                     currentUserId, currentUserName, currentUserProfilePic

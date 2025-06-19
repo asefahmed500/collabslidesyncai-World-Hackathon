@@ -3,13 +3,13 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import type { Notification as NotificationType, NotificationType as NotificationEnumType } from '@/types';
+import type { Notification as NotificationType, NotificationEnumType } from '@/types';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { markNotificationAsRead } from '@/lib/firestoreService';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNowStrict } from 'date-fns';
-import { UserCircle, MessageSquare, Users, Share2, Lightbulb, Info, Bell, Edit3, Check, X, Loader2 } from 'lucide-react'; // Added more icons
+import { UserCircle, MessageSquare, Users, Share2, Lightbulb, Info, Bell, Edit3, Check, X, Loader2, UserCog } from 'lucide-react'; // Added UserCog
 import { useToast } from '@/hooks/use-toast';
 import React, { useState } from 'react';
 
@@ -23,12 +23,13 @@ const getNotificationIcon = (type: NotificationEnumType, customIcon?: string) =>
     // Future: Allow custom SVG paths or image URLs
   }
   switch (type) {
-    case 'team_invite': // This might now be legacy if 'team_invitation' is primary
+    case 'team_invite': 
     case 'team_invitation':
       return <Users className="h-5 w-5 text-blue-500" />;
     case 'comment_new': return <MessageSquare className="h-5 w-5 text-green-500" />;
     case 'comment_mention': return <MessageSquare className="h-5 w-5 text-green-600" />;
     case 'presentation_shared': return <Share2 className="h-5 w-5 text-purple-500" />;
+    case 'role_changed': return <UserCog className="h-5 w-5 text-orange-500" />; // Icon for role changed
     case 'ai_suggestion_ready': return <Lightbulb className="h-5 w-5 text-yellow-500" />;
     case 'generic_info': return <Info className="h-5 w-5 text-gray-500" />;
     default: return <Bell className="h-5 w-5 text-gray-400" />;
