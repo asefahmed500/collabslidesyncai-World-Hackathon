@@ -6,13 +6,14 @@ import { useForm } from "react-hook-form";
 import * as z from "zod";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useFormStatus } from "react-dom";
+import { useFormStatus, useFormState } from "react-dom";
 import React, { useEffect } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
   Form,
   FormControl,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -21,7 +22,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Zap, UserPlus, Mail, KeyRound, User as UserIcon, Briefcase } from "lucide-react";
+import { Zap, UserPlus, Mail, KeyRound, User as UserIcon, Briefcase, Loader2 } from "lucide-react";
 import { signUpWithEmail, AuthResponse, handleSocialSignIn } from "@/app/(auth)/actions";
 import { auth } from '@/lib/firebaseConfig';
 import { GoogleAuthProvider, GithubAuthProvider, signInWithPopup, type User as FirebaseUserType } from 'firebase/auth';
@@ -50,7 +51,7 @@ export function SignupForm() {
   const router = useRouter();
   const { toast } = useToast();
 
-  const [formState, formAction] = React.useActionState<AuthResponse, FormData>(signUpWithEmail, {
+  const [formState, formAction] = useFormState<AuthResponse, FormData>(signUpWithEmail, {
     success: false,
     message: "",
   });
