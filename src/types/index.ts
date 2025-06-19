@@ -104,6 +104,7 @@ export interface SlideElementStyle {
   shapeType?: 'rectangle' | 'circle' | 'triangle';
   borderWidth?: number;
   borderRadius?: number;
+  'data-ai-hint'?: string; // For image AI hint
 }
 
 export interface SlideElement {

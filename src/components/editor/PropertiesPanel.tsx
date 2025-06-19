@@ -58,7 +58,7 @@ export function PropertiesPanel({
     onUpdateElement({ id: selectedElement.id, [prop]: value });
   };
 
-  const handleStyleChange = (styleProp: keyof SlideElementStyle, value: any) => {
+  const handleStyleChange = (styleProp: keyof SlideElementStyle | 'data-ai-hint', value: any) => {
     if (!selectedElement || effectiveDisabled) return;
     const updatedStyle = { ...(localStyle || selectedElement.style || {}), [styleProp]: value };
     setLocalStyle(updatedStyle);
@@ -131,7 +131,8 @@ export function PropertiesPanel({
 
     const currentProps = selectedElement;
     const currentStyle = localStyle || selectedElement.style || {};
-    const currentElementContent = localContent || selectedElement.content;
+    const currentElementContent = localContent === undefined || localContent === null ? selectedElement.content : localContent;
+
 
     return (
       <div className="space-y-4 p-4">
@@ -192,7 +193,7 @@ export function PropertiesPanel({
                         <Input
                             id="imageAiHint"
                             value={(currentStyle as any)['data-ai-hint'] || ''}
-                            onChange={(e) => handleStyleChange('data-ai-hint' as any, e.target.value)}
+                            onChange={(e) => handleStyleChange('data-ai-hint', e.target.value)}
                             className="mt-1"
                             placeholder="e.g. office team"
                             disabled={effectiveDisabled}
@@ -338,15 +339,26 @@ export function PropertiesPanel({
                         </Button>
                     </div>
                   </div>
+                  <div>
+                    <Label htmlFor="textBackgroundColor">Background Color</Label>
+                    <Input
+                        id="textBackgroundColor"
+                        type="color"
+                        value={currentStyle.backgroundColor || '#00000000'}
+                        onChange={(e) => handleStyleChange('backgroundColor', e.target.value)}
+                        className="mt-1 h-10 p-1"
+                        disabled={effectiveDisabled}
+                    />
+                  </div>
                 </>
               )}
-              {(selectedElement.type === 'shape' || selectedElement.type === 'text') && (
-                <div>
-                  <Label htmlFor="backgroundColor">Fill / Background Color</Label>
+              {selectedElement.type === 'shape' && (
+                 <div>
+                  <Label htmlFor="shapeBackgroundColor">Fill Color</Label>
                   <Input
-                    id="backgroundColor"
+                    id="shapeBackgroundColor"
                     type="color"
-                    value={currentStyle.backgroundColor || (selectedElement.type === 'shape' ? '#CCCCCC' : '#00000000') }
+                    value={currentStyle.backgroundColor || '#CCCCCC'}
                     onChange={(e) => handleStyleChange('backgroundColor', e.target.value)}
                     className="mt-1 h-10 p-1"
                     disabled={effectiveDisabled}

@@ -32,8 +32,8 @@ const editorTools = [
 ];
 
 const actionTools = [
-  { id: "undo", label: "Undo (Soon)", icon: Undo },
-  { id: "redo", label: "Redo (Soon)", icon: Redo },
+  { id: "undo", label: "Undo (Coming Soon)", icon: Undo },
+  { id: "redo", label: "Redo (Coming Soon)", icon: Redo },
 ];
 
 const aiToolTriggers = [ 
