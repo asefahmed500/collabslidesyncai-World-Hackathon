@@ -305,5 +305,24 @@ export interface Notification {
   actorProfilePictureUrl?: string; // Profile picture of the actor (optional)
 }
 
+export type FeedbackType = "bug" | "feature_request" | "question" | "other";
+
+export interface FeedbackSubmission {
+  id?: string; // Firestore will generate this
+  userId?: string | null; // Firebase UID of the submitter, if logged in
+  userEmail?: string | null; // Email provided in form or from logged-in user
+  userName?: string | null; // Name of logged-in user
+  type: FeedbackType;
+  subject: string;
+  description: string;
+  createdAt: FirestoreTimestamp;
+  status?: 'new' | 'seen' | 'in_progress' | 'resolved' | 'wont_fix'; // For admin tracking
+  userAgent?: string; // Optional: from client
+  pageUrl?: string; // Optional: URL where feedback was submitted from
+}
+
+
 // For AI Chart Suggestions (from design-assistant.ts flow, but used in editor for better integration)
 export type { SuggestedChartConfig };
+
+    

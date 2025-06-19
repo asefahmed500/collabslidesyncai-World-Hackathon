@@ -1,9 +1,10 @@
 
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
+import { useFormState, useFormStatus } from "react-dom";
 import * as z from "zod";
 
 import { Button } from "@/components/ui/button";
@@ -23,12 +24,14 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from "@/components/ui/form"; // Added FormDescription
+} from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Send, Lightbulb } from 'lucide-react';
+import { submitFeedbackAction } from '@/app/dashboard/help/actions'; // Import the server action
+import type { FeedbackType } from '@/types'; // Import FeedbackType
 
 interface FeedbackDialogProps {
   isOpen: boolean;
@@ -36,7 +39,7 @@ interface FeedbackDialogProps {
 }
 
 const feedbackFormSchema = z.object({
-  type: z.enum(["bug", "feature_request", "question", "other"], {
+  type: z.custom<FeedbackType>((val) => ["bug", "feature_request", "question", "other"].includes(val as string), {
     required_error: "Please select a feedback type.",
   }),
   subject: z.string().min(5, { message: "Subject must be at least 5 characters." }).max(100),
@@ -46,9 +49,23 @@ const feedbackFormSchema = z.object({
 
 type FeedbackFormValues = z.infer<typeof feedbackFormSchema>;
 
+function SubmitButton() {
+  const { pending } = useFormStatus();
+  return (
+    <Button type="submit" disabled={pending}>
+      {pending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+      Submit Feedback
+    </Button>
+  );
+}
+
 export function FeedbackDialog({ isOpen, onOpenChange }: FeedbackDialogProps) {
   const { toast } = useToast();
-  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const [formState, formAction] = useFormState(submitFeedbackAction, {
+    success: false,
+    message: "",
+  });
 
   const form = useForm<FeedbackFormValues>({
     resolver: zodResolver(feedbackFormSchema),
@@ -60,21 +77,25 @@ export function FeedbackDialog({ isOpen, onOpenChange }: FeedbackDialogProps) {
     },
   });
 
-  const onSubmit = async (data: FeedbackFormValues) => {
-    setIsSubmitting(true);
-    console.log("Feedback Submitted:", data); // For now, just log to console
-    
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
+  useEffect(() => {
+    if (formState?.message) {
+      if (formState.success) {
+        toast({
+          title: "Feedback Received!",
+          description: formState.message,
+        });
+        form.reset();
+        onOpenChange(false);
+      } else {
+        toast({
+          title: "Submission Error",
+          description: formState.message,
+          variant: "destructive",
+        });
+      }
+    }
+  }, [formState, toast, form, onOpenChange]);
 
-    toast({
-      title: "Feedback Received!",
-      description: "Thank you for your feedback. We'll review it shortly.",
-    });
-    setIsSubmitting(false);
-    form.reset();
-    onOpenChange(false);
-  };
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -86,14 +107,14 @@ export function FeedbackDialog({ isOpen, onOpenChange }: FeedbackDialogProps) {
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 py-2">
+          <form action={formAction} className="space-y-4 py-2">
             <FormField
               control={form.control}
               name="type"
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Feedback Type</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <Select onValueChange={field.onChange} defaultValue={field.value as string | undefined}>
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="Select type..." />
@@ -155,13 +176,10 @@ export function FeedbackDialog({ isOpen, onOpenChange }: FeedbackDialogProps) {
               )}
             />
             <DialogFooter className="pt-4">
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={form.formState.isSubmitting}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={isSubmitting}>
-                {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-                Submit Feedback
-              </Button>
+              <SubmitButton />
             </DialogFooter>
           </form>
         </Form>
@@ -169,3 +187,5 @@ export function FeedbackDialog({ isOpen, onOpenChange }: FeedbackDialogProps) {
     </Dialog>
   );
 }
+
+    
