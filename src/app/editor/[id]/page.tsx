@@ -339,12 +339,15 @@ export default function EditorPage() {
     }
 
     setSelectedElementId(elementId);
-    setSelectedTool(null);
-    setIsRightPanelOpen('properties');
+    setSelectedTool(null); // Deselect any active drawing tool when an element is selected
+    setIsRightPanelOpen('properties'); // Default to properties panel when an element is selected
 
     if (elementId) {
-        const success = await apiAcquireLock(presentationId, currentSlideId, elementId, currentUser.id);
-        if (!success) {
+        try {
+            await apiAcquireLock(presentationId, currentSlideId, elementId, currentUser.id);
+            // Lock acquired successfully, no toast needed here unless for confirmation (which might be too noisy)
+        } catch (error: any) {
+            // Error already logged in firestoreService, toast here for user feedback
             const currentLockerId = presentation.slides.find(s => s.id === currentSlideId)
                                       ?.elements.find(el => el.id === elementId)?.lockedBy;
             const lockerName = currentLockerId ? presentation.activeCollaborators?.[currentLockerId]?.name || "another user" : "another user";
@@ -352,6 +355,7 @@ export default function EditorPage() {
         }
     }
   }, [currentUser, currentSlideId, presentation, selectedElementId, presentationId, toast]);
+
 
   const handleAddSlide = async () => {
     if (!presentation || !currentUser) return;
@@ -933,5 +937,3 @@ export default function EditorPage() {
     </div>
   );
 }
-
-    
