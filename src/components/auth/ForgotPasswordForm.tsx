@@ -6,8 +6,8 @@ import { useForm } from "react-hook-form";
 import * as z from "zod";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useFormStatus, useFormState } from "react-dom"; // Changed from React.useActionState
-import React, { useEffect } from "react";
+import { useFormStatus } from "react-dom"; 
+import React, { useEffect, useActionState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -22,7 +22,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { Zap, Mail, Send } from "lucide-react";
-import { sendPasswordReset, AuthResponse } from "@/app/(auth)/actions"; // Updated action name
+import { sendPasswordReset, AuthResponse } from "@/app/(auth)/actions"; 
 
 const formSchema = z.object({
   email: z.string().email({ message: "Please enter a valid email address." }),
@@ -41,7 +41,7 @@ export function ForgotPasswordForm() {
   const router = useRouter();
   const { toast } = useToast();
 
-  const [formState, formAction] = useFormState<AuthResponse, FormData>(sendPasswordReset, { // Updated action name
+  const [formState, formAction] = useActionState<AuthResponse, FormData>(sendPasswordReset, { 
     success: false,
     message: "",
   });
@@ -60,7 +60,7 @@ export function ForgotPasswordForm() {
           title: "Password Reset Email Sent",
           description: formState.message,
         });
-        form.reset(); // Clear form on success
+        form.reset(); 
       } else {
         toast({
           title: "Error",
@@ -82,11 +82,6 @@ export function ForgotPasswordForm() {
       </CardHeader>
       <CardContent>
         <Form {...form}>
-          {/* 
-            The form.handleSubmit wrapper is usually for client-side validation before calling formAction.
-            Since useFormState handles server-side responses, direct formAction is fine.
-            However, to ensure client-side validation fires, we can keep it.
-          */}
           <form action={formAction} onSubmit={form.handleSubmit(() => form.control._formAction(form.getValues() as any))} className="space-y-6">
             <FormField
               control={form.control}

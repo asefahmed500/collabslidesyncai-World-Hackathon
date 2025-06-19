@@ -1,8 +1,8 @@
 
 "use client";
 
-import { useState, useEffect } from 'react';
-import { useFormState, useFormStatus } from 'react-dom';
+import { useState, useEffect, useActionState } from 'react';
+import { useFormStatus } from 'react-dom';
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
@@ -56,7 +56,7 @@ export function ShareDialog({ presentation, isOpen, onOpenChange, onPresentation
   const router = useRouter();
   const [isExporting, setIsExporting] = useState(false);
   
-  const [initialState, formAction] = useFormState(updatePresentationShareSettingsAction, {
+  const [initialState, formAction] = useActionState(updatePresentationShareSettingsAction, {
     success: false,
     message: "",
     updatedPresentation: null,
@@ -125,11 +125,10 @@ export function ShareDialog({ presentation, isOpen, onOpenChange, onPresentation
     const printWindow = window.open(`/present/${presentation.id}?print=true`, '_blank');
     if (printWindow) {
         printWindow.onload = () => {
-            setTimeout(() => { // Ensure content is loaded
+            setTimeout(() => { 
                 printWindow.print();
                 setIsExporting(false);
-                // printWindow.close(); // Optional: close the window after print dialog
-            }, 1000); // Adjust delay if needed
+            }, 1000); 
         };
     } else {
         toast({ title: "Popup Blocked?", description: "Please allow popups for this site to export as PDF.", variant: "destructive"});
@@ -145,8 +144,8 @@ export function ShareDialog({ presentation, isOpen, onOpenChange, onPresentation
     try {
         const pptx = new PptxGenJS();
         pptx.layout = "LAYOUT_16X9";
-        pptx.author = currentUser?.name || "CollabSlideSyncAI User";
-        pptx.company = "CollabSlideSyncAI";
+        pptx.author = currentUser?.name || "CollabDeck User";
+        pptx.company = "CollabDeck";
         pptx.title = presentation.title;
 
         for (const slideData of presentation.slides) {
@@ -154,8 +153,8 @@ export function ShareDialog({ presentation, isOpen, onOpenChange, onPresentation
             slide.background = { color: slideData.backgroundColor?.replace('#', '') || "FFFFFF" };
 
             for (const element of slideData.elements) {
-                const elX = (element.position.x / 960) * 100; // Base width 960 for editor
-                const elY = (element.position.y / 540) * 100; // Base height 540 for editor
+                const elX = (element.position.x / 960) * 100; 
+                const elY = (element.position.y / 540) * 100; 
                 const elW = (element.size.width / 960) * 100;
                 const elH = (element.size.height / 540) * 100;
 
@@ -172,10 +171,8 @@ export function ShareDialog({ presentation, isOpen, onOpenChange, onPresentation
                     options.bold = element.style.fontWeight === 'bold';
                     options.italic = element.style.fontStyle === 'italic';
                     options.underline = element.style.textDecoration === 'underline';
-                    // Opacity is not directly supported per element in pptxgenjs easily
                     slide.addText(element.content, options);
                 } else if (element.type === 'image' && typeof element.content === 'string') {
-                    // PptxGenJS can handle base64 data URIs and http(s) URLs for images
                     slide.addImage({ ...options, path: element.content });
                 } else if (element.type === 'shape') {
                     const shapeOptions: any = {
@@ -208,14 +205,9 @@ export function ShareDialog({ presentation, isOpen, onOpenChange, onPresentation
 
   const handleExportImages = () => {
     if (!presentation) return;
-    setIsExporting(true); // Indicate that an export process is starting
-    // The actual export will happen on the presentation page
+    setIsExporting(true); 
     router.push(`/present/${presentation.id}?exportAllImages=true`);
-    // Close the dialog after initiating navigation. User feedback will be on the presentation page.
     onOpenChange(false);
-    // setIsExporting will be reset when component unmounts or if user navigates back
-    // For now, we just set it and let navigation handle the rest.
-    // If ShareDialog remains mounted, it might need a way to reset isExporting, but usually it unmounts.
   };
 
 

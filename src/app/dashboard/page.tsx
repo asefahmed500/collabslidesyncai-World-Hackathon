@@ -1,10 +1,10 @@
 
 "use client";
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useActionState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useFormState, useFormStatus } from 'react-dom';
+import { useFormStatus } from 'react-dom';
 import { SiteHeader } from '@/components/shared/SiteHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -66,7 +66,7 @@ export default function DashboardPage() {
   const { toast } = useToast();
 
   const [presentations, setPresentations] = useState<Presentation[]>([]);
-  const [isLoadingData, setIsLoadingData] = useState(true); // Combined loading state for presentations and invites
+  const [isLoadingData, setIsLoadingData] = useState(true); 
   const [searchTerm, setSearchTerm] = useState('');
   const [filter, setFilter] = useState('all');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
@@ -77,10 +77,9 @@ export default function DashboardPage() {
   const [totalSlidesCreatedCount, setTotalSlidesCreatedCount] = useState(0);
   
   const [pendingInvitations, setPendingInvitations] = useState<TeamType[]>([]);
-  const [isRespondingToInvite, setIsRespondingToInvite] = useState<string | null>(null); // Stores teamId being responded to
+  const [isRespondingToInvite, setIsRespondingToInvite] = useState<string | null>(null); 
 
-  // For "Create Team" form
-  const [createTeamFormState, createTeamFormAction] = useFormState(createTeamForExistingUser, { success: false, message: "" });
+  const [createTeamFormState, createTeamFormAction] = useActionState(createTeamForExistingUser, { success: false, message: "" });
   const createTeamForm = useForm<CreateTeamFormValues>({
     resolver: zodResolver(createTeamFormSchema),
     defaultValues: { teamName: "" },
@@ -98,10 +97,9 @@ export default function DashboardPage() {
           setPresentationsCreatedCount(userCreatedPresentations.length);
           setTotalSlidesCreatedCount(userCreatedPresentations.reduce((sum, p) => sum + (p.slides?.length || 0), 0));
         } else {
-          // User doesn't have a teamId, fetch pending invitations
           const invites = await getPendingTeamInvitationsForUserById(currentUser.id);
           setPendingInvitations(invites);
-          setPresentations([]); // No presentations if no team
+          setPresentations([]); 
           setPresentationsCreatedCount(0);
           setTotalSlidesCreatedCount(0);
         }
@@ -112,7 +110,7 @@ export default function DashboardPage() {
         setIsLoadingData(false);
       }
     } else {
-      setIsLoadingData(false); // Not logged in, no data to fetch
+      setIsLoadingData(false); 
     }
   }, [currentUser, toast]);
 
@@ -129,11 +127,8 @@ export default function DashboardPage() {
       if (createTeamFormState.success) {
         toast({ title: "Team Created!", description: createTeamFormState.message });
         createTeamForm.reset();
-        // Critical: After team creation, currentUser object needs to be updated.
-        // The AuthProvider should ideally refetch/update currentUser.
-        // Forcing a hard refresh is a simple way if AuthProvider doesn't auto-update on DB change.
-        router.refresh(); // This will cause AuthProvider to re-evaluate
-        fetchData(); // Re-fetch data to reflect new team status
+        router.refresh(); 
+        fetchData(); 
       } else {
         toast({ title: "Error", description: createTeamFormState.message, variant: "destructive" });
       }
@@ -142,7 +137,6 @@ export default function DashboardPage() {
 
 
   const handleCreateNewPresentation = async () => {
-    // ... (existing logic for create presentation)
      if (!currentUser) {
       toast({ title: "Error", description: "You must be logged in to create a presentation.", variant: "destructive" });
       return;
@@ -159,7 +153,6 @@ export default function DashboardPage() {
   };
 
   const handleDeletePresentation = async () => {
-    // ... (existing logic)
     if (!presentationToDelete || !currentUser) return;
     try {
       await apiDeletePresentation(presentationToDelete.id, presentationToDelete.teamId || undefined, currentUser.id);
@@ -173,7 +166,6 @@ export default function DashboardPage() {
   };
 
   const handleDuplicatePresentation = async (presentationId: string) => {
-    // ... (existing logic)
      if (!currentUser) {
       toast({ title: "Error", description: "You must be logged in.", variant: "destructive" });
       return;
@@ -188,7 +180,6 @@ export default function DashboardPage() {
   };
   
   const handleToggleFavorite = async (presentationId: string) => {
-    // ... (existing logic)
     if (!currentUser) return;
     try {
       const isNowFavorite = await apiToggleFavoriteStatus(presentationId, currentUser.id);
@@ -196,7 +187,7 @@ export default function DashboardPage() {
         title: isNowFavorite ? "Favorited" : "Unfavorited",
         description: `Presentation ${isNowFavorite ? 'added to' : 'removed from'} favorites.`,
       });
-      fetchData(); // Refetch to update favorite status
+      fetchData(); 
     } catch (error: any) {
       toast({ title: "Error", description: error.message || "Could not update favorite status.", variant: "destructive" });
     }
@@ -213,9 +204,8 @@ export default function DashboardPage() {
         const result = await response.json();
         if (result.success) {
             toast({ title: `Invitation ${action === 'accept' ? 'Accepted' : 'Declined'}`, description: result.message });
-            // Important: To reflect team change, force refresh or update auth context.
-            router.refresh(); // This will trigger AuthProvider to refetch current user, including new teamId
-            fetchData(); // Refetch dashboard data
+            router.refresh(); 
+            fetchData(); 
         } else {
             toast({ title: 'Error', description: result.message, variant: 'destructive' });
         }
@@ -229,7 +219,6 @@ export default function DashboardPage() {
 
   const sortedAndFilteredPresentations = presentations
     .filter(p => {
-      // ... (existing filter logic)
       const matchesSearch = p.title.toLowerCase().includes(searchTerm.toLowerCase()) || (p.description && p.description.toLowerCase().includes(searchTerm.toLowerCase()));
       if (!currentUser) return false;
 
@@ -248,7 +237,6 @@ export default function DashboardPage() {
       return matchesSearch && matchesFilter;
     })
     .sort((a, b) => {
-        // ... (existing sort logic)
         const getVal = (obj: Presentation, keyPart: string) => {
             if (keyPart.startsWith('lastUpdatedAt') || keyPart.startsWith('createdAt')) {
                 const dateVal = obj[keyPart.split('_')[0] as 'lastUpdatedAt' | 'createdAt'];
@@ -267,14 +255,18 @@ export default function DashboardPage() {
 
   const recentPresentations = [...presentations]
     .sort((a,b) => {
-        // ... (existing recent sort logic)
          const dateA = a.lastUpdatedAt instanceof Date ? a.lastUpdatedAt.getTime() : (a.lastUpdatedAt as any)?.toDate ? (a.lastUpdatedAt as any).toDate().getTime() : 0;
         const dateB = b.lastUpdatedAt instanceof Date ? b.lastUpdatedAt.getTime() : (b.lastUpdatedAt as any)?.toDate ? (b.lastUpdatedAt as any).toDate().getTime() : 0;
         return dateB - dateA;
     })
     .slice(0,3);
 
-  const handleUpgradeClick = () => { /* ... */ };
+  const handleUpgradeClick = () => { 
+      toast({
+        title: "Stripe Checkout - Coming Soon!",
+        description: "You would be redirected to Stripe to complete your upgrade. This feature is currently under development."
+    });
+  };
 
 
   if (authLoading || (isLoadingData && currentUser)) {
@@ -289,7 +281,7 @@ export default function DashboardPage() {
   }
   
   if (!currentUser && !authLoading) {
-     return ( /* ... existing redirect/login prompt */ 
+     return (  
         <div className="flex flex-col min-h-screen">
           <SiteHeader />
           <main className="flex-grow container mx-auto p-4 sm:p-6 lg:p-8 flex items-center justify-center">
@@ -299,7 +291,6 @@ export default function DashboardPage() {
      );
   }
   
-  // New Onboarding / No Team State
   if (currentUser && !currentUser.teamId && !isLoadingData) {
     return (
       <div className="flex flex-col min-h-screen bg-background">
@@ -318,7 +309,7 @@ export default function DashboardPage() {
                   <ul className="space-y-3">
                     {pendingInvitations.map(inviteTeam => {
                         const inviteDetails = inviteTeam.pendingInvitations?.[currentUser.id];
-                        if (!inviteDetails) return null; // Should not happen if query is correct
+                        if (!inviteDetails) return null; 
                         return (
                             <li key={inviteTeam.id} className="p-4 border rounded-lg flex flex-col sm:flex-row justify-between items-center gap-3 bg-muted/50">
                                 <div>
@@ -399,7 +390,6 @@ export default function DashboardPage() {
     );
   }
 
-  // Regular Dashboard (User has a teamId)
   return (
     <div className="flex flex-col min-h-screen bg-background">
       <SiteHeader />

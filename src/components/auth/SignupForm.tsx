@@ -6,8 +6,8 @@ import { useForm } from "react-hook-form";
 import * as z from "zod";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useFormStatus, useFormState } from "react-dom";
-import React, { useEffect } from "react";
+import { useFormStatus } from "react-dom";
+import React, { useEffect, useActionState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -51,7 +51,7 @@ export function SignupForm() {
   const router = useRouter();
   const { toast } = useToast();
 
-  const [formState, formAction] = useFormState<AuthResponse, FormData>(signUpWithEmail, {
+  const [formState, formAction] = useActionState<AuthResponse, FormData>(signUpWithEmail, {
     success: false,
     message: "",
   });
@@ -116,7 +116,7 @@ export function SignupForm() {
       <CardHeader className="text-center">
         <Zap className="mx-auto h-12 w-12 text-primary mb-2" />
         <CardTitle className="font-headline text-3xl">Create an Account</CardTitle>
-        <CardDescription>Join CollabSlideSyncAI and start your collaborative journey.</CardDescription>
+        <CardDescription>Join CollabDeck and start your collaborative journey.</CardDescription>
       </CardHeader>
       <CardContent>
         <Form {...form}>

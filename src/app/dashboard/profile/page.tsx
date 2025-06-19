@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useActionState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { SiteHeader } from '@/components/shared/SiteHeader';
@@ -11,7 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useToast } from '@/hooks/use-toast';
 import { updateUserProfileServer, changePasswordServer, deleteUserAccountServer, AuthResponse } from '@/app/(auth)/actions';
-import { useFormState, useFormStatus } from 'react-dom';
+import { useFormStatus } from 'react-dom';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
@@ -27,7 +27,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Badge } from '@/components/ui/badge'; // Import Badge
+import { Badge } from '@/components/ui/badge'; 
 
 const profileFormSchema = z.object({
   name: z.string().min(2, { message: "Name must be at least 2 characters." }).optional(),
@@ -62,8 +62,7 @@ export default function ProfilePage() {
   const { toast } = useToast();
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
-  // Profile Form
-  const [profileFormState, profileFormAction] = useFormState(
+  const [profileFormState, profileFormAction] = useActionState(
     (prevState: any, formData: FormData) => updateUserProfileServer(currentUser!.id, formData),
     { success: false, message: "", user: null }
   );
@@ -72,8 +71,7 @@ export default function ProfilePage() {
     defaultValues: { name: currentUser?.name || "", profilePictureUrl: currentUser?.profilePictureUrl || "" },
   });
 
-  // Password Form
-  const [passwordFormState, passwordFormAction] = useFormState(
+  const [passwordFormState, passwordFormAction] = useActionState(
      (prevState: any, formData: FormData) => changePasswordServer(currentUser!.id, formData),
     { success: false, message: "" }
   );
@@ -139,7 +137,7 @@ export default function ProfilePage() {
   if (authLoading) {
     return <div className="flex min-h-screen flex-col items-center justify-center"><Loader2 className="h-12 w-12 animate-spin text-primary" /></div>;
   }
-  if (!currentUser || !firebaseUser) { // Ensure firebaseUser is also loaded
+  if (!currentUser || !firebaseUser) { 
      return <div className="flex min-h-screen flex-col items-center justify-center"><Loader2 className="h-12 w-12 animate-spin text-primary" /></div>;
   }
 
@@ -155,7 +153,6 @@ export default function ProfilePage() {
         </div>
 
         <div className="grid gap-8 md:grid-cols-3">
-          {/* Profile Information Card */}
           <Card className="shadow-lg md:col-span-2">
             <CardHeader>
               <CardTitle>Profile Information</CardTitle>
@@ -210,14 +207,12 @@ export default function ProfilePage() {
             </CardContent>
           </Card>
 
-          {/* Security & Subscription Card */}
           <Card className="shadow-lg md:col-span-1">
             <CardHeader>
               <CardTitle>Account & Subscription</CardTitle>
               <CardDescription>Manage security and billing.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* Change Password */}
               <div>
                 <h3 className="text-md font-semibold mb-2">Change Password</h3>
                  {firebaseUser?.providerData.some(p => p.providerId === 'password') ? (
@@ -254,7 +249,6 @@ export default function ProfilePage() {
                  )}
               </div>
               <hr/>
-                {/* Subscription Management */}
               <div>
                 <h3 className="text-md font-semibold mb-2 flex items-center">
                   <CreditCard className="mr-2 h-4 w-4 text-primary"/> Subscription
@@ -280,7 +274,6 @@ export default function ProfilePage() {
                 )}
               </div>
               <hr/>
-              {/* 2FA */}
               <div>
                 <h3 className="text-md font-semibold mb-2">Two-Factor Authentication (2FA)</h3>
                 <p className="text-sm text-muted-foreground mb-3">Enhance your account security by enabling 2FA.</p>
@@ -288,7 +281,6 @@ export default function ProfilePage() {
                  <p className="text-xs text-muted-foreground mt-1">Currently, this feature is under development.</p>
               </div>
                <hr/>
-              {/* Account Deletion */}
               <div>
                 <h3 className="text-md font-semibold mb-2 text-destructive flex items-center"><ShieldAlert className="mr-2 h-5 w-5"/>Danger Zone</h3>
                  <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>

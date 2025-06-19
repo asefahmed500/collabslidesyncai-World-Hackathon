@@ -1,10 +1,10 @@
 
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useActionState } from 'react';
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
-import { useFormState, useFormStatus } from "react-dom";
+import { useFormStatus } from "react-dom";
 import * as z from "zod";
 
 import { Button } from "@/components/ui/button";
@@ -30,8 +30,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Send, Lightbulb } from 'lucide-react';
-import { submitFeedbackAction } from '@/app/dashboard/help/actions'; // Import the server action
-import type { FeedbackType } from '@/types'; // Import FeedbackType
+import { submitFeedbackAction } from '@/app/dashboard/help/actions'; 
+import type { FeedbackType } from '@/types'; 
 
 interface FeedbackDialogProps {
   isOpen: boolean;
@@ -62,7 +62,7 @@ function SubmitButton() {
 export function FeedbackDialog({ isOpen, onOpenChange }: FeedbackDialogProps) {
   const { toast } = useToast();
 
-  const [formState, formAction] = useFormState(submitFeedbackAction, {
+  const [formState, formAction] = useActionState(submitFeedbackAction, {
     success: false,
     message: "",
   });
@@ -103,7 +103,7 @@ export function FeedbackDialog({ isOpen, onOpenChange }: FeedbackDialogProps) {
         <DialogHeader>
           <DialogTitle className="flex items-center"><Lightbulb className="mr-2 h-5 w-5 text-primary"/>Submit Feedback or Report a Bug</DialogTitle>
           <DialogDescription>
-            Your input helps us improve CollabSlideSyncAI. Please provide as much detail as possible.
+            Your input helps us improve CollabDeck. Please provide as much detail as possible.
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -187,5 +187,3 @@ export function FeedbackDialog({ isOpen, onOpenChange }: FeedbackDialogProps) {
     </Dialog>
   );
 }
-
-    

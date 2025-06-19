@@ -1,8 +1,8 @@
 
 "use client";
 
-import { useState, useEffect } from 'react';
-import { useFormState, useFormStatus } from 'react-dom';
+import { useState, useEffect, useActionState } from 'react';
+import { useFormStatus } from 'react-dom';
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
@@ -42,7 +42,7 @@ export function PasswordPromptDialog({ presentationId, isOpen, onOpenChange, onP
   const { toast } = useToast();
   const router = useRouter();
   
-  const [state, formAction] = useFormState(verifyPasswordAction, { // Renamed formState to state to avoid conflict
+  const [state, formAction] = useActionState(verifyPasswordAction, { 
     success: false,
     message: "",
   });
@@ -69,19 +69,16 @@ export function PasswordPromptDialog({ presentationId, isOpen, onOpenChange, onP
 
   const handleDialogClose = () => {
     onOpenChange(false);
-    // If the dialog is closed without verifying, and it was mandatory, redirect.
-    // This depends on how EditorPage manages the state, so this might be redundant
-    // if EditorPage already handles redirection if passwordVerifiedInSession is false.
-    if (!state?.success) { // Check internal state before potentially redirecting
+    if (!state?.success) { 
         toast({ title: "Access Required", description: "Password verification is needed to view this presentation.", variant: "info" });
-        router.push('/dashboard'); // Or a more appropriate page
+        router.push('/dashboard'); 
     }
   };
 
 
   return (
-    <Dialog open={isOpen} onOpenChange={handleDialogClose}> {/* Use custom close handler */}
-      <DialogContent className="sm:max-w-md" onEscapeKeyDown={handleDialogClose} onPointerDownOutside={(e)=> e.preventDefault()}> {/* Prevent closing by clicking outside */}
+    <Dialog open={isOpen} onOpenChange={handleDialogClose}> 
+      <DialogContent className="sm:max-w-md" onEscapeKeyDown={handleDialogClose} onPointerDownOutside={(e)=> e.preventDefault()}> 
         <DialogHeader>
           <DialogTitle className="flex items-center"><KeyRound className="mr-2 h-5 w-5 text-primary"/> Password Required</DialogTitle>
           <DialogDescription>
