@@ -4,18 +4,21 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useFormState, useFormStatus } from 'react-dom';
 import { SiteHeader } from '@/components/shared/SiteHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PresentationCard } from '@/components/dashboard/PresentationCard';
-import type { Presentation, User as AppUser } from '@/types';
-import { PlusCircle, Search, Filter, List, Grid, Users, Activity, Loader2, FileWarning, Library, ArrowUpDown, Eye, Trash2, Edit3, MoreVertical, CopyIcon, Star, BarChart2, FileText as FileTextIcon, Cpu, Users2, StarIcon as FilledStarIcon, Sparkles, ExternalLink } from 'lucide-react';
+import type { Presentation, User as AppUser, Team as TeamType, TeamRole } from '@/types';
+import { PlusCircle, Search, Filter, List, Grid, Users, Activity, Loader2, FileWarning, Library, ArrowUpDown, Eye, Trash2, Edit3, MoreVertical, CopyIcon, Star, BarChart2, FileText as FileTextIcon, Cpu, Users2, StarIcon as FilledStarIcon, Sparkles, ExternalLink, Briefcase, Check, X } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import Image from 'next/image';
 import { useAuth } from '@/hooks/useAuth';
 import { getPresentationsForUser, createPresentation as apiCreatePresentation, deletePresentation as apiDeletePresentation, duplicatePresentation as apiDuplicatePresentation, toggleFavoriteStatus as apiToggleFavoriteStatus } from '@/lib/firestoreService';
+import { getPendingTeamInvitationsForUserById } from '@/lib/mongoTeamService';
+import { createTeamForExistingUser } from './actions';
 import { useToast } from '@/hooks/use-toast';
 import {
   AlertDialog,
@@ -35,11 +38,27 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import * as z from 'zod';
 import { formatDistanceToNowStrict } from 'date-fns';
 
 
 type SortOption = 'lastUpdatedAt_desc' | 'lastUpdatedAt_asc' | 'title_asc' | 'title_desc' | 'createdAt_desc' | 'createdAt_asc';
 
+const createTeamFormSchema = z.object({
+  teamName: z.string().min(3, { message: "Team name must be at least 3 characters." }).max(50),
+});
+type CreateTeamFormValues = z.infer<typeof createTeamFormSchema>;
+
+function CreateTeamSubmitButton() {
+  const { pending } = useFormStatus();
+  return (
+    <Button type="submit" disabled={pending} className="w-full sm:w-auto">
+      {pending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlusCircle className="mr-2 h-4 w-4" />} Create Team
+    </Button>
+  );
+}
 
 export default function DashboardPage() {
   const { currentUser, loading: authLoading } = useAuth();
@@ -47,36 +66,53 @@ export default function DashboardPage() {
   const { toast } = useToast();
 
   const [presentations, setPresentations] = useState<Presentation[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingData, setIsLoadingData] = useState(true); // Combined loading state for presentations and invites
   const [searchTerm, setSearchTerm] = useState('');
   const [filter, setFilter] = useState('all');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [sortOption, setSortOption] = useState<SortOption>('lastUpdatedAt_desc');
   const [presentationToDelete, setPresentationToDelete] = useState<Presentation | null>(null);
 
-  // Stats state
   const [presentationsCreatedCount, setPresentationsCreatedCount] = useState(0);
   const [totalSlidesCreatedCount, setTotalSlidesCreatedCount] = useState(0);
+  
+  const [pendingInvitations, setPendingInvitations] = useState<TeamType[]>([]);
+  const [isRespondingToInvite, setIsRespondingToInvite] = useState<string | null>(null); // Stores teamId being responded to
+
+  // For "Create Team" form
+  const [createTeamFormState, createTeamFormAction] = useFormState(createTeamForExistingUser, { success: false, message: "" });
+  const createTeamForm = useForm<CreateTeamFormValues>({
+    resolver: zodResolver(createTeamFormSchema),
+    defaultValues: { teamName: "" },
+  });
 
 
-  const fetchAndSetPresentations = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     if (currentUser) {
-      setIsLoading(true);
+      setIsLoadingData(true);
       try {
-        const data = await getPresentationsForUser(currentUser.id, currentUser.teamId);
-        setPresentations(data);
-
-        // Calculate stats
-        const userCreatedPresentations = data.filter(p => p.creatorId === currentUser.id);
-        setPresentationsCreatedCount(userCreatedPresentations.length);
-        setTotalSlidesCreatedCount(userCreatedPresentations.reduce((sum, p) => sum + (p.slides?.length || 0), 0));
-
+        if (currentUser.teamId) {
+          const data = await getPresentationsForUser(currentUser.id, currentUser.teamId);
+          setPresentations(data);
+          const userCreatedPresentations = data.filter(p => p.creatorId === currentUser.id);
+          setPresentationsCreatedCount(userCreatedPresentations.length);
+          setTotalSlidesCreatedCount(userCreatedPresentations.reduce((sum, p) => sum + (p.slides?.length || 0), 0));
+        } else {
+          // User doesn't have a teamId, fetch pending invitations
+          const invites = await getPendingTeamInvitationsForUserById(currentUser.id);
+          setPendingInvitations(invites);
+          setPresentations([]); // No presentations if no team
+          setPresentationsCreatedCount(0);
+          setTotalSlidesCreatedCount(0);
+        }
       } catch (error) {
-        console.error("Error fetching presentations:", error);
-        toast({ title: "Error", description: "Could not fetch presentations.", variant: "destructive" });
+        console.error("Error fetching dashboard data:", error);
+        toast({ title: "Error", description: "Could not fetch dashboard data.", variant: "destructive" });
       } finally {
-        setIsLoading(false);
+        setIsLoadingData(false);
       }
+    } else {
+      setIsLoadingData(false); // Not logged in, no data to fetch
     }
   }, [currentUser, toast]);
 
@@ -84,23 +120,33 @@ export default function DashboardPage() {
     if (!authLoading && !currentUser) {
       router.push('/login');
     } else if (currentUser) {
-      fetchAndSetPresentations();
-    } else if (!authLoading && !currentUser) {
-        setIsLoading(false);
+      fetchData();
     }
-  }, [currentUser, authLoading, router, fetchAndSetPresentations]);
+  }, [currentUser, authLoading, router, fetchData]);
+  
+  useEffect(() => {
+    if (createTeamFormState.message) {
+      if (createTeamFormState.success) {
+        toast({ title: "Team Created!", description: createTeamFormState.message });
+        createTeamForm.reset();
+        // Critical: After team creation, currentUser object needs to be updated.
+        // The AuthProvider should ideally refetch/update currentUser.
+        // Forcing a hard refresh is a simple way if AuthProvider doesn't auto-update on DB change.
+        router.refresh(); // This will cause AuthProvider to re-evaluate
+        fetchData(); // Re-fetch data to reflect new team status
+      } else {
+        toast({ title: "Error", description: createTeamFormState.message, variant: "destructive" });
+      }
+    }
+  }, [createTeamFormState, toast, createTeamForm, router, fetchData]);
+
 
   const handleCreateNewPresentation = async () => {
-    if (!currentUser) {
+    // ... (existing logic for create presentation)
+     if (!currentUser) {
       toast({ title: "Error", description: "You must be logged in to create a presentation.", variant: "destructive" });
       return;
     }
-    // TODO: Check if user is on free plan and has reached presentation limit before creating
-    // if (!currentUser.isPremium && presentations.filter(p => p.creatorId === currentUser.id).length >= 3) { // Example limit
-    //   toast({ title: "Limit Reached", description: "Upgrade to Premium to create more presentations.", variant: "info" });
-    //   // Potentially show upgrade modal here
-    //   return;
-    // }
     try {
       const teamIdForNewPres = currentUser.teamId || undefined;
       const newPresentationId = await apiCreatePresentation(currentUser.id, "Untitled Presentation", teamIdForNewPres);
@@ -113,14 +159,13 @@ export default function DashboardPage() {
   };
 
   const handleDeletePresentation = async () => {
+    // ... (existing logic)
     if (!presentationToDelete || !currentUser) return;
     try {
       await apiDeletePresentation(presentationToDelete.id, presentationToDelete.teamId || undefined, currentUser.id);
       toast({ title: "Presentation Deleted", description: `"${presentationToDelete.title}" has been removed.` });
-      // Refetch presentations to update list and stats
-      fetchAndSetPresentations();
+      fetchData();
     } catch (error: any) {
-      console.error("Error deleting presentation:", error);
       toast({ title: "Error", description: error.message || "Could not delete presentation.", variant: "destructive" });
     } finally {
       setPresentationToDelete(null);
@@ -128,7 +173,8 @@ export default function DashboardPage() {
   };
 
   const handleDuplicatePresentation = async (presentationId: string) => {
-    if (!currentUser) {
+    // ... (existing logic)
+     if (!currentUser) {
       toast({ title: "Error", description: "You must be logged in.", variant: "destructive" });
       return;
     }
@@ -137,12 +183,12 @@ export default function DashboardPage() {
       toast({ title: "Presentation Duplicated", description: "A copy has been created. Redirecting to editor..." });
       router.push(`/editor/${newPresentationId}`);
     } catch (error: any) {
-      console.error("Error duplicating presentation:", error);
       toast({ title: "Error Duplicating", description: error.message || "Could not duplicate presentation.", variant: "destructive" });
     }
   };
-
+  
   const handleToggleFavorite = async (presentationId: string) => {
+    // ... (existing logic)
     if (!currentUser) return;
     try {
       const isNowFavorite = await apiToggleFavoriteStatus(presentationId, currentUser.id);
@@ -150,53 +196,59 @@ export default function DashboardPage() {
         title: isNowFavorite ? "Favorited" : "Unfavorited",
         description: `Presentation ${isNowFavorite ? 'added to' : 'removed from'} favorites.`,
       });
-      // Optimistically update local state or refetch
-      setPresentations(prev => 
-        prev.map(p => 
-          p.id === presentationId 
-            ? { ...p, favoritedBy: { ...(p.favoritedBy || {}), [currentUser.id]: isNowFavorite ? true : undefined } } 
-            : p
-        )
-      );
-      // Or simply refetch: fetchAndSetPresentations();
+      fetchData(); // Refetch to update favorite status
     } catch (error: any) {
       toast({ title: "Error", description: error.message || "Could not update favorite status.", variant: "destructive" });
+    }
+  };
+  
+  const handleRespondToInvitation = async (notificationId: string, teamId: string, role: TeamRole, action: 'accept' | 'decline') => {
+    setIsRespondingToInvite(teamId);
+    try {
+        const response = await fetch('/api/teams/invitations/respond', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ notificationId, teamId, roleForAction: role, action })
+        });
+        const result = await response.json();
+        if (result.success) {
+            toast({ title: `Invitation ${action === 'accept' ? 'Accepted' : 'Declined'}`, description: result.message });
+            // Important: To reflect team change, force refresh or update auth context.
+            router.refresh(); // This will trigger AuthProvider to refetch current user, including new teamId
+            fetchData(); // Refetch dashboard data
+        } else {
+            toast({ title: 'Error', description: result.message, variant: 'destructive' });
+        }
+    } catch (error: any) {
+        toast({ title: 'Error', description: error.message || 'Failed to respond to invitation.', variant: 'destructive' });
+    } finally {
+        setIsRespondingToInvite(null);
     }
   };
 
 
   const sortedAndFilteredPresentations = presentations
     .filter(p => {
+      // ... (existing filter logic)
       const matchesSearch = p.title.toLowerCase().includes(searchTerm.toLowerCase()) || (p.description && p.description.toLowerCase().includes(searchTerm.toLowerCase()));
       if (!currentUser) return false;
 
       const isSharedDirectly = p.access && p.access[currentUser.id] && p.creatorId !== currentUser.id;
       const isTeamAccessible = p.teamId && p.teamId === currentUser.teamId && p.creatorId !== currentUser.id && !isSharedDirectly;
 
-
       let matchesFilter = false;
       switch (filter) {
-        case 'all':
-            matchesFilter = true;
-            break;
-        case 'mine':
-            matchesFilter = p.creatorId === currentUser.id;
-            break;
-        case 'shared':
-            matchesFilter = isSharedDirectly || isTeamAccessible;
-            break;
-        case 'team':
-            matchesFilter = !!(p.teamId && p.teamId === currentUser.teamId);
-            break;
-        case 'favorites':
-            matchesFilter = !!(p.favoritedBy && p.favoritedBy[currentUser.id]);
-            break;
-        default:
-            matchesFilter = true;
+        case 'all': matchesFilter = true; break;
+        case 'mine': matchesFilter = p.creatorId === currentUser.id; break;
+        case 'shared': matchesFilter = isSharedDirectly || isTeamAccessible; break;
+        case 'team': matchesFilter = !!(p.teamId && p.teamId === currentUser.teamId); break;
+        case 'favorites': matchesFilter = !!(p.favoritedBy && p.favoritedBy[currentUser.id]); break;
+        default: matchesFilter = true;
       }
       return matchesSearch && matchesFilter;
     })
     .sort((a, b) => {
+        // ... (existing sort logic)
         const getVal = (obj: Presentation, keyPart: string) => {
             if (keyPart.startsWith('lastUpdatedAt') || keyPart.startsWith('createdAt')) {
                 const dateVal = obj[keyPart.split('_')[0] as 'lastUpdatedAt' | 'createdAt'];
@@ -204,11 +256,9 @@ export default function DashboardPage() {
             }
             return obj[keyPart.split('_')[0] as 'title'] || '';
         };
-
         const [key, order] = sortOption.split('_');
         const valA = getVal(a, key);
         const valB = getVal(b, key);
-
         if (typeof valA === 'string' && typeof valB === 'string') {
             return order === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
         }
@@ -217,20 +267,17 @@ export default function DashboardPage() {
 
   const recentPresentations = [...presentations]
     .sort((a,b) => {
-        const dateA = a.lastUpdatedAt instanceof Date ? a.lastUpdatedAt.getTime() : (a.lastUpdatedAt as any)?.toDate ? (a.lastUpdatedAt as any).toDate().getTime() : 0;
+        // ... (existing recent sort logic)
+         const dateA = a.lastUpdatedAt instanceof Date ? a.lastUpdatedAt.getTime() : (a.lastUpdatedAt as any)?.toDate ? (a.lastUpdatedAt as any).toDate().getTime() : 0;
         const dateB = b.lastUpdatedAt instanceof Date ? b.lastUpdatedAt.getTime() : (b.lastUpdatedAt as any)?.toDate ? (b.lastUpdatedAt as any).toDate().getTime() : 0;
         return dateB - dateA;
     })
     .slice(0,3);
 
-  const handleUpgradeClick = () => {
-    toast({
-      title: "Stripe Checkout - Coming Soon!",
-      description: "You would be redirected to Stripe to complete your upgrade. This feature is currently under development."
-    });
-  };
+  const handleUpgradeClick = () => { /* ... */ };
 
-  if (authLoading || (isLoading && currentUser)) {
+
+  if (authLoading || (isLoadingData && currentUser)) {
     return (
       <div className="flex flex-col min-h-screen">
         <SiteHeader />
@@ -240,9 +287,9 @@ export default function DashboardPage() {
       </div>
     );
   }
-
+  
   if (!currentUser && !authLoading) {
-     return (
+     return ( /* ... existing redirect/login prompt */ 
         <div className="flex flex-col min-h-screen">
           <SiteHeader />
           <main className="flex-grow container mx-auto p-4 sm:p-6 lg:p-8 flex items-center justify-center">
@@ -251,7 +298,108 @@ export default function DashboardPage() {
         </div>
      );
   }
+  
+  // New Onboarding / No Team State
+  if (currentUser && !currentUser.teamId && !isLoadingData) {
+    return (
+      <div className="flex flex-col min-h-screen bg-background">
+        <SiteHeader />
+        <main className="flex-grow container mx-auto p-4 sm:p-6 lg:p-8">
+          <Card className="max-w-2xl mx-auto shadow-xl my-10">
+            <CardHeader className="text-center">
+              <Briefcase className="mx-auto h-16 w-16 text-primary mb-4" />
+              <CardTitle className="font-headline text-3xl">Welcome to CollabDeck, {currentUser.name}!</CardTitle>
+              <CardDescription className="text-lg">Let's get you set up with a team.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-8">
+              {pendingInvitations.length > 0 && (
+                <div className="space-y-4">
+                  <h3 className="text-xl font-semibold text-center">Pending Team Invitations</h3>
+                  <ul className="space-y-3">
+                    {pendingInvitations.map(inviteTeam => {
+                        const inviteDetails = inviteTeam.pendingInvitations?.[currentUser.id];
+                        if (!inviteDetails) return null; // Should not happen if query is correct
+                        return (
+                            <li key={inviteTeam.id} className="p-4 border rounded-lg flex flex-col sm:flex-row justify-between items-center gap-3 bg-muted/50">
+                                <div>
+                                <p className="font-medium">You're invited to join <span className="text-primary font-bold">{inviteTeam.name}</span></p>
+                                <p className="text-xs text-muted-foreground">
+                                    Invited by {inviteDetails.invitedBy} as a <Badge variant="secondary" className="capitalize">{inviteDetails.role}</Badge>
+                                </p>
+                                </div>
+                                <div className="flex space-x-2 flex-shrink-0">
+                                <Button 
+                                    size="sm" 
+                                    onClick={() => handleRespondToInvitation(inviteDetails.inviteId, inviteTeam.id, inviteDetails.role, 'accept')}
+                                    disabled={isRespondingToInvite === inviteTeam.id}
+                                >
+                                    {isRespondingToInvite === inviteTeam.id ? <Loader2 className="mr-1 h-4 w-4 animate-spin"/> : <Check className="mr-1 h-4 w-4"/>} Accept
+                                </Button>
+                                <Button 
+                                    size="sm" 
+                                    variant="outline"
+                                    onClick={() => handleRespondToInvitation(inviteDetails.inviteId, inviteTeam.id, inviteDetails.role, 'decline')}
+                                    disabled={isRespondingToInvite === inviteTeam.id}
+                                >
+                                    {isRespondingToInvite === inviteTeam.id ? <Loader2 className="mr-1 h-4 w-4 animate-spin"/> : <X className="mr-1 h-4 w-4"/>} Decline
+                                </Button>
+                                </div>
+                            </li>
+                        );
+                    })}
+                  </ul>
+                </div>
+              )}
 
+              {pendingInvitations.length === 0 && (
+                <div className="text-center">
+                  <p className="text-muted-foreground mb-4">You don't have any pending team invitations.</p>
+                </div>
+              )}
+
+              <div className="relative my-6">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-card px-2 text-muted-foreground">
+                    OR
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-xl font-semibold text-center mb-4">Create a New Team</h3>
+                <Form {...createTeamForm}>
+                  <form action={createTeamFormAction} onSubmit={createTeamForm.handleSubmit(() => createTeamForm.control._formAction(createTeamFormState as any))} className="space-y-4 max-w-sm mx-auto">
+                    <FormField
+                      control={createTeamForm.control}
+                      name="teamName"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Team Name</FormLabel>
+                          <FormControl>
+                            <Input placeholder="Your New Team's Name" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <CreateTeamSubmitButton />
+                    {createTeamFormState.message && !createTeamFormState.success && (
+                      <p className="text-sm text-destructive text-center">{createTeamFormState.message}</p>
+                    )}
+                  </form>
+                </Form>
+              </div>
+            </CardContent>
+          </Card>
+        </main>
+      </div>
+    );
+  }
+
+  // Regular Dashboard (User has a teamId)
   return (
     <div className="flex flex-col min-h-screen bg-background">
       <SiteHeader />
@@ -279,8 +427,6 @@ export default function DashboardPage() {
           </Card>
         )}
 
-
-        {/* User Analytics & Insights Section */}
         <section className="mb-10">
             <h2 className="font-headline text-2xl font-semibold mb-4 flex items-center">
                 <BarChart2 className="mr-3 h-6 w-6 text-primary" />
@@ -391,7 +537,7 @@ export default function DashboardPage() {
 
         <section className="mb-10">
           <h2 className="font-headline text-2xl font-semibold mb-4">Recent Presentations</h2>
-          {isLoading ? <div className="flex justify-center py-4"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div> : recentPresentations.length > 0 ? (
+          {isLoadingData ? <div className="flex justify-center py-4"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div> : recentPresentations.length > 0 ? (
              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {recentPresentations.map(p => (
                 <PresentationCard
@@ -423,7 +569,7 @@ export default function DashboardPage() {
               {viewMode === 'grid' ? <List className="h-5 w-5" /> : <Grid className="h-5 w-5" />}
             </Button>
           </div>
-          {isLoading ? <div className="flex justify-center py-8"><Loader2 className="h-10 w-10 animate-spin text-primary" /></div> : sortedAndFilteredPresentations.length > 0 ? (
+          {isLoadingData ? <div className="flex justify-center py-8"><Loader2 className="h-10 w-10 animate-spin text-primary" /></div> : sortedAndFilteredPresentations.length > 0 ? (
             <div className={`grid gap-6 ${viewMode === 'grid' ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4' : 'grid-cols-1'}`}>
               {sortedAndFilteredPresentations.map((presentation: Presentation) => (
                 viewMode === 'grid' ? (

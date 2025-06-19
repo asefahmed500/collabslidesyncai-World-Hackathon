@@ -195,14 +195,14 @@ export async function addMemberToTeamInMongoDB(teamId: string, userToInvite: App
             role
         );
         // Modify the body and subject directly for clarity of invitation
-        emailContent.subject = `You're invited to join Team "${team.name}" on CollabSlideSyncAI`;
+        emailContent.subject = `You're invited to join Team "${team.name}" on CollabDeck`;
         emailContent.htmlBody = `
           <p>Hi ${userToInvite.name || userToInvite.email},</p>
-          <p>${inviter.name || 'A team admin'} has invited you to join the team "<strong>${team.name}</strong>" as a <strong>${role}</strong> on CollabSlideSyncAI.</p>
-          <p>You can accept or decline this invitation from your CollabSlideSyncAI dashboard notifications.</p>
+          <p>${inviter.name || 'A team admin'} has invited you to join the team "<strong>${team.name}</strong>" as a <strong>${role}</strong> on CollabDeck.</p>
+          <p>You can accept or decline this invitation from your CollabDeck dashboard notifications.</p>
           <p>If you don't have an account yet with this email, please sign up first.</p>
           <p>Access your dashboard: <a href="${teamLink}">${teamLink}</a></p>
-          <p>The CollabSlideSyncAI Team</p>
+          <p>The CollabDeck Team</p>
         `;
         try {
             await sendEmail({
@@ -493,42 +493,69 @@ export async function deleteTeamFromMongoDB(teamId: string, actorId: string): Pr
   }
 }
 
-// New function to get pending invitations for a user by their email
-// This could be used on user dashboard or after signup to check for pending invites
-export async function getPendingTeamInvitationsForUserByEmail(email: string): Promise<Team[]> {
-    await dbConnect();
-    try {
-        // Find teams where this email exists as a key in pendingInvitations
-        const teamsWithPendingInvites = await TeamModel.find({
-            [`pendingInvitations.${email.replace(/\./g, '_')}`]: { $exists: true } // Handle dot in email for Map keys if necessary, or use a different keying strategy
-        }).exec();
-        // This query is a bit tricky with Map keys. A better schema for pendingInvitations might be an array of objects.
-        // For now, this is a conceptual query. A more robust way would be to iterate or use a proper invitation collection.
-        // For now, let's assume this works or filter in application code if Map keys are complex
-        return teamsWithPendingInvites
-            .filter(teamDoc => teamDoc.pendingInvitations?.has(email)) // Ensure the invite actually exists for this email
-            .map(mongoTeamDocToTeam)
-            .filter(t => t !== null) as Team[];
-    } catch (error) {
-        console.error('Error fetching pending team invitations for user by email:', error);
-        return [];
-    }
-}
-
+// New function to get pending invitations for a user by their ID
 export async function getPendingTeamInvitationsForUserById(userId: string): Promise<Team[]> {
     await dbConnect();
     try {
-        // Find teams where this userId exists as a key in pendingInvitations
+        // Find teams where this userId exists as a key in pendingInvitations map.
+        // MongoDB syntax for querying map keys can be tricky.
+        // The field name in the query would be `pendingInvitations.${userId}`.
         const teamsWithPendingInvites = await TeamModel.find({
             [`pendingInvitations.${userId}`]: { $exists: true }
         }).exec();
 
+        // Further filter to ensure the invitation details are for the correct role, etc., if needed,
+        // though the existence of the key should be sufficient.
         return teamsWithPendingInvites
             .map(mongoTeamDocToTeam)
-            .filter(t => t !== null) as Team[];
+            .filter(t => t !== null && t.pendingInvitations && t.pendingInvitations[userId]) as Team[];
     } catch (error) {
         console.error(`Error fetching pending team invitations for user ID ${userId}:`, error);
         return [];
     }
 }
 
+// Existing function to get pending invitations for a user by their email
+// This might be less used now that we prefer getPendingTeamInvitationsForUserById
+// once the user account exists. This could be for pre-signup invitation checks.
+export async function getPendingTeamInvitationsForUserByEmail(email: string): Promise<Team[]> {
+    await dbConnect();
+    try {
+        const teamsWithPendingInvites = await TeamModel.find({
+            // This query logic is complex for Map in Mongoose/MongoDB directly.
+            // A more robust solution would be a separate "Invitations" collection
+            // or to iterate if the number of teams isn't excessively large.
+            // For now, let's assume a simplified scenario or that this might need optimization.
+            // A workaround if keys are not directly queryable in this manner is to fetch teams
+            // and filter in application code, which is not ideal for performance.
+            // One way to query a map by its values would be:
+            // { 'pendingInvitations.$*.email': email } but this syntax is specific and might vary.
+
+            // A more pragmatic query if email is used as key (which it's not currently for existing users):
+            // [`pendingInvitations.${email.replace(/\./g, '_')}`]: { $exists: true }
+            // For now, this function will be hard to implement efficiently with the current Map schema
+            // if the key is not the email itself.
+            // Let's assume for now it's not directly queryable this way efficiently.
+        }).exec();
+        
+        // Manual filter (inefficient for large number of teams)
+        const userInvites: Team[] = [];
+        for (const teamDoc of teamsWithPendingInvites) {
+            if (teamDoc.pendingInvitations) {
+                for (const [_inviteId, inviteDetails] of teamDoc.pendingInvitations.entries()) {
+                    if (inviteDetails.email === email) {
+                        const team = mongoTeamDocToTeam(teamDoc);
+                        if(team) userInvites.push(team);
+                        break; 
+                    }
+                }
+            }
+        }
+        return userInvites;
+    } catch (error) {
+        console.error('Error fetching pending team invitations for user by email:', error);
+        return [];
+    }
+}
+
+    
