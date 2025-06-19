@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PresentationCard } from '@/components/dashboard/PresentationCard';
 import type { Presentation, User as AppUser } from '@/types';
-import { PlusCircle, Search, Filter, List, Grid, Users, Activity, Loader2, FileWarning, Library, ArrowUpDown, Eye, Trash2, Edit3, MoreVertical, CopyIcon, Star, BarChart2, FileText as FileTextIcon, Cpu, Users2, StarIcon as FilledStarIcon, Sparkles } from 'lucide-react';
+import { PlusCircle, Search, Filter, List, Grid, Users, Activity, Loader2, FileWarning, Library, ArrowUpDown, Eye, Trash2, Edit3, MoreVertical, CopyIcon, Star, BarChart2, FileText as FileTextIcon, Cpu, Users2, StarIcon as FilledStarIcon, Sparkles, ExternalLink } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -95,6 +95,12 @@ export default function DashboardPage() {
       toast({ title: "Error", description: "You must be logged in to create a presentation.", variant: "destructive" });
       return;
     }
+    // TODO: Check if user is on free plan and has reached presentation limit before creating
+    // if (!currentUser.isPremium && presentations.filter(p => p.creatorId === currentUser.id).length >= 3) { // Example limit
+    //   toast({ title: "Limit Reached", description: "Upgrade to Premium to create more presentations.", variant: "info" });
+    //   // Potentially show upgrade modal here
+    //   return;
+    // }
     try {
       const teamIdForNewPres = currentUser.teamId || undefined;
       const newPresentationId = await apiCreatePresentation(currentUser.id, "Untitled Presentation", teamIdForNewPres);
@@ -217,6 +223,16 @@ export default function DashboardPage() {
     })
     .slice(0,3);
 
+  const handleUpgradeClick = () => {
+    // TODO: This would eventually call an API to create a Stripe Checkout session
+    // and then redirect the user to Stripe.
+    // router.push('/api/stripe/create-checkout-session?plan=premium_monthly');
+    toast({
+      title: "Stripe Checkout Coming Soon!",
+      description: "Integration with Stripe for premium plans is under development. You would be redirected to Stripe to complete your purchase."
+    });
+  };
+
   if (authLoading || (isLoading && currentUser)) {
     return (
       <div className="flex flex-col min-h-screen">
@@ -249,18 +265,18 @@ export default function DashboardPage() {
         </div>
         
         {currentUser && !currentUser.isPremium && (
-          <Card className="mb-8 bg-accent/10 border-accent shadow-lg">
+          <Card className="mb-8 bg-gradient-to-r from-primary/10 via-accent/10 to-primary/10 border-primary/30 shadow-lg">
             <CardHeader>
-              <CardTitle className="flex items-center text-accent"><Sparkles className="mr-2 h-6 w-6"/> Upgrade to Premium!</CardTitle>
-              <CardDescription className="text-accent/90">Unlock unlimited presentations, advanced AI features, and more.</CardDescription>
+              <CardTitle className="flex items-center text-primary"><Sparkles className="mr-2 h-6 w-6"/> Upgrade to CollabDeck Premium!</CardTitle>
+              <CardDescription className="text-foreground/80">Unlock unlimited presentations, advanced AI features, more team members, and custom branding.</CardDescription>
             </CardHeader>
             <CardContent>
-              {/* This button is a placeholder. Actual Stripe integration is complex. */}
               <Button 
-                onClick={() => toast({title: "Coming Soon!", description: "Stripe integration for premium features is under development."})}
-                className="bg-accent hover:bg-accent/90 text-accent-foreground"
+                onClick={handleUpgradeClick}
+                className="bg-primary hover:bg-primary/90 text-primary-foreground shadow-md hover:shadow-lg transition-shadow"
+                size="lg"
               >
-                Learn More & Upgrade
+                Upgrade to Premium <ExternalLink className="ml-2 h-4 w-4"/>
               </Button>
             </CardContent>
           </Card>

@@ -122,11 +122,23 @@ export default function ProfilePage() {
   };
 
   const handleManageSubscription = () => {
-    // In a real app, this would redirect to Stripe Customer Portal
-    // The URL for the portal session would be generated server-side.
-    toast({title: "Coming Soon!", description: "Subscription management via Stripe Customer Portal is under development."});
-    // Example redirect:
-    // router.push(currentUser.stripeCustomerPortalUrl); 
+    // TODO: Replace with actual Stripe Customer Portal link generation and redirect
+    // const portalSessionUrl = await fetch('/api/stripe/create-portal-session').then(res => res.json()).then(data => data.url);
+    // if (portalSessionUrl) router.push(portalSessionUrl);
+    toast({
+        title: "Manage Subscription (Coming Soon)", 
+        description: "You will be redirected to the Stripe Customer Portal to manage your billing details, view invoices, or cancel your subscription."
+    });
+  };
+
+  const handleUpgradeClick = () => {
+    // TODO: This would eventually call an API to create a Stripe Checkout session
+    // and then redirect the user to Stripe.
+    // router.push('/api/stripe/create-checkout-session?plan=premium_monthly'); // Example plan
+    toast({
+      title: "Stripe Checkout Coming Soon!",
+      description: "Integration with Stripe for premium plans is under development. You would be redirected to Stripe to complete your purchase."
+    });
   };
 
 
@@ -255,7 +267,7 @@ export default function ProfilePage() {
                 </h3>
                 {currentUser.isPremium && currentUser.subscriptionPlan ? (
                   <>
-                    <p className="text-sm">Current Plan: <Badge variant="secondary" className="capitalize">{currentUser.subscriptionPlan.replace('_', ' ')}</Badge></p>
+                    <p className="text-sm">Current Plan: <Badge variant="secondary" className="capitalize bg-green-100 text-green-700 border-green-300">{currentUser.subscriptionPlan.replace('_', ' ')}</Badge></p>
                     {currentUser.subscriptionEndDate && <p className="text-xs text-muted-foreground mt-1">Renews/Expires on: {new Date(currentUser.subscriptionEndDate).toLocaleDateString()}</p>}
                     <Button variant="outline" onClick={handleManageSubscription} className="w-full mt-3">
                       Manage Subscription <ExternalLink className="ml-2 h-3 w-3"/>
@@ -265,10 +277,10 @@ export default function ProfilePage() {
                   <>
                     <p className="text-sm text-muted-foreground">You are currently on the Free plan.</p>
                     <Button 
-                        onClick={() => toast({title: "Coming Soon!", description: "Stripe integration for premium features is under development."})} 
+                        onClick={handleUpgradeClick} 
                         className="w-full mt-3 bg-accent hover:bg-accent/90 text-accent-foreground"
                     >
-                      <Sparkles className="mr-2 h-4 w-4"/> Upgrade to Premium
+                      <Sparkles className="mr-2 h-4 w-4"/> Upgrade to Premium Plan
                     </Button>
                   </>
                 )}
