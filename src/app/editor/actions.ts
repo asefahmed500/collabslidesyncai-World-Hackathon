@@ -12,6 +12,7 @@ import {
 import type { Presentation, PresentationAccessRole, User as AppUser, NotificationType } from '@/types';
 import { revalidatePath } from 'next/cache';
 import { deleteField } from 'firebase/firestore';
+import { sendEmail, createCollaborationInviteEmail, createRoleChangeEmail, createCollaboratorRemovedEmail } from '@/lib/emailService'; // Import email service
 
 interface ShareSettingsActionResponse {
   success: boolean;
@@ -33,7 +34,7 @@ export async function updatePresentationShareSettingsAction(
     return { success: false, message: 'Authentication required.' };
   }
   const currentUserId = currentFirebaseUser.uid;
-  const currentUserName = currentFirebaseUser.displayName; // Get current user's name
+  const currentUserName = currentFirebaseUser.displayName || 'A user';
   const currentUserProfilePic = currentFirebaseUser.photoURL;
 
 
@@ -117,14 +118,13 @@ export async function updatePresentationShareSettingsAction(
          return { success: false, message: `User ${inviteEmail} is already the owner.` };
     }
     updates.access![userToInvite.id] = inviteRole;
-    // Log specific collaborator added event
+    
     await logPresentationActivity(presentationId, currentUserId, 'collaborator_added', {
         targetUserId: userToInvite.id,
         targetUserName: userToInvite.name || userToInvite.email,
         newRole: inviteRole,
     });
     
-    // Create notification for the invited user
     await createNotification(
       userToInvite.id,
       'presentation_shared',
@@ -135,21 +135,41 @@ export async function updatePresentationShareSettingsAction(
       currentUserName || undefined,
       currentUserProfilePic || undefined
     );
-    // TODO: Trigger email notification for presentation shared
-
-    mainActionType = 'collaborator_update'; // Indicate a collaborator change happened
+    
+    // Send email notification for invite
+    if (userToInvite.email) {
+      const presentationLink = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:9002'}/editor/${presentationId}`;
+      const emailContent = createCollaborationInviteEmail(
+        userToInvite.name || userToInvite.email,
+        currentUserName,
+        presentation.title,
+        presentationLink,
+        inviteRole
+      );
+      try {
+        await sendEmail({
+          to: userToInvite.email,
+          subject: emailContent.subject,
+          htmlBody: emailContent.htmlBody,
+        });
+      } catch (emailError) {
+        console.warn("Failed to send collaboration invite email (placeholder service):", emailError);
+        // Non-critical, so don't fail the whole action
+      }
+    }
+    mainActionType = 'collaborator_update';
   }
 
   // Handle changes to existing collaborators (roles, removals)
-  // FormData only gives us one value per name, so we need to structure names carefully
-  // Example: `accessRole[userIdToRemove]=remove`, `accessRole[userIdToChangeRole]=newRole`
   let collaboratorChanged = false;
   for (const key of formData.keys()) {
     if (key.startsWith('accessRole[')) { 
       const userId = key.substring(key.indexOf('[') + 1, key.indexOf(']'));
       const newRoleOrAction = formData.get(key) as string;
 
-      if (userId === presentation.creatorId) continue; // Cannot change/remove creator's owner role here
+      if (userId === presentation.creatorId) continue; 
+
+      const collaboratorUser = await getUserByEmail(presentation.activeCollaborators?.[userId]?.email || ''); // Fetch by email to get full user profile
 
       if (newRoleOrAction === 'remove') {
         if (updates.access![userId]) {
@@ -161,8 +181,17 @@ export async function updatePresentationShareSettingsAction(
                 oldRole: oldRole
             });
             collaboratorChanged = true;
-            // TODO: Create notification for the removed user (optional)
-            // TODO: Trigger email notification for collaborator removal
+            
+            if (collaboratorUser && collaboratorUser.email) {
+              const emailContent = createCollaboratorRemovedEmail(
+                collaboratorUser.name || collaboratorUser.email,
+                currentUserName,
+                presentation.title
+              );
+              try {
+                await sendEmail({ to: collaboratorUser.email, subject: emailContent.subject, htmlBody: emailContent.htmlBody });
+              } catch (emailError) { console.warn("Failed to send collaborator removal email:", emailError); }
+            }
         }
       } else if (['editor', 'viewer'].includes(newRoleOrAction) && updates.access![userId] !== newRoleOrAction) {
          const oldRole = presentation.access[userId];
@@ -174,8 +203,21 @@ export async function updatePresentationShareSettingsAction(
             newRole: newRoleOrAction as PresentationAccessRole
          });
          collaboratorChanged = true;
-         // TODO: Create notification for role change
-         // TODO: Trigger email notification for role change
+         
+         if (collaboratorUser && collaboratorUser.email) {
+            const presentationLink = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:9002'}/editor/${presentationId}`;
+            const emailContent = createRoleChangeEmail(
+                collaboratorUser.name || collaboratorUser.email,
+                currentUserName,
+                presentation.title,
+                presentationLink,
+                oldRole,
+                newRoleOrAction as PresentationAccessRole
+            );
+            try {
+                await sendEmail({ to: collaboratorUser.email, subject: emailContent.subject, htmlBody: emailContent.htmlBody });
+            } catch (emailError) { console.warn("Failed to send role change email:", emailError); }
+         }
       }
     }
   }
@@ -186,11 +228,9 @@ export async function updatePresentationShareSettingsAction(
     await apiUpdatePresentation(presentationId, updates);
     const updatedPresentation = await getPresentationById(presentationId); // Fetch updated
     
-    // General activity log if no specific one was already logged for this interaction set
     if (mainActionType === 'sharing_settings_updated' && Object.keys(activityDetails).length > 0) {
        await logPresentationActivity(presentationId, currentUserId, 'sharing_settings_updated', activityDetails);
     }
-
 
     revalidatePath(`/editor/${presentationId}`);
     return { success: true, message: 'Sharing settings updated successfully.', updatedPresentation };
@@ -217,13 +257,9 @@ export async function verifyPasswordAction(
   }
 
   if (!presentation.settings.passwordProtected || !presentation.settings.password) {
-    // This case should ideally not be hit if UI enables password field correctly,
-    // but good to have a server-side check.
     return { success: true, message: 'This presentation is not password protected (or password was removed). Access granted.' };
   }
 
-  // IMPORTANT: Firestore does not hash passwords. This is a simple string comparison.
-  // For actual security, you'd hash passwords before storing or use a different mechanism.
   if (presentation.settings.password === passwordAttempt) {
     return { success: true, message: 'Password verified.' };
   } else {

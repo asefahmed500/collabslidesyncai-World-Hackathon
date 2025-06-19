@@ -11,11 +11,10 @@ import {
   query,
   where,
   serverTimestamp,
-  // arrayUnion, // Not used, consider removing if confirmed
   Timestamp,
   writeBatch,
   FieldValue,
-  deleteField, // Keep for Firestore field deletion
+  deleteField, 
   orderBy,
   limit,
   runTransaction,
@@ -25,10 +24,10 @@ import {
 } from 'firebase/firestore';
 import { ref, deleteObject } from 'firebase/storage';
 import type { Presentation, Slide, SlideElement, SlideComment, User as AppUserTypeFromFirestore, Team, ActiveCollaboratorInfo, TeamRole, TeamMember, TeamActivity, TeamActivityType, PresentationActivity, PresentationActivityType, PresentationAccessRole, Asset, AssetType, SlideElementType, Notification, NotificationType as NotificationEnumType, PresentationModerationStatus } from '@/types';
-import { logTeamActivityInMongoDB } from './mongoTeamService'; // For logging team-related presentation/asset actions
-import { getUserByEmailFromMongoDB } from './mongoUserService'; 
+import { logTeamActivityInMongoDB } from './mongoTeamService'; 
+import { getUserByEmailFromMongoDB, getUserFromMongoDB as getUserProfileFromMongoDB } from './mongoUserService'; 
 import { v4 as uuidv4 } from 'uuid';
-
+import { sendEmail, createNewCommentEmail } from './emailService'; // Import email service
 
 const USER_COLORS = [
   '#FF6B6B', '#4ECDC4', '#45B7D1', '#FED766', '#2AB7CA',
@@ -36,7 +35,6 @@ const USER_COLORS = [
 ];
 let userColorIndex = 0;
 
-// This function might be better placed in a client-side utility or context if used for UI assignment
 export const getNextUserColor = () => {
   const color = USER_COLORS[userColorIndex % USER_COLORS.length];
   userColorIndex++;
@@ -99,7 +97,7 @@ export async function createPresentation(userId: string, title: string, teamId?:
     title,
     description,
     creatorId: userId,
-    teamId: teamId || undefined, // Ensure undefined if not provided
+    teamId: teamId || undefined, 
     access: { [userId]: 'owner' },
     settings: {
       isPublic: false,
@@ -144,7 +142,6 @@ export async function getPresentationsForUser(userId: string, userTeamId?: strin
   ];
 
   if (userTeamId) {
-    // Users can also see presentations shared with their team if teamId matches
     userAccessClauses.push(where('teamId', '==', userTeamId));
   }
 
@@ -181,12 +178,12 @@ export async function getPresentationById(presentationId: string): Promise<Prese
         return {
             id: docSnap.id,
             title: data.title,
-            creatorId: data.creatorId, // Keep creatorId for potential admin checks
+            creatorId: data.creatorId, 
             moderationStatus: 'taken_down',
             settings: { isPublic: false, passwordProtected: false, commentsAllowed: false },
             slides: [], 
-            access: {}, // Clear access map for taken down content
-            lastUpdatedAt: data.lastUpdatedAt, // Keep lastUpdatedAt
+            access: {}, 
+            lastUpdatedAt: data.lastUpdatedAt, 
         } as Presentation;
     }
     return { id: docSnap.id, ...convertTimestamps(data) } as Presentation;
@@ -311,9 +308,6 @@ export async function permanentlyDeletePresentation(presentationId: string, acto
   const docRef = doc(db, 'presentations', presentationId);
   const pres = await getPresentationByIdAdmin(presentationId); 
   await deleteDoc(docRef);
-
-  // TODO: Consider deleting associated assets from Firebase Storage if they are exclusively tied to this presentation.
-  // TODO: Delete all presentation activities associated with this presentationId.
 
   if (actorId && pres) {
     const activityDetails = { presentationTitle: pres.title };
@@ -446,7 +440,7 @@ export async function duplicateSlideInPresentation(presentationId: string, slide
     const duplicatedSlide: Slide = {
       ...JSON.parse(JSON.stringify(originalSlide)),
       id: newSlideId,
-      slideNumber: 0, // Will be re-numbered
+      slideNumber: 0, 
       elements: duplicatedElements,
       comments: [], 
       thumbnailUrl: originalSlide.thumbnailUrl ? `${originalSlide.thumbnailUrl.split('?')[0]}?text=Copy` : `https://placehold.co/160x90.png?text=Copy`,
@@ -566,8 +560,6 @@ export async function updateElementInSlide(presentationId: string, slideId: stri
         const newElements = s.elements.map(el => {
           if (el.id === updatedElementPartial.id) {
             elementFound = true;
-            // Lock check: Only allow update if not locked, or if the updater IS the locker,
-            // OR if the update is specifically to change the lock fields.
             if (el.lockedBy && el.lockedBy !== updatedElementPartial.lockedBy && updatedElementPartial.lockedBy !== null && !(updatedElementPartial.hasOwnProperty('lockedBy'))) {
                  console.warn(`Element ${el.id} is locked by ${el.lockedBy}, update by potential user ${updatedElementPartial.lockedBy || 'unknown'} denied unless it's a lock release/acquire.`);
                  throw new Error("Element is locked by another user.");
@@ -626,19 +618,43 @@ export async function addCommentToSlide(presentationId: string, slideId: string,
         updatedSlides[slideIndex] = targetSlide;
         transaction.update(presRef, { slides: updatedSlides, lastUpdatedAt: serverTimestamp() });
         
+        // In-app notification
+        const createdNotification = await createNotification(
+          presentationData.creatorId,
+          'comment_new',
+          `New Comment on "${presentationData.title}"`,
+          `${comment.userName} commented on slide ${targetSlide.slideNumber || slideIndex + 1}: "${comment.text.substring(0, 50)}${comment.text.length > 50 ? '...' : ''}"`,
+          `/editor/${presentationId}?slide=${slideId}`, 
+          comment.userId,
+          comment.userName,
+          comment.userAvatarUrl
+        );
+
+        // Email notification for presentation owner if comment is by someone else
         if (presentationData.creatorId !== comment.userId) {
-          await createNotification(
-            presentationData.creatorId,
-            'comment_new',
-            `New Comment on "${presentationData.title}"`,
-            `${comment.userName} commented on slide ${targetSlide.slideNumber || slideIndex + 1}.`,
-            `/editor/${presentationId}?slide=${slideId}`, 
-            comment.userId,
-            comment.userName,
-            comment.userAvatarUrl
-          );
+          const ownerProfile = await getUserProfileFromMongoDB(presentationData.creatorId);
+          if (ownerProfile && ownerProfile.email) {
+            const presentationLink = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:9002'}/editor/${presentationId}?slide=${slideId}`;
+            const emailContent = createNewCommentEmail(
+              ownerProfile.name || ownerProfile.email,
+              comment.userName,
+              presentationData.title,
+              targetSlide.slideNumber || slideIndex + 1,
+              comment.text,
+              presentationLink
+            );
+            try {
+              await sendEmail({
+                to: ownerProfile.email,
+                subject: emailContent.subject,
+                htmlBody: emailContent.htmlBody,
+              });
+            } catch(emailError) {
+              console.warn("Failed to send new comment email (placeholder service):", emailError);
+            }
+          }
         }
-        // TODO: Add logic for @mentions if implemented
+        // TODO: Add logic for @mentions if implemented (would involve parsing comment.text)
     } else console.warn(`Slide ${slideId} not found in presentation ${presentationId}`);
   });
 }
@@ -672,7 +688,7 @@ export async function updateUserPresence(presentationId: string, userId: string,
   try {
     await updateDoc(presRef, {
       [`activeCollaborators.${userId}`]: dataToSet,
-      lastUpdatedAt: serverTimestamp() // Also update main pres timestamp to trigger some listeners if needed
+      lastUpdatedAt: serverTimestamp() 
     });
   } catch (error) {
     console.error("Error updating user presence:", error);
@@ -695,13 +711,11 @@ export async function removeUserPresence(presentationId: string, userId: string)
 export async function updateUserCursorPosition(presentationId: string, userId: string, slideId: string, position: { x: number; y: number }): Promise<void> {
   const presRef = doc(db, 'presentations', presentationId);
   try {
-    // Check if user still exists in activeCollaborators before updating cursor to avoid creating a new entry just for cursor
     const presDoc = await getDoc(presRef);
     if (presDoc.exists() && presDoc.data()?.activeCollaborators?.[userId]) {
         await updateDoc(presRef, {
         [`activeCollaborators.${userId}.cursorPosition`]: { slideId, ...position },
         [`activeCollaborators.${userId}.lastSeen`]: serverTimestamp() 
-        // Don't update main presentation lastUpdatedAt for cursor moves to reduce noise
         });
     }
   } catch (error) {
@@ -731,9 +745,8 @@ export async function acquireLock(presentationId: string, slideId: string, eleme
                   targetElementExists = true;
                   if (el.lockedBy && el.lockedBy !== userId && el.lockTimestamp && ((el.lockTimestamp as Timestamp).toMillis() + LOCK_DURATION_MS > Date.now())) {
                     alreadyLockedByOther = true; 
-                    return el; // Return unchanged if locked by other and lock is active
+                    return el; 
                   }
-                  // Lock can be acquired (or re-acquired by same user)
                   lockAcquired = true; 
                   return { ...el, lockedBy: userId, lockTimestamp: serverTimestamp() as Timestamp };
                 } 
@@ -746,7 +759,6 @@ export async function acquireLock(presentationId: string, slideId: string, eleme
         if (!targetElementExists) throw new Error("Element not found to lock.");
         if (alreadyLockedByOther) throw new Error("Element is currently locked by another user.");
         if (!lockAcquired && targetElementExists) { 
-            // This case should ideally not be hit if targetElementExists is true and not alreadyLockedByOther
             throw new Error("Failed to acquire lock for unknown reasons.");
         }
         transaction.update(presRef, { slides: updatedSlides, lastUpdatedAt: serverTimestamp() });
@@ -754,7 +766,7 @@ export async function acquireLock(presentationId: string, slideId: string, eleme
     return true;
   } catch (error: any) {
     console.error("Lock acquisition failed:", error.message);
-    throw error; // Re-throw to be caught by caller
+    throw error; 
   }
 }
 
@@ -817,9 +829,6 @@ export async function logPresentationActivity(
   presentationId: string, actorId: string, actionType: PresentationActivityType, details?: PresentationActivity['details']
 ): Promise<string> {
   let actorNameResolved = 'System/Guest'; 
-  // In a real app, if actorId is a Firebase UID, you'd fetch from your User model in MongoDB.
-  // For now, this assumes actor name might be in details or defaults.
-
   const activityData: Omit<PresentationActivity, 'id'> = {
     presentationId, actorId, actorName: actorNameResolved, actionType, details: details || {}, createdAt: serverTimestamp() as Timestamp,
   };
@@ -833,7 +842,6 @@ export async function getPresentationActivities(presentationId: string, limitCou
     return snapshot.docs.map(docSnap => ({ id: docSnap.id, ...convertTimestamps(docSnap.data())} as PresentationActivity));
 }
 
-// --- Asset Management ---
 export async function createAssetMetadata(assetData: Omit<Asset, 'id' | 'createdAt' | 'lastUpdatedAt'>): Promise<string> {
   const docRef = await addDoc(assetsCollection, {
     ...assetData,
@@ -865,16 +873,14 @@ export async function deleteAsset(assetId: string, storagePath: string, teamId: 
     await logTeamActivityInMongoDB(teamId, actorId, 'asset_deleted', { fileName: assetData.fileName, assetType: assetData.assetType }, 'asset', assetId);
   }
 }
-// --- End Asset Management ---
 
-// --- Notification Management ---
 export async function createNotification(
-  userId: string, // Recipient's Firebase UID
+  userId: string, 
   type: NotificationEnumType,
   title: string,
   message: string,
   link?: string,
-  actorId?: string, // Firebase UID of the person who triggered the notification
+  actorId?: string, 
   actorName?: string,
   actorProfilePictureUrl?: string
 ): Promise<string> {
@@ -889,7 +895,6 @@ export async function createNotification(
     actorId: actorId || undefined,
     actorName: actorName || undefined,
     actorProfilePictureUrl: actorProfilePictureUrl || undefined,
-    // icon: string; // Optional: Lucide icon name string, or path to an image - can be derived client-side based on type
   };
   const docRef = await addDoc(notificationsCollection, notificationData);
   return docRef.id;
@@ -914,7 +919,6 @@ export function getUserNotifications(
     callback(notifications);
   }, (error) => {
     console.error("Error fetching notifications with listener:", error);
-    // Optionally, call callback with empty array or error state
   });
   return unsubscribe;
 }
@@ -927,7 +931,7 @@ export async function markNotificationAsRead(notificationId: string): Promise<vo
 export async function markAllNotificationsAsRead(userId: string): Promise<void> {
   const q = query(notificationsCollection, where('userId', '==', userId), where('isRead', '==', false));
   const snapshot = await getDocs(q);
-  if (snapshot.empty) return; // No unread notifications
+  if (snapshot.empty) return; 
 
   const batch = writeBatch(db);
   snapshot.docs.forEach(docSnap => {
@@ -935,11 +939,9 @@ export async function markAllNotificationsAsRead(userId: string): Promise<void> 
   });
   await batch.commit();
 }
-// --- End Notification Management ---
 
-// Helper to get user by email from MongoDB via firestoreService (for consistency if needed by other FS functions)
 export async function getUserByEmail(email: string): Promise<AppUserTypeFromFirestore | null> {
-    return getUserByEmailFromMongoDB(email) as Promise<AppUserTypeFromFirestore | null>; // Cast as AppUser defined in types for Firestore
+    return getUserByEmailFromMongoDB(email) as Promise<AppUserTypeFromFirestore | null>; 
 }
 
 export async function getAllPresentationsForAdmin(includeDeleted = false): Promise<Presentation[]> {
@@ -947,15 +949,12 @@ export async function getAllPresentationsForAdmin(includeDeleted = false): Promi
   if (includeDeleted) {
     q = query(presentationsCollection, where('deleted', '==', true), orderBy('deletedAt', 'desc'));
   } else {
-    // When not showing deleted, we still want to see all other moderation statuses for admin
     q = query(presentationsCollection, where('deleted', '==', false), orderBy('lastUpdatedAt', 'desc'));
   }
   const snapshot = await getDocs(q);
   return snapshot.docs.map(docSnap => ({ id: docSnap.id, ...convertTimestamps(docSnap.data()) } as Presentation));
 }
 
-
-// Used after a team is deleted from MongoDB to clean up Firestore presentations.
 export async function removeTeamIdFromPresentations(teamId: string): Promise<void> {
   const q = query(presentationsCollection, where('teamId', '==', teamId));
   const snapshot = await getDocs(q);
@@ -972,6 +971,4 @@ export async function removeTeamIdFromPresentations(teamId: string): Promise<voi
   await batch.commit();
   console.log(`Removed teamId ${teamId} from ${snapshot.size} presentations in Firestore.`);
 }
-
-// Export uuidv4 if needed by other client-side components importing from this service
 export { uuidv4 };

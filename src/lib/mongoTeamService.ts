@@ -7,6 +7,7 @@ import type { Team, TeamMember, TeamRole, TeamActivity, TeamActivityType, User a
 import mongoose, { Types } from 'mongoose'; // Import mongoose for session
 import { updateUserTeamAndRoleInMongoDB } from './mongoUserService';
 import { createNotification } from './firestoreService'; 
+import { sendEmail, createTeamInviteEmail } from './emailService'; // Import email service
 
 function mongoTeamDocToTeam(doc: TeamDocument | null): Team | null {
   if (!doc) return null;
@@ -144,10 +145,9 @@ export async function addMemberToTeamInMongoDB(teamId: string, userToAdd: AppUse
       profilePictureUrl: userToAdd.profilePictureUrl,
     };
     team.members.set(userToAdd.id, newMember as TeamMemberDocument);
-    // team.lastUpdatedAt = new Date(); // Handled by Mongoose timestamps
     const savedTeam = await team.save();
 
-    if (!userToAdd.teamId) { // If user is not part of any team, or to set this as their primary
+    if (!userToAdd.teamId) { 
         await updateUserTeamAndRoleInMongoDB(userToAdd.id, team.id, role);
     }
     
@@ -157,11 +157,33 @@ export async function addMemberToTeamInMongoDB(teamId: string, userToAdd: AppUse
       'team_invite',
       `Added to Team "${team.name}"`,
       `${actor?.name || 'An admin'} added you to the team "${team.name}" as a ${role}.`,
-      `/dashboard/manage-team`, 
+      `/dashboard/manage-team?teamId=${team.id}`, 
       addedByUserId,
       actor?.name || undefined,
       actor?.profilePictureUrl || undefined
     );
+
+    // Send email notification for team invite
+    if (userToAdd.email && actor) {
+        const teamLink = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:9002'}/dashboard/manage-team?teamId=${team.id}`;
+        const emailContent = createTeamInviteEmail(
+            userToAdd.name || userToAdd.email,
+            actor.name || 'Team Admin',
+            team.name,
+            teamLink,
+            role
+        );
+        try {
+            await sendEmail({
+                to: userToAdd.email,
+                subject: emailContent.subject,
+                htmlBody: emailContent.htmlBody,
+            });
+        } catch (emailError) {
+            console.warn("Failed to send team invite email (placeholder service):", emailError);
+        }
+    }
+
     await logTeamActivityInMongoDB(teamId, addedByUserId, 'member_added', { memberName: userToAdd.name || userToAdd.email, memberEmail: userToAdd.email, newRole: role }, 'user', userToAdd.id);
 
     return mongoTeamDocToTeam(savedTeam);
@@ -181,7 +203,6 @@ export async function removeMemberFromTeamInMongoDB(teamId: string, memberIdToRe
     if (team.ownerId === memberIdToRemove) throw new Error('Cannot remove the team owner.');
 
     team.members.delete(memberIdToRemove);
-    // team.lastUpdatedAt = new Date(); // Handled by Mongoose timestamps
     const savedTeam = await team.save();
 
     const user = await UserModel.findById(memberIdToRemove).exec();
@@ -189,7 +210,7 @@ export async function removeMemberFromTeamInMongoDB(teamId: string, memberIdToRe
         await updateUserTeamAndRoleInMongoDB(memberIdToRemove, null, 'guest');
     }
     await logTeamActivityInMongoDB(teamId, actorId, 'member_removed', { memberName: memberBeingRemoved.name || memberBeingRemoved.email }, 'user', memberIdToRemove);
-
+    // TODO: Optionally send email notification to the removed member
     return mongoTeamDocToTeam(savedTeam);
   } catch (error) {
     console.error('Error removing member from team in MongoDB:', error);
@@ -210,7 +231,6 @@ export async function updateMemberRoleInMongoDB(teamId: string, memberId: string
     const oldRole = member.role;
     member.role = newRole;
     team.members.set(memberId, member);
-    // team.lastUpdatedAt = new Date(); // Handled by Mongoose timestamps
     const savedTeam = await team.save();
 
     const user = await UserModel.findById(memberId).exec();
@@ -218,7 +238,7 @@ export async function updateMemberRoleInMongoDB(teamId: string, memberId: string
         await updateUserTeamAndRoleInMongoDB(memberId, teamId, newRole);
     }
     await logTeamActivityInMongoDB(teamId, actorId, 'member_role_changed', { memberName: member.name || member.email, oldRole, newRole }, 'user', memberId);
-    
+    // TODO: Optionally send email notification about role change
     return mongoTeamDocToTeam(savedTeam);
   } catch (error) {
     console.error('Error updating member role in MongoDB:', error);
@@ -260,7 +280,6 @@ export async function logTeamActivityInMongoDB(
       targetId,
       targetName: targetNameResolved,
       details,
-      // createdAt is handled by Mongoose timestamps
     };
 
     const activity = new TeamActivityModel(activityData);
@@ -297,8 +316,6 @@ export async function getAllTeamsFromMongoDB(): Promise<Team[]> {
   }
 }
 
-// Deletes a team and handles disassociation of members.
-// Presentation disassociation should be handled by the calling API route via firestoreService.
 export async function deleteTeamFromMongoDB(teamId: string, actorId: string): Promise<boolean> {
   await dbConnect();
   const session = await mongoose.startSession();
@@ -309,27 +326,20 @@ export async function deleteTeamFromMongoDB(teamId: string, actorId: string): Pr
       throw new Error('Team not found for deletion.');
     }
 
-    // 1. Disassociate members from this team
     const memberIds = Array.from(team.members.keys());
     for (const memberId of memberIds) {
         const user = await UserModel.findById(memberId).session(session);
-        if (user && user.teamId && user.teamId.toString() === team.id.toString()) { // Ensure it's this team
+        if (user && user.teamId && user.teamId.toString() === team.id.toString()) { 
             user.teamId = null;
             user.role = 'guest';
             await user.save({ session });
         }
     }
     
-    // 2. Delete team activities
     await TeamActivityModel.deleteMany({ teamId }).session(session);
-
-    // 3. Delete the team itself
     const deletionResult = await TeamModel.findByIdAndDelete(teamId).session(session);
     
     await session.commitTransaction();
-    
-    // Log the deletion after successful commit
-    // Note: team.id might not be accessible if team is fully deleted, team.name should be fine.
     await logTeamActivityInMongoDB(teamId, actorId, 'team_deleted', { teamName: team.name });
 
     return !!deletionResult;
