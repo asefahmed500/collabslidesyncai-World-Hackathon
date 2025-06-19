@@ -26,6 +26,7 @@ import { useToast } from '@/hooks/use-toast';
 import { NotificationBell } from '@/components/notifications/NotificationBell';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
+import { ScrollArea } from '@/components/ui/scroll-area'; // Import ScrollArea
 
 interface NavLink {
   href: string;
@@ -220,7 +221,7 @@ export function SiteHeader() {
                         <span className="sr-only">Toggle menu</span>
                     </Button>
                     </SheetTrigger>
-                    <SheetContent side="right" className="w-[280px] sm:w-[320px] p-0">
+                    <SheetContent side="right" className="w-[280px] sm:w-[320px] p-0 flex flex-col">
                      <SheetHeader className="p-4 border-b">
                         <SheetTitle>
                             <Link href="/dashboard" className="flex items-center space-x-2" onClick={() => setIsMobileMenuOpen(false)}>
@@ -229,22 +230,24 @@ export function SiteHeader() {
                             </Link>
                         </SheetTitle>
                     </SheetHeader>
-                    <nav className="flex flex-col space-y-1 p-4">
-                        {mainNavLinks.map(link => renderNavLink(link, true))}
-                        {renderNavLink({ label: "AI Tools", icon: Sparkles, isDropdown: true, dropdownItems: aiToolsLinks }, true)}
-                        <DropdownMenuSeparator className="my-2"/>
-                         <p className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Account</p>
-                         {userDropdownLinks.map(link => (
-                            <Button key={link.href} variant={pathname === link.href ? "secondary" : "ghost"} asChild className="justify-start" onClick={() => setIsMobileMenuOpen(false)}>
-                                <Link href={link.href}>
-                                    <link.icon className="mr-2 h-4 w-4"/>{link.label}
-                                </Link>
-                            </Button>
-                         ))}
-                        <Button variant="ghost" onClick={handleSignOut} className="justify-start text-destructive hover:text-destructive focus:text-destructive">
-                            <LogOut className="mr-2 h-4 w-4" /> Log out
-                        </Button>
-                    </nav>
+                    <ScrollArea className="flex-grow">
+                      <nav className="flex flex-col space-y-1 p-4">
+                          {mainNavLinks.map(link => renderNavLink(link, true))}
+                          {renderNavLink({ label: "AI Tools", icon: Sparkles, isDropdown: true, dropdownItems: aiToolsLinks }, true)}
+                          <DropdownMenuSeparator className="my-2"/>
+                          <p className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Account</p>
+                          {userDropdownLinks.map(link => (
+                              <Button key={link.href} variant={pathname === link.href ? "secondary" : "ghost"} asChild className="justify-start" onClick={() => setIsMobileMenuOpen(false)}>
+                                  <Link href={link.href}>
+                                      <link.icon className="mr-2 h-4 w-4"/>{link.label}
+                                  </Link>
+                              </Button>
+                          ))}
+                          <Button variant="ghost" onClick={handleSignOut} className="justify-start text-destructive hover:text-destructive focus:text-destructive">
+                              <LogOut className="mr-2 h-4 w-4" /> Log out
+                          </Button>
+                      </nav>
+                    </ScrollArea>
                     </SheetContent>
                 </Sheet>
             </div>

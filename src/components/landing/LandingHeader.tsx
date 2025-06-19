@@ -7,6 +7,7 @@ import { Zap, Menu, Home, Lightbulb, Tag, LayoutDashboard, Info, MessageSquare, 
 import { useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
+import { ScrollArea } from '@/components/ui/scroll-area'; // Import ScrollArea
 
 const publicNavLinks = [
   { href: "/", label: "Home", icon: Home },
@@ -61,7 +62,7 @@ export function LandingHeader() {
                 <span className="sr-only">Toggle menu</span>
               </Button>
             </SheetTrigger>
-            <SheetContent side="right" className="w-[280px] sm:w-[320px] p-0">
+            <SheetContent side="right" className="w-[280px] sm:w-[320px] p-0 flex flex-col">
               <SheetHeader className="p-4 border-b">
                 <SheetTitle>
                     <Link href="/" className="flex items-center space-x-2" onClick={() => setIsMobileMenuOpen(false)}>
@@ -70,29 +71,31 @@ export function LandingHeader() {
                     </Link>
                 </SheetTitle>
               </SheetHeader>
-              <nav className="flex flex-col space-y-2 p-4">
-                {publicNavLinks.map((link) => (
-                  <Button
-                    key={link.href}
-                    variant={pathname === link.href ? "secondary" : "ghost"}
-                    asChild
-                    className="justify-start"
-                    onClick={() => setIsMobileMenuOpen(false)}
-                  >
-                    <Link href={link.href}>
-                      <link.icon className="mr-2 h-4 w-4" />
-                      {link.label}
-                    </Link>
+              <ScrollArea className="flex-grow">
+                <nav className="flex flex-col space-y-2 p-4">
+                  {publicNavLinks.map((link) => (
+                    <Button
+                      key={link.href}
+                      variant={pathname === link.href ? "secondary" : "ghost"}
+                      asChild
+                      className="justify-start"
+                      onClick={() => setIsMobileMenuOpen(false)}
+                    >
+                      <Link href={link.href}>
+                        <link.icon className="mr-2 h-4 w-4" />
+                        {link.label}
+                      </Link>
+                    </Button>
+                  ))}
+                  <hr className="my-3"/>
+                  <Button asChild onClick={() => setIsMobileMenuOpen(false)}>
+                    <Link href="/login">Login</Link>
                   </Button>
-                ))}
-                <hr className="my-3"/>
-                <Button asChild onClick={() => setIsMobileMenuOpen(false)}>
-                  <Link href="/login">Login</Link>
-                </Button>
-                <Button variant="outline" asChild onClick={() => setIsMobileMenuOpen(false)}>
-                  <Link href="/signup">Sign Up</Link>
-                </Button>
-              </nav>
+                  <Button variant="outline" asChild onClick={() => setIsMobileMenuOpen(false)}>
+                    <Link href="/signup">Sign Up</Link>
+                  </Button>
+                </nav>
+              </ScrollArea>
             </SheetContent>
           </Sheet>
         </div>

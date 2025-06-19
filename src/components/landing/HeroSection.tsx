@@ -1,8 +1,7 @@
 
 import Link from 'next/link';
-import Image from 'next/image';
 import { Button } from '@/components/ui/button';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, Presentation as PresentationIcon } from 'lucide-react'; // Changed Slideshow to Presentation
 
 export function HeroSection() {
   return (
@@ -19,16 +18,10 @@ export function HeroSection() {
             <Link href="/signup">Get Started Free <ArrowRight className="ml-2 h-5 w-5" /></Link>
           </Button>
         </div>
-        <div className="mt-16 relative aspect-video max-w-5xl mx-auto rounded-xl shadow-2xl overflow-hidden border-2 border-primary/20">
-          <Image
-            src="https://placehold.co/1280x720.png"
-            alt="CollabDeck Application Interface Mockup"
-            layout="fill"
-            objectFit="cover"
-            data-ai-hint="app interface presentation"
-            priority
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/10 to-transparent"></div>
+        <div className="mt-16 relative flex items-center justify-center aspect-video max-w-3xl mx-auto rounded-xl overflow-hidden">
+          {/* Replaced placeholder image with a large Presentation icon */}
+          <PresentationIcon className="h-48 w-48 sm:h-64 sm:w-64 md:h-80 md:w-80 text-primary opacity-20" strokeWidth={1.5} />
+          <div className="absolute inset-0 bg-gradient-to-t from-background/5 via-transparent to-transparent pointer-events-none"></div>
         </div>
       </div>
     </section>
