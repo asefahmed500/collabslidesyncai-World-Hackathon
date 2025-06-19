@@ -441,7 +441,8 @@ export function PropertiesPanel({
                                     const parsedData = JSON.parse(e.target.value);
                                     handleChartContentChange('data', parsedData);
                                 } catch (err) {
-                                    console.warn("Invalid JSON for chart data");
+                                    // console.warn("Invalid JSON for chart data");
+                                    // Optionally set an error state for the textarea
                                 }
                             }}
                             className="mt-1 font-mono text-xs"
@@ -542,17 +543,32 @@ export function PropertiesPanel({
                 </>
               )}
               {selectedElement.type === 'shape' && (
-                 <div>
-                  <Label htmlFor="shapeBackgroundColor">Fill Color</Label>
-                  <Input
-                    id="shapeBackgroundColor"
-                    type="color"
-                    value={currentStyle.backgroundColor || '#CCCCCC'}
-                    onChange={(e) => handleStyleChange('backgroundColor', e.target.value)}
-                    className="mt-1 h-10 p-1"
-                    disabled={effectiveDisabled}
-                  />
-                </div>
+                 <>
+                    <div>
+                      <Label htmlFor="shapeType">Shape Type</Label>
+                      <Select value={currentStyle.shapeType || 'rectangle'} onValueChange={(val) => handleStyleChange('shapeType', val)} disabled={effectiveDisabled}>
+                        <SelectTrigger id="shapeType" className="mt-1">
+                          <SelectValue placeholder="Select shape type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="rectangle">Rectangle</SelectItem>
+                          <SelectItem value="circle">Circle</SelectItem>
+                          <SelectItem value="triangle">Triangle (Placeholder)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                        <Label htmlFor="shapeBackgroundColor">Fill Color</Label>
+                        <Input
+                            id="shapeBackgroundColor"
+                            type="color"
+                            value={currentStyle.backgroundColor || '#CCCCCC'}
+                            onChange={(e) => handleStyleChange('backgroundColor', e.target.value)}
+                            className="mt-1 h-10 p-1"
+                            disabled={effectiveDisabled}
+                        />
+                    </div>
+                </>
               )}
               {selectedElement.type === 'icon' && (
                 <>
@@ -687,4 +703,3 @@ export function PropertiesPanel({
     </div>
   );
 }
-
