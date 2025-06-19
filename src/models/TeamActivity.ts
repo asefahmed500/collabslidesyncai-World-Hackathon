@@ -60,3 +60,4 @@ if (mongoose.models.TeamActivity) {
 }
 
 export default TeamActivityModel;
+
