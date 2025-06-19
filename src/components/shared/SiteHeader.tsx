@@ -42,7 +42,7 @@ export function SiteHeader() {
                 <Link href={currentUser ? "/dashboard" : "/"} className="flex items-center space-x-2">
                     <Zap className="h-7 w-7 text-primary" />
                     <span className="font-headline text-2xl font-bold text-primary hidden sm:inline-block">
-                        CollabSlideSyncAI
+                        CollabDeck
                     </span>
                 </Link>
                 <div className="h-9 w-9 bg-muted rounded-full animate-pulse"></div> {/* Placeholder for avatar */}
@@ -59,7 +59,7 @@ export function SiteHeader() {
         <Link href={currentUser ? "/dashboard" : "/"} className="flex items-center space-x-2">
           <Zap className="h-7 w-7 text-primary" />
           <span className="font-headline text-2xl font-bold text-primary hidden sm:inline-block">
-            CollabSlideSyncAI
+            CollabDeck
           </span>
         </Link>
 
