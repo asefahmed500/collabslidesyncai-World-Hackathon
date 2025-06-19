@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PresentationCard } from '@/components/dashboard/PresentationCard';
 import type { Presentation, User as AppUser } from '@/types';
-import { PlusCircle, Search, Filter, List, Grid, Users, Activity, Loader2, FileWarning, Library, ArrowUpDown, Eye, Trash2, Edit3, MoreVertical, CopyIcon, Star, BarChart2, FileText as FileTextIcon, Cpu, Users2, StarIcon as FilledStarIcon } from 'lucide-react';
+import { PlusCircle, Search, Filter, List, Grid, Users, Activity, Loader2, FileWarning, Library, ArrowUpDown, Eye, Trash2, Edit3, MoreVertical, CopyIcon, Star, BarChart2, FileText as FileTextIcon, Cpu, Users2, StarIcon as FilledStarIcon, Sparkles } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -247,6 +247,25 @@ export default function DashboardPage() {
           <h1 className="font-headline text-4xl font-bold text-primary">Your Dashboard</h1>
           <p className="text-muted-foreground">Welcome back, {currentUser?.name}! Manage your presentations and assets here.</p>
         </div>
+        
+        {currentUser && !currentUser.isPremium && (
+          <Card className="mb-8 bg-accent/10 border-accent shadow-lg">
+            <CardHeader>
+              <CardTitle className="flex items-center text-accent"><Sparkles className="mr-2 h-6 w-6"/> Upgrade to Premium!</CardTitle>
+              <CardDescription className="text-accent/90">Unlock unlimited presentations, advanced AI features, and more.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {/* This button is a placeholder. Actual Stripe integration is complex. */}
+              <Button 
+                onClick={() => toast({title: "Coming Soon!", description: "Stripe integration for premium features is under development."})}
+                className="bg-accent hover:bg-accent/90 text-accent-foreground"
+              >
+                Learn More & Upgrade
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
 
         {/* User Analytics & Insights Section */}
         <section className="mb-10">
@@ -542,7 +561,7 @@ export default function DashboardPage() {
 
       </main>
       <footer className="text-center p-4 text-muted-foreground text-sm border-t mt-auto">
-        © {new Date().getFullYear()} CollabSlideSyncAI.
+        © {new Date().getFullYear()} CollabDeck.
       </footer>
 
       {presentationToDelete && (

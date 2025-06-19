@@ -16,7 +16,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from '@/components/ui/form';
-import { Loader2, User, Save, KeyRound, ShieldAlert, Trash2, MailWarning, CheckCircle2 } from 'lucide-react';
+import { Loader2, User, Save, KeyRound, ShieldAlert, Trash2, MailWarning, CheckCircle2, CreditCard, ExternalLink, Sparkles } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -121,6 +121,14 @@ export default function ProfilePage() {
     setIsDeleteDialogOpen(false);
   };
 
+  const handleManageSubscription = () => {
+    // In a real app, this would redirect to Stripe Customer Portal
+    // The URL for the portal session would be generated server-side.
+    toast({title: "Coming Soon!", description: "Subscription management via Stripe Customer Portal is under development."});
+    // Example redirect:
+    // router.push(currentUser.stripeCustomerPortalUrl); 
+  };
+
 
   if (authLoading) {
     return <div className="flex min-h-screen flex-col items-center justify-center"><Loader2 className="h-12 w-12 animate-spin text-primary" /></div>;
@@ -140,9 +148,9 @@ export default function ProfilePage() {
           <p className="text-muted-foreground">Manage your account details and preferences.</p>
         </div>
 
-        <div className="grid gap-8 md:grid-cols-2">
+        <div className="grid gap-8 md:grid-cols-3">
           {/* Profile Information Card */}
-          <Card className="shadow-lg">
+          <Card className="shadow-lg md:col-span-2">
             <CardHeader>
               <CardTitle>Profile Information</CardTitle>
               <CardDescription>Update your name and profile picture.</CardDescription>
@@ -196,11 +204,11 @@ export default function ProfilePage() {
             </CardContent>
           </Card>
 
-          {/* Security Card */}
-          <Card className="shadow-lg">
+          {/* Security & Subscription Card */}
+          <Card className="shadow-lg md:col-span-1">
             <CardHeader>
-              <CardTitle>Security</CardTitle>
-              <CardDescription>Manage your account security settings.</CardDescription>
+              <CardTitle>Account & Subscription</CardTitle>
+              <CardDescription>Manage security and billing.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               {/* Change Password */}
@@ -220,7 +228,7 @@ export default function ProfilePage() {
                             <FormItem>
                             <FormLabel>New Password</FormLabel>
                             <FormControl><Input type="password" {...field} /></FormControl>
-                            <FormDescription>Must be at least 8 characters.</FormDescription>
+                            <FormDescription className="text-xs">Min. 8 characters.</FormDescription>
                             <FormMessage />
                             </FormItem>
                         )} />
@@ -238,6 +246,32 @@ export default function ProfilePage() {
                  ) : (
                     <p className="text-sm text-muted-foreground">You signed in using a social provider. Password management is handled by your social provider.</p>
                  )}
+              </div>
+              <hr/>
+                {/* Subscription Management */}
+              <div>
+                <h3 className="text-md font-semibold mb-2 flex items-center">
+                  <CreditCard className="mr-2 h-4 w-4 text-primary"/> Subscription
+                </h3>
+                {currentUser.isPremium && currentUser.subscriptionPlan ? (
+                  <>
+                    <p className="text-sm">Current Plan: <Badge variant="secondary" className="capitalize">{currentUser.subscriptionPlan.replace('_', ' ')}</Badge></p>
+                    {currentUser.subscriptionEndDate && <p className="text-xs text-muted-foreground mt-1">Renews/Expires on: {new Date(currentUser.subscriptionEndDate).toLocaleDateString()}</p>}
+                    <Button variant="outline" onClick={handleManageSubscription} className="w-full mt-3">
+                      Manage Subscription <ExternalLink className="ml-2 h-3 w-3"/>
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm text-muted-foreground">You are currently on the Free plan.</p>
+                    <Button 
+                        onClick={() => toast({title: "Coming Soon!", description: "Stripe integration for premium features is under development."})} 
+                        className="w-full mt-3 bg-accent hover:bg-accent/90 text-accent-foreground"
+                    >
+                      <Sparkles className="mr-2 h-4 w-4"/> Upgrade to Premium
+                    </Button>
+                  </>
+                )}
               </div>
               <hr/>
               {/* 2FA */}
@@ -261,7 +295,7 @@ export default function ProfilePage() {
                         <AlertDialogHeader>
                         <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
                         <AlertDialogDescription>
-                            This action cannot be undone. This will permanently delete your account and all associated data from CollabSlideSyncAI.
+                            This action cannot be undone. This will permanently delete your account and all associated data from CollabDeck.
                         </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
@@ -279,7 +313,7 @@ export default function ProfilePage() {
         </div>
       </main>
       <footer className="text-center p-4 text-muted-foreground text-sm border-t">
-        © {new Date().getFullYear()} CollabSlideSyncAI.
+        © {new Date().getFullYear()} CollabDeck.
       </footer>
     </div>
   );

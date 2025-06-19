@@ -14,6 +14,14 @@ export interface UserDocument extends Omit<UserType, 'id' | 'lastActive' | 'crea
   twoFactorEnabled?: boolean;
   disabled?: boolean; 
   teamId?: string | null;
+
+  // Stripe Subscription Fields
+  isPremium?: boolean;
+  stripeCustomerId?: string | null;
+  stripeSubscriptionId?: string | null;
+  subscriptionPlan?: 'premium_monthly' | 'premium_yearly' | null;
+  subscriptionStartDate?: Date | null;
+  subscriptionEndDate?: Date | null;
 }
 
 const UserSettingsSchema = new Schema({
@@ -44,6 +52,14 @@ const UserSchema = new Schema<UserDocument>(
     googleId: { type: String, sparse: true, unique: true, default: null }, // Unique if present
     githubId: { type: String, sparse: true, unique: true, default: null }, // Unique if present
     twoFactorEnabled: { type: Boolean, default: false },
+
+    // Stripe Subscription Fields
+    isPremium: { type: Boolean, default: false },
+    stripeCustomerId: { type: String, default: null, index: true, sparse: true },
+    stripeSubscriptionId: { type: String, default: null, index: true, sparse: true },
+    subscriptionPlan: { type: String, enum: ['premium_monthly', 'premium_yearly', null], default: null },
+    subscriptionStartDate: { type: Date, default: null },
+    subscriptionEndDate: { type: Date, default: null },
   },
   {
     timestamps: true, // Adds createdAt and updatedAt
@@ -83,6 +99,3 @@ if (mongoose.models && mongoose.models.User) {
 }
 
 export default UserModel;
-
-
-

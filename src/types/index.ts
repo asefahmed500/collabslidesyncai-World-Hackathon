@@ -24,6 +24,14 @@ export interface User {
   googleId?: string | null;
   githubId?: string | null;
   twoFactorEnabled?: boolean;
+
+  // Stripe Subscription Fields
+  isPremium?: boolean;
+  stripeCustomerId?: string | null;
+  stripeSubscriptionId?: string | null;
+  subscriptionPlan?: 'premium_monthly' | 'premium_yearly' | null;
+  subscriptionStartDate?: Date | null;
+  subscriptionEndDate?: Date | null;
 }
 
 export type TeamRole = 'owner' | 'admin' | 'editor' | 'viewer';
