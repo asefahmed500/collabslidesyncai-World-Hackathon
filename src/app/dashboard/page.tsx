@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PresentationCard } from '@/components/dashboard/PresentationCard';
 import type { Presentation, User as AppUser } from '@/types';
-import { PlusCircle, Search, Filter, List, Grid, Users, Activity, Loader2, FileWarning, Library, ArrowUpDown, Eye, Trash2, Edit3, MoreVertical, CopyIcon, Star, BarChart2, FileText as FileTextIcon, Cpu, Users2, StarIcon } from 'lucide-react';
+import { PlusCircle, Search, Filter, List, Grid, Users, Activity, Loader2, FileWarning, Library, ArrowUpDown, Eye, Trash2, Edit3, MoreVertical, CopyIcon, Star, BarChart2, FileText as FileTextIcon, Cpu, Users2, StarIcon as FilledStarIcon } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -282,7 +282,7 @@ export default function DashboardPage() {
                     </CardHeader>
                     <CardContent>
                         <div className="text-2xl font-bold">N/A</div>
-                        <p className="text-xs text-muted-foreground">Tracking coming soon.</p>
+                        <p className="text-xs text-muted-foreground">Detailed token tracking coming soon.</p>
                     </CardContent>
                 </Card>
                 <Card className="shadow-sm hover:shadow-md transition-shadow">
@@ -292,11 +292,15 @@ export default function DashboardPage() {
                     </CardHeader>
                     <CardContent>
                         <div className="text-2xl font-bold">N/A</div>
-                        <p className="text-xs text-muted-foreground">View team activity for insights.</p>
-                         {currentUser?.teamId && (
-                            <Button variant="link" size="sm" className="p-0 h-auto text-xs mt-1" asChild>
-                                <Link href="/dashboard/manage-team">View Team Activity</Link>
-                            </Button>
+                         {currentUser?.teamId ? (
+                             <p className="text-xs text-muted-foreground">
+                                View team activity for insights.
+                                <Button variant="link" size="sm" className="p-0 h-auto text-xs ml-1" asChild>
+                                    <Link href="/dashboard/manage-team">View Team Activity</Link>
+                                </Button>
+                            </p>
+                        ) : (
+                            <p className="text-xs text-muted-foreground">Join or create a team to see collab stats.</p>
                         )}
                     </CardContent>
                 </Card>
@@ -417,7 +421,7 @@ export default function DashboardPage() {
                                 {presentation.title}
                             </Link>
                             {currentUser && presentation.favoritedBy && presentation.favoritedBy[currentUser.id] && (
-                                <StarIcon className="ml-2 h-4 w-4 text-yellow-400 fill-yellow-400 flex-shrink-0" />
+                                <FilledStarIcon className="ml-2 h-4 w-4 text-yellow-400 fill-yellow-400 flex-shrink-0" />
                             )}
                           </div>
                           <p className="text-xs text-muted-foreground truncate">
