@@ -7,7 +7,6 @@ import { useAuth } from '@/hooks/useAuth';
 import { SiteHeader } from '@/components/shared/SiteHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-// import { Label } from '@/components/ui/label'; // No longer needed if using FormLabel consistently
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useToast } from '@/hooks/use-toast';
@@ -16,8 +15,8 @@ import { useFormState, useFormStatus } from 'react-dom';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from '@/components/ui/form'; // Added FormDescription
-import { Loader2, User, Save, KeyRound, ShieldAlert, Trash2 } from 'lucide-react';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from '@/components/ui/form';
+import { Loader2, User, Save, KeyRound, ShieldAlert, Trash2, MailWarning, CheckCircle2 } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,8 +26,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Badge } from '@/components/ui/badge'; // Import Badge
 
 const profileFormSchema = z.object({
   name: z.string().min(2, { message: "Name must be at least 2 characters." }).optional(),
@@ -97,7 +96,7 @@ export default function ProfilePage() {
   useEffect(() => {
     if (profileFormState.message) {
       toast({ title: profileFormState.success ? "Success" : "Error", description: profileFormState.message, variant: profileFormState.success ? "default" : "destructive" });
-      if (profileFormState.success) router.refresh(); // To reflect changes in useAuth hook
+      if (profileFormState.success) router.refresh(); 
     }
   }, [profileFormState, toast, router]);
 
@@ -111,11 +110,9 @@ export default function ProfilePage() {
   
   const handleDeleteAccount = async () => {
     if (!currentUser) return;
-    // Simple confirmation, real app might need password re-auth for this
     const result = await deleteUserAccountServer(currentUser.id);
     if (result.success) {
       toast({ title: "Account Deleted", description: "Your account has been successfully deleted." });
-      // Firebase signOut is called in useAuth on user deletion in firebase
       router.push('/'); 
     } else {
       toast({ title: "Deletion Failed", description: result.message, variant: "destructive" });
@@ -128,7 +125,7 @@ export default function ProfilePage() {
   if (authLoading) {
     return <div className="flex min-h-screen flex-col items-center justify-center"><Loader2 className="h-12 w-12 animate-spin text-primary" /></div>;
   }
-  if (!currentUser) {
+  if (!currentUser || !firebaseUser) { // Ensure firebaseUser is also loaded
      return <div className="flex min-h-screen flex-col items-center justify-center"><Loader2 className="h-12 w-12 animate-spin text-primary" /></div>;
   }
 
@@ -158,7 +155,21 @@ export default function ProfilePage() {
                 </Avatar>
                 <div>
                   <p className="text-lg font-semibold">{currentUser.name}</p>
-                  <p className="text-sm text-muted-foreground">{currentUser.email}</p>
+                  <div className="flex items-center text-sm text-muted-foreground">
+                    {currentUser.email}
+                    {firebaseUser.emailVerified ? (
+                        <Badge variant="secondary" className="ml-2 text-xs bg-green-100 text-green-700 border-green-300">
+                            <CheckCircle2 className="mr-1 h-3 w-3"/> Verified
+                        </Badge>
+                    ) : (
+                        <Badge variant="destructive" className="ml-2 text-xs">
+                            <MailWarning className="mr-1 h-3 w-3"/> Not Verified
+                        </Badge>
+                    )}
+                  </div>
+                   {!firebaseUser.emailVerified && firebaseUser.providerData.some(p => p.providerId === 'password') && (
+                     <p className="text-xs text-amber-600 mt-1">Please check your inbox to verify your email address.</p>
+                   )}
                 </div>
               </div>
               <Form {...profileForm}>
@@ -229,11 +240,12 @@ export default function ProfilePage() {
                  )}
               </div>
               <hr/>
-              {/* 2FA - Placeholder */}
+              {/* 2FA */}
               <div>
                 <h3 className="text-md font-semibold mb-2">Two-Factor Authentication (2FA)</h3>
                 <p className="text-sm text-muted-foreground mb-3">Enhance your account security by enabling 2FA.</p>
                 <Button variant="outline" disabled>Enable 2FA (Coming Soon)</Button>
+                 <p className="text-xs text-muted-foreground mt-1">Currently, this feature is under development.</p>
               </div>
                <hr/>
               {/* Account Deletion */}
@@ -252,7 +264,6 @@ export default function ProfilePage() {
                             This action cannot be undone. This will permanently delete your account and all associated data from CollabSlideSyncAI.
                         </AlertDialogDescription>
                         </AlertDialogHeader>
-                        {/* TODO: Consider adding a password confirmation field here for extra safety */}
                         <AlertDialogFooter>
                         <AlertDialogCancel>Cancel</AlertDialogCancel>
                         <AlertDialogAction onClick={handleDeleteAccount} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">
