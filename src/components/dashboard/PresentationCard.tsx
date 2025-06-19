@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import type { Presentation } from '@/types';
-import { Users, Clock, Edit3, Eye, Trash2, MoreVertical, CopyIcon, Star } from 'lucide-react';
+import { Users, Clock, Edit3, Eye, Trash2, MoreVertical, CopyIcon, Star, StarIcon as FilledStarIcon } from 'lucide-react';
 import { formatDistanceToNowStrict } from 'date-fns';
 import {
   DropdownMenu,
@@ -17,13 +17,17 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
+import { cn } from '@/lib/utils';
 
 interface PresentationCardProps {
   presentation: Presentation;
-  onDeleteRequest: (presentation: Presentation) => void; 
+  onDeleteRequest: (presentationId: string) => void; 
+  onDuplicateRequest: (presentationId: string) => void;
+  onToggleFavoriteRequest: (presentationId: string) => void;
+  isFavorite: boolean;
 }
 
-export function PresentationCard({ presentation, onDeleteRequest }: PresentationCardProps) {
+export function PresentationCard({ presentation, onDeleteRequest, onDuplicateRequest, onToggleFavoriteRequest, isFavorite }: PresentationCardProps) {
   const router = useRouter();
   const { currentUser } = useAuth();
   const collaboratorCount = presentation.access ? Object.keys(presentation.access).filter(id => id !== presentation.creatorId).length : 0;
@@ -33,12 +37,6 @@ export function PresentationCard({ presentation, onDeleteRequest }: Presentation
     : (presentation.lastUpdatedAt as any)?.toDate 
     ? (presentation.lastUpdatedAt as any).toDate() 
     : new Date();
-
-  const handleDuplicate = () => {
-    // Placeholder for duplicate functionality
-    console.log("Duplicate action for:", presentation.title);
-    // In a real app: call an API to duplicate, then perhaps refresh list or navigate to new one
-  };
 
   const isCreator = presentation.creatorId === currentUser?.id;
 
@@ -60,14 +58,22 @@ export function PresentationCard({ presentation, onDeleteRequest }: Presentation
               <Eye className="w-3 h-3 mr-1" /> Public
             </Badge>
           )}
+           {isFavorite && (
+            <FilledStarIcon className="absolute top-2 left-2 h-5 w-5 text-yellow-400 fill-yellow-400 z-10" />
+          )}
         </Link>
       </CardHeader>
       <CardContent className="p-4 flex-grow">
-        <Link href={`/editor/${presentation.id}`}>
-          <CardTitle className="font-headline text-lg mb-1 hover:text-primary transition-colors truncate" title={presentation.title}>
-            {presentation.title}
-          </CardTitle>
-        </Link>
+        <div className="flex items-start justify-between">
+            <Link href={`/editor/${presentation.id}`} className="flex-grow min-w-0">
+            <CardTitle className="font-headline text-lg mb-1 hover:text-primary transition-colors truncate" title={presentation.title}>
+                {presentation.title}
+            </CardTitle>
+            </Link>
+            <Button variant="ghost" size="icon" className="h-7 w-7 flex-shrink-0 -mr-2 -mt-1" onClick={() => onToggleFavoriteRequest(presentation.id)} title={isFavorite ? "Unfavorite" : "Favorite"}>
+                {isFavorite ? <FilledStarIcon className="h-5 w-5 text-yellow-400 fill-yellow-400" /> : <Star className="h-5 w-5 text-muted-foreground hover:text-yellow-400" />}
+            </Button>
+        </div>
         <CardDescription className="text-xs text-muted-foreground mb-2 h-8 line-clamp-2" title={presentation.description}>
           {presentation.description || "No description available."}
         </CardDescription>
@@ -102,16 +108,16 @@ export function PresentationCard({ presentation, onDeleteRequest }: Presentation
               <DropdownMenuItem onClick={() => router.push(`/editor/${presentation.id}`)}>
                 <Edit3 className="mr-2 h-4 w-4" /> Open Editor
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleDuplicate} disabled>
-                <CopyIcon className="mr-2 h-4 w-4" /> Duplicate (Soon)
+              <DropdownMenuItem onClick={() => onDuplicateRequest(presentation.id)}>
+                <CopyIcon className="mr-2 h-4 w-4" /> Duplicate
               </DropdownMenuItem>
-              <DropdownMenuItem disabled>
-                <Star className="mr-2 h-4 w-4" /> Add to Favorites (Soon)
+              <DropdownMenuItem onClick={() => onToggleFavoriteRequest(presentation.id)}>
+                <Star className="mr-2 h-4 w-4" /> {isFavorite ? 'Unfavorite' : 'Favorite'}
               </DropdownMenuItem>
               {isCreator && (
                 <>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => onDeleteRequest(presentation)} className="text-destructive focus:text-destructive focus:bg-destructive/10">
+                  <DropdownMenuItem onClick={() => onDeleteRequest(presentation.id)} className="text-destructive focus:text-destructive focus:bg-destructive/10">
                     <Trash2 className="mr-2 h-4 w-4" /> Delete
                   </DropdownMenuItem>
                 </>

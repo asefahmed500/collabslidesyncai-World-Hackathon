@@ -110,6 +110,7 @@ export async function createPresentation(userId: string, title: string, teamId?:
     deletedAt: null,
     moderationStatus: 'active', 
     moderationNotes: '',
+    favoritedBy: {},
     createdAt: serverTimestamp() as Timestamp,
     lastUpdatedAt: serverTimestamp() as Timestamp,
     slides: [newSlide],
@@ -160,6 +161,7 @@ export async function getPresentationsForUser(userId: string, userTeamId?: strin
       if (!presentationsMap.has(docSnap.id)) {
         const data = convertTimestamps(docSnap.data());
         if (!data.access) data.access = {};
+        if (!data.favoritedBy) data.favoritedBy = {};
         presentationsMap.set(docSnap.id, { id: docSnap.id, ...data } as Presentation);
       }
   });
@@ -183,10 +185,11 @@ export async function getPresentationById(presentationId: string): Promise<Prese
             settings: { isPublic: false, passwordProtected: false, commentsAllowed: false },
             slides: [], 
             access: {}, 
+            favoritedBy: {},
             lastUpdatedAt: data.lastUpdatedAt, 
         } as Presentation;
     }
-    return { id: docSnap.id, ...convertTimestamps(data) } as Presentation;
+    return { id: docSnap.id, ...convertTimestamps(data), favoritedBy: data.favoritedBy || {} } as Presentation;
   }
   return null;
 }
@@ -195,7 +198,8 @@ export async function getPresentationByIdAdmin(presentationId: string): Promise<
   const docRef = doc(db, 'presentations', presentationId);
   const docSnap = await getDoc(docRef);
   if (docSnap.exists()) {
-    return { id: docSnap.id, ...convertTimestamps(docSnap.data()) } as Presentation;
+    const data = docSnap.data() as Presentation;
+    return { id: docSnap.id, ...convertTimestamps(data), favoritedBy: data.favoritedBy || {} } as Presentation;
   }
   return null;
 }
@@ -258,6 +262,10 @@ export async function updatePresentation(presentationId: string, data: Partial<P
             }
           }))
         }));
+      } else if (typedKey === 'favoritedBy') {
+        // Handled by specific toggleFavoriteStatus function
+        // For direct updates, one might iterate through `data.favoritedBy`
+        // and set/delete fields: updatePayload[`favoritedBy.${userId}`] = data.favoritedBy[userId];
       } else if (typedKey !== 'id' && typedKey !== 'lastUpdatedAt' && typedKey !== 'createdAt') {
         updatePayload[typedKey] = data[typedKey];
       }
@@ -988,6 +996,105 @@ export async function removeTeamIdFromPresentations(teamId: string): Promise<voi
   await batch.commit();
   console.log(`Removed teamId ${teamId} from ${snapshot.size} presentations in Firestore.`);
 }
+
+export async function duplicatePresentation(originalPresentationId: string, newOwnerId: string, newOwnerTeamId?: string | null): Promise<string> {
+  const originalPresRef = doc(db, 'presentations', originalPresentationId);
+  const originalPresSnap = await getDoc(originalPresRef);
+
+  if (!originalPresSnap.exists()) {
+    throw new Error("Original presentation not found.");
+  }
+
+  const originalData = originalPresSnap.data() as Presentation;
+
+  const newSlides = originalData.slides.map(slide => ({
+    ...slide,
+    id: uuidv4(),
+    elements: slide.elements.map(el => ({
+      ...el,
+      id: uuidv4(),
+      lockedBy: null,
+      lockTimestamp: null,
+    })),
+    comments: [], // Comments are not typically duplicated
+  }));
+
+  const newPresentationData: Omit<Presentation, 'id' | 'activeCollaborators'> = {
+    title: `Copy of ${originalData.title}`,
+    description: originalData.description,
+    creatorId: newOwnerId,
+    teamId: newOwnerTeamId || undefined,
+    access: { [newOwnerId]: 'owner' },
+    settings: {
+      isPublic: false, // Reset sharing settings
+      passwordProtected: false,
+      commentsAllowed: true,
+    },
+    branding: originalData.branding, // Keep original branding, or team branding if teamId is set
+    thumbnailUrl: originalData.thumbnailUrl || `https://placehold.co/320x180.png?text=Copy`,
+    version: 1,
+    slides: renumberSlides(newSlides),
+    createdAt: serverTimestamp() as Timestamp,
+    lastUpdatedAt: serverTimestamp() as Timestamp,
+    deleted: false,
+    deletedAt: null,
+    moderationStatus: 'active',
+    favoritedBy: {}, // Favorites are not copied
+  };
+
+  const newPresRef = await addDoc(presentationsCollection, newPresentationData);
+  
+  await logPresentationActivity(newPresRef.id, newOwnerId, 'presentation_created', { 
+    presentationTitle: newPresentationData.title, 
+    source: 'duplication', 
+    originalPresentationId 
+  });
+  
+  if (newOwnerTeamId) {
+    await logTeamActivityInMongoDB(newOwnerTeamId, newOwnerId, 'presentation_created', { 
+      presentationTitle: newPresentationData.title,
+      source: 'duplication',
+      originalPresentationId,
+    }, 'presentation', newPresRef.id);
+  }
+  
+  return newPresRef.id;
+}
+
+export async function toggleFavoriteStatus(presentationId: string, userId: string): Promise<boolean> {
+  const presRef = doc(db, 'presentations', presentationId);
+  let isNowFavorite = false;
+
+  await runTransaction(db, async (transaction) => {
+    const presDoc = await transaction.get(presRef);
+    if (!presDoc.exists()) {
+      throw new Error("Presentation not found.");
+    }
+    const presentation = presDoc.data() as Presentation;
+    const currentFavoritedBy = presentation.favoritedBy || {};
+    
+    if (currentFavoritedBy[userId]) {
+      // Unfavorite: remove the field
+      transaction.update(presRef, { [`favoritedBy.${userId}`]: deleteField(), lastUpdatedAt: serverTimestamp() });
+      isNowFavorite = false;
+    } else {
+      // Favorite: add the field
+      transaction.update(presRef, { [`favoritedBy.${userId}`]: true, lastUpdatedAt: serverTimestamp() });
+      isNowFavorite = true;
+    }
+  });
+
+  await logPresentationActivity(
+    presentationId, 
+    userId, 
+    isNowFavorite ? 'presentation_favorited' : 'presentation_unfavorited', 
+    { presentationTitle: (await getPresentationById(presentationId))?.title || "Unknown" }
+  );
+
+  return isNowFavorite;
+}
+
+
 export { uuidv4 };
 
 

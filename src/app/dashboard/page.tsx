@@ -9,13 +9,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PresentationCard } from '@/components/dashboard/PresentationCard';
 import type { Presentation, User as AppUser } from '@/types';
-import { PlusCircle, Search, Filter, List, Grid, Users, Activity, Loader2, FileWarning, Library, ArrowUpDown, Eye, Trash2, Edit3, MoreVertical, CopyIcon, Star, BarChart2, FileText as FileTextIcon, Cpu, Users2 } from 'lucide-react';
+import { PlusCircle, Search, Filter, List, Grid, Users, Activity, Loader2, FileWarning, Library, ArrowUpDown, Eye, Trash2, Edit3, MoreVertical, CopyIcon, Star, BarChart2, FileText as FileTextIcon, Cpu, Users2, StarIcon } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import Image from 'next/image';
 import { useAuth } from '@/hooks/useAuth';
-import { getPresentationsForUser, createPresentation as apiCreatePresentation, deletePresentation as apiDeletePresentation } from '@/lib/firestoreService';
+import { getPresentationsForUser, createPresentation as apiCreatePresentation, deletePresentation as apiDeletePresentation, duplicatePresentation as apiDuplicatePresentation, toggleFavoriteStatus as apiToggleFavoriteStatus } from '@/lib/firestoreService';
 import { useToast } from '@/hooks/use-toast';
 import {
   AlertDialog,
@@ -121,6 +121,43 @@ export default function DashboardPage() {
     }
   };
 
+  const handleDuplicatePresentation = async (presentationId: string) => {
+    if (!currentUser) {
+      toast({ title: "Error", description: "You must be logged in.", variant: "destructive" });
+      return;
+    }
+    try {
+      const newPresentationId = await apiDuplicatePresentation(presentationId, currentUser.id, currentUser.teamId);
+      toast({ title: "Presentation Duplicated", description: "A copy has been created. Redirecting to editor..." });
+      router.push(`/editor/${newPresentationId}`);
+    } catch (error: any) {
+      console.error("Error duplicating presentation:", error);
+      toast({ title: "Error Duplicating", description: error.message || "Could not duplicate presentation.", variant: "destructive" });
+    }
+  };
+
+  const handleToggleFavorite = async (presentationId: string) => {
+    if (!currentUser) return;
+    try {
+      const isNowFavorite = await apiToggleFavoriteStatus(presentationId, currentUser.id);
+      toast({
+        title: isNowFavorite ? "Favorited" : "Unfavorited",
+        description: `Presentation ${isNowFavorite ? 'added to' : 'removed from'} favorites.`,
+      });
+      // Optimistically update local state or refetch
+      setPresentations(prev => 
+        prev.map(p => 
+          p.id === presentationId 
+            ? { ...p, favoritedBy: { ...(p.favoritedBy || {}), [currentUser.id]: isNowFavorite ? true : undefined } } 
+            : p
+        )
+      );
+      // Or simply refetch: fetchAndSetPresentations();
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message || "Could not update favorite status.", variant: "destructive" });
+    }
+  };
+
 
   const sortedAndFilteredPresentations = presentations
     .filter(p => {
@@ -144,6 +181,9 @@ export default function DashboardPage() {
             break;
         case 'team':
             matchesFilter = !!(p.teamId && p.teamId === currentUser.teamId);
+            break;
+        case 'favorites':
+            matchesFilter = !!(p.favoritedBy && p.favoritedBy[currentUser.id]);
             break;
         default:
             matchesFilter = true;
@@ -285,6 +325,7 @@ export default function DashboardPage() {
                 <SelectItem value="mine">Created by Me</SelectItem>
                 <SelectItem value="shared">Shared / Team</SelectItem>
                 {currentUser?.teamId && <SelectItem value="team">My Team's (Strict)</SelectItem>}
+                <SelectItem value="favorites">My Favorites</SelectItem>
               </SelectContent>
             </Select>
 
@@ -321,6 +362,9 @@ export default function DashboardPage() {
                     key={p.id}
                     presentation={p}
                     onDeleteRequest={() => setPresentationToDelete(p)}
+                    onDuplicateRequest={handleDuplicatePresentation}
+                    onToggleFavoriteRequest={handleToggleFavorite}
+                    isFavorite={!!(currentUser && p.favoritedBy && p.favoritedBy[currentUser.id])}
                 />
               ))}
             </div>
@@ -351,6 +395,9 @@ export default function DashboardPage() {
                     key={presentation.id}
                     presentation={presentation}
                     onDeleteRequest={() => setPresentationToDelete(presentation)}
+                    onDuplicateRequest={handleDuplicatePresentation}
+                    onToggleFavoriteRequest={handleToggleFavorite}
+                    isFavorite={!!(currentUser && presentation.favoritedBy && presentation.favoritedBy[currentUser.id])}
                   />
                 ) : (
                   <Card key={presentation.id} className="hover:shadow-md transition-shadow">
@@ -365,9 +412,14 @@ export default function DashboardPage() {
                             data-ai-hint="presentation thumbnail small"
                         />
                         <div className="flex-grow min-w-0">
-                          <h3 className="font-headline text-lg font-semibold truncate hover:text-primary transition-colors" title={presentation.title}>
-                            <Link href={`/editor/${presentation.id}`}>{presentation.title}</Link>
-                          </h3>
+                          <div className="flex items-center">
+                            <Link href={`/editor/${presentation.id}`} className="font-headline text-lg font-semibold truncate hover:text-primary transition-colors" title={presentation.title}>
+                                {presentation.title}
+                            </Link>
+                            {currentUser && presentation.favoritedBy && presentation.favoritedBy[currentUser.id] && (
+                                <StarIcon className="ml-2 h-4 w-4 text-yellow-400 fill-yellow-400 flex-shrink-0" />
+                            )}
+                          </div>
                           <p className="text-xs text-muted-foreground truncate">
                             Last updated: {presentation.lastUpdatedAt ? formatDistanceToNowStrict(presentation.lastUpdatedAt instanceof Date ? presentation.lastUpdatedAt : (presentation.lastUpdatedAt as any).toDate(), { addSuffix: true }) : 'N/A'}
                             {presentation.teamId && currentUser?.teamId && presentation.teamId === currentUser.teamId && <Badge variant="outline" className="ml-2 text-xs">Team</Badge>}
@@ -390,8 +442,10 @@ export default function DashboardPage() {
                             <DropdownMenuContent align="end">
                                 <DropdownMenuLabel>Actions</DropdownMenuLabel>
                                 <DropdownMenuItem onClick={() => router.push(`/editor/${presentation.id}`)}><Edit3 className="mr-2 h-4 w-4" />Open Editor</DropdownMenuItem>
-                                <DropdownMenuItem disabled><CopyIcon className="mr-2 h-4 w-4" />Duplicate (Soon)</DropdownMenuItem>
-                                <DropdownMenuItem disabled><Star className="mr-2 h-4 w-4" />Add to Favorites (Soon)</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleDuplicatePresentation(presentation.id)}><CopyIcon className="mr-2 h-4 w-4" />Duplicate</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleToggleFavorite(presentation.id)}>
+                                    <Star className="mr-2 h-4 w-4" /> {currentUser && presentation.favoritedBy && presentation.favoritedBy[currentUser.id] ? 'Unfavorite' : 'Favorite'}
+                                </DropdownMenuItem>
                                 <DropdownMenuSeparator />
                                  {presentation.creatorId === currentUser?.id && (
                                     <DropdownMenuItem onClick={() => setPresentationToDelete(presentation)} className="text-destructive focus:bg-destructive/10 focus:text-destructive">

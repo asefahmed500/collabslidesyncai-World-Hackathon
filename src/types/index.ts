@@ -176,6 +176,7 @@ export interface Presentation {
   deletedAt?: FirestoreTimestamp | null; // Timestamp of soft delete
   moderationStatus: PresentationModerationStatus; // New field
   moderationNotes?: string; // Optional notes related to moderation
+  favoritedBy?: { [userId: string]: true }; // Map of user IDs who favorited this
 }
 
 export type TeamActivityType =
@@ -240,7 +241,9 @@ export type PresentationActivityType =
   | 'presentation_deleted' // Soft delete
   | 'presentation_restored'
   | 'presentation_permanently_deleted'
-  | 'moderation_status_changed';
+  | 'moderation_status_changed'
+  | 'presentation_favorited'
+  | 'presentation_unfavorited';
 
 
 export interface PresentationActivity {
