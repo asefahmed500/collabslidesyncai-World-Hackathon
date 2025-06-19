@@ -23,7 +23,7 @@ import {
   Unsubscribe,
 } from 'firebase/firestore';
 import { ref, deleteObject } from 'firebase/storage';
-import type { Presentation, Slide, SlideElement, SlideComment, User as AppUserTypeFromFirestore, Team, ActiveCollaboratorInfo, TeamRole, TeamMember, TeamActivity, TeamActivityType, PresentationActivity, PresentationActivityType, PresentationAccessRole, Asset, AssetType, SlideElementType, Notification, NotificationType as NotificationEnumType, PresentationModerationStatus } from '@/types';
+import type { Presentation, Slide, SlideElement, SlideComment, User as AppUserTypeFromFirestore, Team, ActiveCollaboratorInfo, TeamRole, TeamMember, TeamActivity, TeamActivityType, PresentationActivity, PresentationActivityType, PresentationAccessRole, Asset, AssetType, SlideElementType, Notification, NotificationType as NotificationEnumType, PresentationModerationStatus, FeedbackSubmission } from '@/types';
 import { logTeamActivityInMongoDB } from './mongoTeamService'; 
 import { getUserByEmailFromMongoDB, getUserFromMongoDB as getUserProfileFromMongoDB } from './mongoUserService'; 
 import { v4 as uuidv4 } from 'uuid';
@@ -68,6 +68,7 @@ const presentationsCollection = collection(db, 'presentations');
 const presentationActivitiesCollection = collection(db, 'presentationActivities');
 const assetsCollection = collection(db, 'assets');
 const notificationsCollection = collection(db, 'notifications');
+const feedbackSubmissionsCollection = collection(db, 'feedbackSubmissions');
 
 
 export async function createPresentation(userId: string, title: string, teamId?: string, description: string = ''): Promise<string> {
@@ -258,6 +259,7 @@ export async function updatePresentation(presentationId: string, data: Partial<P
                 borderColor: el.style?.borderColor,
                 borderWidth: el.style?.borderWidth,
                 borderRadius: el.style?.borderRadius,
+                ...(el.style?.['data-ai-hint'] && { 'data-ai-hint': el.style['data-ai-hint'] }),
                 ...el.style,
             }
           }))
@@ -593,6 +595,7 @@ export async function updateElementInSlide(presentationId: string, slideId: stri
                 textDecoration: updatedElementPartial.style?.textDecoration || el.style?.textDecoration || 'none',
                 opacity: updatedElementPartial.style?.opacity === undefined ? (el.style?.opacity === undefined ? 1 : el.style.opacity) : updatedElementPartial.style.opacity,
                 shapeType: updatedElementPartial.style?.shapeType || el.style?.shapeType || 'rectangle',
+                ...(updatedElementPartial.style?.['data-ai-hint'] && { 'data-ai-hint': updatedElementPartial.style['data-ai-hint'] }),
             };
 
             return { 
@@ -1096,5 +1099,24 @@ export async function toggleFavoriteStatus(presentationId: string, userId: strin
   return isNowFavorite;
 }
 
+export async function getFeedbackSubmissions(limitCount = 50): Promise<FeedbackSubmission[]> {
+  const q = query(
+    feedbackSubmissionsCollection,
+    orderBy('createdAt', 'desc'),
+    limit(limitCount)
+  );
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(docSnap => ({
+    id: docSnap.id,
+    ...convertTimestamps(docSnap.data()),
+  } as FeedbackSubmission));
+}
+
+export async function updateFeedbackStatus(feedbackId: string, status: FeedbackSubmission['status']): Promise<void> {
+    const docRef = doc(db, 'feedbackSubmissions', feedbackId);
+    await updateDoc(docRef, { status: status, updatedAt: serverTimestamp() }); // Assuming you might want an updatedAt for feedback
+}
+
 
 export { uuidv4 };
+

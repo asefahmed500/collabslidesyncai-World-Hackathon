@@ -2,7 +2,7 @@
 "use client";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { BarChart, Users, Shield, CreditCard, Activity, FileText, ShieldAlertIcon } from "lucide-react";
+import { BarChart, Users, Shield, CreditCard, Activity, FileText, ShieldAlertIcon, MessageSquareWarning } from "lucide-react";
 import Link from "next/link";
 
 export default function AdminDashboardPage() {
@@ -68,7 +68,22 @@ export default function AdminDashboardPage() {
             <CardContent>
               <div className="text-2xl font-bold">Review Content</div>
               <p className="text-xs text-muted-foreground">
-                (Manage flagged content - Placeholder)
+                Manage flagged content.
+              </p>
+            </CardContent>
+          </Card>
+        </Link>
+
+        <Link href="/admin/feedback" passHref>
+          <Card className="hover:shadow-lg transition-shadow cursor-pointer">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">User Feedback</CardTitle>
+              <MessageSquareWarning className="h-5 w-5 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">View Feedback</div>
+              <p className="text-xs text-muted-foreground">
+                Review user-submitted feedback and bug reports.
               </p>
             </CardContent>
           </Card>
