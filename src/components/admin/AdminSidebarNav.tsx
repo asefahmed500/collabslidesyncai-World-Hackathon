@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { LayoutDashboard, Users, Shield, CreditCard, BarChart, Activity, FileText, ShieldAlertIcon, MessageSquareWarning, Zap, SettingsIcon } from "lucide-react";
+import { LayoutDashboard, Users, Shield, CreditCard, Activity, FileText, ShieldAlertIcon, MessageSquareWarning, Zap, SettingsIcon, FileLock } from "lucide-react";
 
 const navItems = [
   { href: "/admin", label: "Overview", icon: LayoutDashboard },
@@ -15,7 +15,7 @@ const navItems = [
   { href: "/admin/moderation", label: "Moderation Queue", icon: ShieldAlertIcon },
   { href: "/admin/feedback", label: "User Feedback", icon: MessageSquareWarning },
   { href: "/admin/billing", label: "Billing", icon: CreditCard },
-  { href: "/admin/security", label: "Security Logs", icon: Shield },
+  { href: "/admin/security", label: "Security & Compliance", icon: Shield },
   { href: "/admin/stats", label: "AI Analytics", icon: Zap },
   { href: "/admin/activities", label: "Global Activity", icon: Activity },
   { href: "/admin/settings", label: "Platform Settings", icon: SettingsIcon },

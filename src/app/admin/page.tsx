@@ -107,13 +107,13 @@ export default function AdminDashboardPage() {
         <Link href="/admin/security" passHref>
           <Card className="hover:shadow-lg transition-shadow cursor-pointer">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Security Logs</CardTitle>
+              <CardTitle className="text-sm font-medium">Security & Compliance</CardTitle>
               <Shield className="h-5 w-5 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">Audit & Security</div>
               <p className="text-xs text-muted-foreground">
-                (Review security events - Placeholder)
+                (Review security events, compliance - Placeholder)
               </p>
             </CardContent>
           </Card>
