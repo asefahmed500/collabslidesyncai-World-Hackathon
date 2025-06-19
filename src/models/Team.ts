@@ -15,11 +15,23 @@ const TeamMemberSchema = new Schema<TeamMemberDocument>({
   profilePictureUrl: { type: String, trim: true }, // Denormalized
 }, { _id: false }); // No _id for subdocuments if userId is the map key
 
-export interface TeamDocument extends Omit<TeamType, 'id' | 'members' | 'createdAt' | 'lastUpdatedAt'>, Document {
+// Schema for pending invitations
+const PendingInvitationSchema = new Schema({
+  inviteId: { type: String, required: true, unique: true }, // A unique ID for the invitation itself
+  email: { type: String, required: true, lowercase: true, trim: true }, // Email of the invited user
+  role: { type: String, enum: ['owner', 'admin', 'editor', 'viewer'], required: true },
+  invitedBy: { type: String, required: true }, // Firebase UID of the inviter
+  invitedAt: { type: Date, default: Date.now },
+  token: { type: String }, // Optional: for one-time use email links
+}, { _id: false });
+
+
+export interface TeamDocument extends Omit<TeamType, 'id' | 'members' | 'pendingInvitations' | 'createdAt' | 'lastUpdatedAt'>, Document {
   _id: Types.ObjectId;
   id?: string; // virtual getter
   ownerId: string; // Firebase UID of the owner
   members: Types.Map<TeamMemberDocument>;
+  pendingInvitations?: Types.Map<typeof PendingInvitationSchema>; // Map of userId (once known) or inviteId to invitation details
   createdAt?: Date;
   lastUpdatedAt?: Date;
 }
@@ -45,6 +57,11 @@ const TeamSchema = new Schema<TeamDocument>(
     members: {
       type: Map,
       of: TeamMemberSchema,
+      default: () => new Map(),
+    },
+    pendingInvitations: { // Using invited User's ID as key if they exist, otherwise a unique invite ID.
+      type: Map,
+      of: PendingInvitationSchema,
       default: () => new Map(),
     },
     branding: { type: TeamBrandingSchema, default: () => ({ 
@@ -87,5 +104,3 @@ if (mongoose.models.Team) {
 }
 
 export default TeamModel;
-
-

@@ -620,7 +620,7 @@ export async function addCommentToSlide(presentationId: string, slideId: string,
         
         // In-app notification
         const createdNotification = await createNotification(
-          presentationData.creatorId,
+          presentationData.creatorId, // Notify presentation owner
           'comment_new',
           `New Comment on "${presentationData.title}"`,
           `${comment.userName} commented on slide ${targetSlide.slideNumber || slideIndex + 1}: "${comment.text.substring(0, 50)}${comment.text.length > 50 ? '...' : ''}"`,
@@ -882,9 +882,11 @@ export async function createNotification(
   link?: string,
   actorId?: string, 
   actorName?: string,
-  actorProfilePictureUrl?: string
+  actorProfilePictureUrl?: string,
+  teamIdForAction?: string, // New parameter
+  roleForAction?: TeamRole   // New parameter
 ): Promise<string> {
-  const notificationData: Omit<Notification, 'id'> = {
+  const notificationData: Partial<Omit<Notification, 'id'>> = { // Use Partial for flexibility
     userId,
     type,
     title,
@@ -896,7 +898,10 @@ export async function createNotification(
     actorName: actorName || undefined,
     actorProfilePictureUrl: actorProfilePictureUrl || undefined,
   };
-  const docRef = await addDoc(notificationsCollection, notificationData);
+  if (teamIdForAction) notificationData.teamIdForAction = teamIdForAction;
+  if (roleForAction) notificationData.roleForAction = roleForAction;
+
+  const docRef = await addDoc(notificationsCollection, notificationData as Omit<Notification, 'id'>);
   return docRef.id;
 }
 
@@ -984,4 +989,5 @@ export async function removeTeamIdFromPresentations(teamId: string): Promise<voi
   console.log(`Removed teamId ${teamId} from ${snapshot.size} presentations in Firestore.`);
 }
 export { uuidv4 };
+
 

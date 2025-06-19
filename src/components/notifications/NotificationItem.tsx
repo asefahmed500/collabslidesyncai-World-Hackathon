@@ -9,7 +9,9 @@ import { Button } from '@/components/ui/button';
 import { markNotificationAsRead } from '@/lib/firestoreService';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNowStrict } from 'date-fns';
-import { UserCircle, MessageSquare, Users, Share2, Lightbulb, Info, Bell, Edit3 } from 'lucide-react'; // Added more icons
+import { UserCircle, MessageSquare, Users, Share2, Lightbulb, Info, Bell, Edit3, Check, X, Loader2 } from 'lucide-react'; // Added more icons
+import { useToast } from '@/hooks/use-toast';
+import React, { useState } from 'react';
 
 interface NotificationItemProps {
   notification: NotificationType;
@@ -19,14 +21,13 @@ interface NotificationItemProps {
 const getNotificationIcon = (type: NotificationEnumType, customIcon?: string) => {
   if (customIcon) {
     // Future: Allow custom SVG paths or image URLs
-    // For now, if 'customIcon' is a Lucide name string, we can try to render it.
-    // This requires a mapping or dynamic component rendering which is complex here.
-    // Defaulting to type-based icons.
   }
   switch (type) {
-    case 'team_invite': return <Users className="h-5 w-5 text-blue-500" />;
+    case 'team_invite': // This might now be legacy if 'team_invitation' is primary
+    case 'team_invitation':
+      return <Users className="h-5 w-5 text-blue-500" />;
     case 'comment_new': return <MessageSquare className="h-5 w-5 text-green-500" />;
-    case 'comment_mention': return <MessageSquare className="h-5 w-5 text-green-600" />; // Slightly different for mentions
+    case 'comment_mention': return <MessageSquare className="h-5 w-5 text-green-600" />;
     case 'presentation_shared': return <Share2 className="h-5 w-5 text-purple-500" />;
     case 'ai_suggestion_ready': return <Lightbulb className="h-5 w-5 text-yellow-500" />;
     case 'generic_info': return <Info className="h-5 w-5 text-gray-500" />;
@@ -37,8 +38,45 @@ const getNotificationIcon = (type: NotificationEnumType, customIcon?: string) =>
 
 export function NotificationItem({ notification, currentUserId }: NotificationItemProps) {
   const router = useRouter();
+  const { toast } = useToast();
+  const [isResponding, setIsResponding] = useState(false);
 
-  const handleNotificationClick = async () => {
+
+  const handleActionableNotificationClick = async (action: 'accept' | 'decline') => {
+    if (isResponding || !notification.teamIdForAction || !notification.roleForAction) return;
+    setIsResponding(true);
+    try {
+      const response = await fetch('/api/teams/invitations/respond', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          notificationId: notification.id,
+          teamId: notification.teamIdForAction,
+          role: notification.roleForAction,
+          action,
+        }),
+      });
+      const result = await response.json();
+      if (response.ok && result.success) {
+        toast({ title: `Invitation ${action === 'accept' ? 'Accepted' : 'Declined'}`, description: result.message });
+        // Notification will be marked as read by the API and listener will update UI.
+        if (action === 'accept' && notification.teamIdForAction) {
+            router.push(`/dashboard/manage-team?teamId=${notification.teamIdForAction}`);
+            router.refresh(); // Force refresh to reflect new team membership if needed
+        }
+      } else {
+        throw new Error(result.message || `Failed to ${action} invitation.`);
+      }
+    } catch (error: any) {
+      console.error(`Error responding to invitation:`, error);
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } finally {
+      setIsResponding(false);
+    }
+  };
+
+  const handleRegularNotificationClick = async () => {
+    if (isResponding) return; // Don't navigate if an action is in progress
     if (!notification.isRead) {
       try {
         await markNotificationAsRead(notification.id);
@@ -51,21 +89,26 @@ export function NotificationItem({ notification, currentUserId }: NotificationIt
     }
   };
 
+
   const timeAgo = notification.createdAt
     ? formatDistanceToNowStrict(new Date(notification.createdAt.toDate()), { addSuffix: true })
     : 'just now';
+
+  const isActionableInvitation = notification.type === 'team_invitation' && !notification.isRead && notification.teamIdForAction && notification.roleForAction;
 
   return (
     <div
       className={cn(
         "flex items-start space-x-3 p-3 transition-colors hover:bg-accent/50",
-        !notification.isRead && "bg-primary/5", // Subtle highlight for unread
-        notification.link && "cursor-pointer"
+        !notification.isRead && "bg-primary/5",
+        (notification.link || isActionableInvitation) && "cursor-pointer"
       )}
-      onClick={handleNotificationClick}
-      role={notification.link ? "link" : "listitem"}
+      onClick={!isActionableInvitation ? handleRegularNotificationClick : undefined} // Only regular click if not actionable
+      role={notification.link || isActionableInvitation ? "button" : "listitem"}
       tabIndex={0}
-      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleNotificationClick();}}
+      onKeyDown={(e) => { 
+        if (!isActionableInvitation && (e.key === 'Enter' || e.key === ' ')) handleRegularNotificationClick();
+      }}
     >
       <div className="flex-shrink-0 mt-1">
         {notification.actorProfilePictureUrl ? (
@@ -85,8 +128,30 @@ export function NotificationItem({ notification, currentUserId }: NotificationIt
           {notification.message}
         </p>
         <p className="text-xs text-muted-foreground/70 mt-0.5">{timeAgo}</p>
+        {isActionableInvitation && (
+          <div className="mt-2 flex space-x-2">
+            <Button
+              size="xs"
+              variant="default"
+              onClick={(e) => { e.stopPropagation(); handleActionableNotificationClick('accept'); }}
+              disabled={isResponding}
+              className="h-7 px-2.5 text-xs"
+            >
+              {isResponding ? <Loader2 className="mr-1 h-3 w-3 animate-spin"/> : <Check className="mr-1 h-3 w-3" />} Accept
+            </Button>
+            <Button
+              size="xs"
+              variant="outline"
+              onClick={(e) => { e.stopPropagation(); handleActionableNotificationClick('decline'); }}
+              disabled={isResponding}
+              className="h-7 px-2.5 text-xs"
+            >
+              {isResponding ? <Loader2 className="mr-1 h-3 w-3 animate-spin"/> : <X className="mr-1 h-3 w-3" />} Decline
+            </Button>
+          </div>
+        )}
       </div>
-      {!notification.isRead && (
+      {!notification.isRead && !isActionableInvitation && ( // Hide dot if buttons are shown
         <div className="flex-shrink-0 self-center ml-2">
           <span className="h-2.5 w-2.5 rounded-full bg-primary block" title="Unread"></span>
         </div>
@@ -94,3 +159,4 @@ export function NotificationItem({ notification, currentUserId }: NotificationIt
     </div>
   );
 }
+

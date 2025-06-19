@@ -27,6 +27,17 @@ function mongoTeamDocToTeam(doc: TeamDocument | null): Team | null {
      });
      teamObject.members = newMembersObj;
   }
+  
+  // Handle pendingInvitations if it exists
+  if (teamObject.pendingInvitations && teamObject.pendingInvitations instanceof Map) {
+    const newPendingInvitesObj: { [key: string]: any } = {};
+    teamObject.pendingInvitations.forEach((value: any, key: string) => {
+        const invitePlain = typeof value.toObject === 'function' ? value.toObject() : value;
+        newPendingInvitesObj[key] = { ...invitePlain, invitedAt: new Date(invitePlain.invitedAt) };
+    });
+    teamObject.pendingInvitations = newPendingInvitesObj;
+  }
+
 
   delete teamObject._id; 
   delete teamObject.__v;
@@ -67,6 +78,7 @@ export async function createTeamInMongoDB(teamName: string, ownerUser: AppUser):
       name: teamName,
       ownerId: ownerUser.id,
       members: new Map([[ownerUser.id, ownerMemberInfo as TeamMemberDocument]]),
+      pendingInvitations: new Map(),
       branding: { 
         logoUrl: `https://placehold.co/200x100.png?text=${teamName.charAt(0).toUpperCase()}`,
         primaryColor: '#3F51B5',
@@ -104,7 +116,7 @@ export async function getTeamFromMongoDB(teamId: string): Promise<Team | null> {
   }
 }
 
-export async function updateTeamInMongoDB(teamId: string, updates: Partial<Omit<Team, 'id' | 'ownerId' | 'members' | 'createdAt' | 'lastUpdatedAt'>>): Promise<Team | null> {
+export async function updateTeamInMongoDB(teamId: string, updates: Partial<Omit<Team, 'id' | 'ownerId' | 'members' | 'createdAt' | 'lastUpdatedAt' | 'pendingInvitations'>>): Promise<Team | null> {
   await dbConnect();
   try {
     const updatePayload: any = {};
@@ -129,69 +141,188 @@ export async function updateTeamInMongoDB(teamId: string, updates: Partial<Omit<
   }
 }
 
-export async function addMemberToTeamInMongoDB(teamId: string, userToAdd: AppUser, role: TeamRole, addedByUserId: string): Promise<Team | null> {
+export async function addMemberToTeamInMongoDB(teamId: string, userToInvite: AppUser, role: TeamRole, invitedByUserId: string): Promise<Team | null> {
   await dbConnect();
   try {
     const team = await TeamModel.findById(teamId).exec();
     if (!team) throw new Error('Team not found.');
-    if (team.members.get(userToAdd.id)) throw new Error('User is already a member of this team.');
+    if (team.members.get(userToInvite.id)) throw new Error('User is already a member of this team.');
+    if (team.pendingInvitations?.get(userToInvite.id)) throw new Error('User already has a pending invitation to this team.');
+    if (userToInvite.teamId && userToInvite.teamId !== teamId) throw new Error (`User ${userToInvite.name || userToInvite.email} is already part of another team.`);
+    if (userToInvite.teamId && userToInvite.teamId === teamId) throw new Error (`User ${userToInvite.name || userToInvite.email} is already a member of this team.`);
 
-    const newMember: TeamMember = {
-      role,
-      joinedAt: new Date(),
-      addedBy: addedByUserId,
-      name: userToAdd.name,
-      email: userToAdd.email,
-      profilePictureUrl: userToAdd.profilePictureUrl,
-    };
-    team.members.set(userToAdd.id, newMember as TeamMemberDocument);
-    const savedTeam = await team.save();
 
-    if (!userToAdd.teamId) { 
-        await updateUserTeamAndRoleInMongoDB(userToAdd.id, team.id, role);
-    }
+    const inviter = await UserModel.findById(invitedByUserId).select('name profilePictureUrl').exec();
     
-    const actor = await UserModel.findById(addedByUserId).select('name profilePictureUrl').exec();
+    // Create an in-app notification for the invited user
     await createNotification(
-      userToAdd.id,
-      'team_invite',
-      `Added to Team "${team.name}"`,
-      `${actor?.name || 'An admin'} added you to the team "${team.name}" as a ${role}.`,
-      `/dashboard/manage-team?teamId=${team.id}`, 
-      addedByUserId,
-      actor?.name || undefined,
-      actor?.profilePictureUrl || undefined
+      userToInvite.id,
+      'team_invitation',
+      `Invitation to join Team "${team.name}"`,
+      `${inviter?.name || 'A team admin'} invited you to join the team "${team.name}" as a ${role}.`,
+      `/dashboard?tab=invitations`, // Link to a dashboard tab or page where invites can be managed
+      invitedByUserId,
+      inviter?.name || undefined,
+      inviter?.profilePictureUrl || undefined,
+      team.id, // teamIdForAction
+      role      // roleForAction
     );
 
+    // Store pending invitation (using userId as key for simplicity if user exists)
+    // If we were handling non-existent users, email could be a key.
+    const inviteId = new Types.ObjectId().toHexString(); // Or uuid
+    team.pendingInvitations = team.pendingInvitations || new Map();
+    team.pendingInvitations.set(userToInvite.id, { // Key by userToInvite.id
+        inviteId,
+        email: userToInvite.email || '',
+        role,
+        invitedBy: invitedByUserId,
+        invitedAt: new Date(),
+        token: '', // Token could be added for email link verification later
+    });
+
+    const savedTeam = await team.save();
+
     // Send email notification for team invite
-    if (userToAdd.email && actor) {
-        const teamLink = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:9002'}/dashboard/manage-team?teamId=${team.id}`;
+    if (userToInvite.email && inviter) {
+        // For now, the email link will be generic; a token-based link is for more advanced email verification
+        const teamLink = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:9002'}/dashboard`;
         const emailContent = createTeamInviteEmail(
-            userToAdd.name || userToAdd.email,
-            actor.name || 'Team Admin',
+            userToInvite.name || userToInvite.email,
+            inviter.name || 'Team Admin',
             team.name,
             teamLink,
             role
         );
+        emailContent.htmlBody = emailContent.htmlBody.replace("added you to the team", "invited you to join the team");
+        emailContent.htmlBody += `<p>You can accept or decline this invitation from your dashboard notifications.</p>`;
         try {
             await sendEmail({
-                to: userToAdd.email,
-                subject: emailContent.subject,
+                to: userToInvite.email,
+                subject: `You're invited to join Team "${team.name}"`,
                 htmlBody: emailContent.htmlBody,
             });
         } catch (emailError) {
-            console.warn("Failed to send team invite email (placeholder service):", emailError);
+            console.warn("Failed to send team invite email:", emailError);
         }
     }
 
-    await logTeamActivityInMongoDB(teamId, addedByUserId, 'member_added', { memberName: userToAdd.name || userToAdd.email, memberEmail: userToAdd.email, newRole: role }, 'user', userToAdd.id);
+    await logTeamActivityInMongoDB(teamId, invitedByUserId, 'member_invited', { 
+        invitedEmail: userToInvite.email, 
+        invitedName: userToInvite.name, 
+        roleAssigned: role 
+    }, 'invitation', userToInvite.id);
 
     return mongoTeamDocToTeam(savedTeam);
   } catch (error) {
-    console.error('Error adding member to team in MongoDB:', error);
+    console.error('Error inviting member to team in MongoDB:', error);
     throw error;
   }
 }
+
+
+export async function processTeamInvitation(
+  teamId: string, 
+  invitedUserId: string, 
+  roleToAssign: TeamRole, 
+  accepted: boolean,
+  actorWhoInvitedId: string, // The original inviter
+  actorWhoInvitedName?: string
+): Promise<Team | null> {
+  await dbConnect();
+  const session = await mongoose.startSession();
+  session.startTransaction();
+  try {
+    const team = await TeamModel.findById(teamId).session(session);
+    if (!team) throw new Error('Team not found.');
+    
+    // Check if invitation exists for this user in pendingInvitations
+    // Assuming pendingInvitations keys by userId after we confirmed user exists
+    const pendingInvite = team.pendingInvitations?.get(invitedUserId);
+    if (!pendingInvite) {
+      // Check if already a member (e.g., if action was somehow duplicated)
+      if (team.members.get(invitedUserId)) {
+        console.warn(`User ${invitedUserId} is already a member of team ${teamId}. Invitation processing skipped.`);
+        await session.abortTransaction();
+        session.endSession();
+        return mongoTeamDocToTeam(team); // Return current team state
+      }
+      throw new Error('No pending invitation found for this user or invitation already processed.');
+    }
+
+    const invitedUser = await UserModel.findById(invitedUserId).session(session);
+    if (!invitedUser) throw new Error('Invited user not found.');
+
+    if (accepted) {
+      if (invitedUser.teamId && invitedUser.teamId !== team.id) {
+        throw new Error(`User ${invitedUser.name || invitedUser.email} is already part of another team.`);
+      }
+      if (invitedUser.teamId === team.id) { // Should not happen if pending invite exists, but good check
+         console.warn(`User ${invitedUserId} is already a member of team ${teamId}. Accepting again.`);
+      }
+
+
+      const newMember: TeamMember = {
+        role: roleToAssign,
+        joinedAt: new Date(),
+        addedBy: pendingInvite.invitedBy, 
+        name: invitedUser.name,
+        email: invitedUser.email,
+        profilePictureUrl: invitedUser.profilePictureUrl,
+      };
+      team.members.set(invitedUserId, newMember as TeamMemberDocument);
+      
+      invitedUser.teamId = team.id;
+      invitedUser.role = roleToAssign;
+      await invitedUser.save({ session });
+
+      await logTeamActivityInMongoDB(teamId, invitedUserId, 'member_added', { 
+        memberName: invitedUser.name || invitedUser.email, 
+        roleAssigned: roleToAssign,
+        method: 'invitation_accepted'
+      }, 'user', invitedUserId);
+      
+      // Notify original inviter or team admins
+      await createNotification(
+        pendingInvite.invitedBy, // Notify the person who invited
+        'generic_info',
+        `Invitation Accepted: ${invitedUser.name || invitedUser.email}`,
+        `${invitedUser.name || invitedUser.email} accepted your invitation to join Team "${team.name}" as a ${roleToAssign}.`,
+        `/dashboard/manage-team?teamId=${team.id}`,
+        invitedUserId, invitedUser.name, invitedUser.profilePictureUrl
+      );
+
+    } else { // Declined
+      await logTeamActivityInMongoDB(teamId, invitedUserId, 'invitation_declined', { 
+          declinedByEmail: invitedUser.email, 
+          declinedByName: invitedUser.name 
+      }, 'invitation', invitedUserId);
+       // Notify original inviter or team admins
+       await createNotification(
+        pendingInvite.invitedBy, 
+        'generic_info',
+        `Invitation Declined: ${invitedUser.name || invitedUser.email}`,
+        `${invitedUser.name || invitedUser.email} declined your invitation to join Team "${team.name}".`,
+        undefined, // No specific link needed for decline
+        invitedUserId, invitedUser.name, invitedUser.profilePictureUrl
+      );
+    }
+
+    // Remove from pending invitations
+    team.pendingInvitations?.delete(invitedUserId);
+    const savedTeam = await team.save({ session });
+    await session.commitTransaction();
+    return mongoTeamDocToTeam(savedTeam);
+
+  } catch (error) {
+    await session.abortTransaction();
+    console.error('Error processing team invitation in MongoDB:', error);
+    throw error;
+  } finally {
+    session.endSession();
+  }
+}
+
 
 export async function removeMemberFromTeamInMongoDB(teamId: string, memberIdToRemove: string, actorId: string): Promise<Team | null> {
   await dbConnect();
@@ -206,7 +337,7 @@ export async function removeMemberFromTeamInMongoDB(teamId: string, memberIdToRe
     const savedTeam = await team.save();
 
     const user = await UserModel.findById(memberIdToRemove).exec();
-    if(user && user.teamId === teamId) {
+    if(user && user.teamId && user.teamId.toString() === team.id.toString()) {
         await updateUserTeamAndRoleInMongoDB(memberIdToRemove, null, 'guest');
     }
     await logTeamActivityInMongoDB(teamId, actorId, 'member_removed', { memberName: memberBeingRemoved.name || memberBeingRemoved.email }, 'user', memberIdToRemove);
@@ -234,7 +365,7 @@ export async function updateMemberRoleInMongoDB(teamId: string, memberId: string
     const savedTeam = await team.save();
 
     const user = await UserModel.findById(memberId).exec();
-    if (user && user.teamId === teamId) {
+    if (user && user.teamId && user.teamId.toString() === team.id.toString()) {
         await updateUserTeamAndRoleInMongoDB(memberId, teamId, newRole);
     }
     await logTeamActivityInMongoDB(teamId, actorId, 'member_role_changed', { memberName: member.name || member.email, oldRole, newRole }, 'user', memberId);
@@ -268,6 +399,8 @@ export async function logTeamActivityInMongoDB(
         targetNameResolved = (details as any).presentationTitle;
     } else if (targetType === 'asset' && details && (details as any).fileName) {
         targetNameResolved = (details as any).fileName;
+    } else if (targetType === 'invitation' && details && (details as any).invitedEmail) {
+        targetNameResolved = (details as any).invitedEmail;
     }
 
 
@@ -350,4 +483,43 @@ export async function deleteTeamFromMongoDB(teamId: string, actorId: string): Pr
   } finally {
     session.endSession();
   }
+}
+
+// New function to get pending invitations for a user by their email
+// This could be used on user dashboard or after signup to check for pending invites
+export async function getPendingTeamInvitationsForUserByEmail(email: string): Promise<Team[]> {
+    await dbConnect();
+    try {
+        // Find teams where this email exists as a key in pendingInvitations
+        const teamsWithPendingInvites = await TeamModel.find({
+            [`pendingInvitations.${email.replace(/\./g, '_')}`]: { $exists: true } // Handle dot in email for Map keys if necessary, or use a different keying strategy
+        }).exec();
+        // This query is a bit tricky with Map keys. A better schema for pendingInvitations might be an array of objects.
+        // For now, this is a conceptual query. A more robust way would be to iterate or use a proper invitation collection.
+        // For now, let's assume this works or filter in application code if Map keys are complex
+        return teamsWithPendingInvites
+            .filter(teamDoc => teamDoc.pendingInvitations?.has(email)) // Ensure the invite actually exists for this email
+            .map(mongoTeamDocToTeam)
+            .filter(t => t !== null) as Team[];
+    } catch (error) {
+        console.error('Error fetching pending team invitations for user by email:', error);
+        return [];
+    }
+}
+
+export async function getPendingTeamInvitationsForUserById(userId: string): Promise<Team[]> {
+    await dbConnect();
+    try {
+        // Find teams where this userId exists as a key in pendingInvitations
+        const teamsWithPendingInvites = await TeamModel.find({
+            [`pendingInvitations.${userId}`]: { $exists: true }
+        }).exec();
+
+        return teamsWithPendingInvites
+            .map(mongoTeamDocToTeam)
+            .filter(t => t !== null) as Team[];
+    } catch (error) {
+        console.error(`Error fetching pending team invitations for user ID ${userId}:`, error);
+        return [];
+    }
 }

@@ -46,6 +46,15 @@ export interface Team {
   members: { // Mongoose Map: keys are User.id (Firebase UID)
     [userId: string]: TeamMember;
   };
+  pendingInvitations?: { // For explicit accept/reject flow for users not yet in DB or to formalize invites
+    [inviteId: string]: { // unique invite ID
+      email: string; // email invited
+      role: TeamRole;
+      invitedBy: string; // UID of inviter
+      invitedAt: Date;
+      token?: string; // Optional: for email link verification
+    }
+  };
   branding: {
     logoUrl?: string;
     primaryColor?: string; // Deep blue (#3F51B5)
@@ -171,7 +180,9 @@ export interface Presentation {
 
 export type TeamActivityType =
   | 'team_created'
-  | 'member_added'
+  | 'member_invited' // New type for when an invitation is sent
+  | 'invitation_declined' // New type
+  | 'member_added' // Existing: now used when invitation is accepted or admin directly adds (if bypassing invite)
   | 'member_removed'
   | 'member_role_changed'
   | 'team_profile_updated'
@@ -191,7 +202,7 @@ export interface TeamActivity {
   actorId: string;
   actorName?: string;
   actionType: TeamActivityType;
-  targetType?: 'user' | 'presentation' | 'team_profile' | 'asset';
+  targetType?: 'user' | 'presentation' | 'team_profile' | 'asset' | 'invitation';
   targetId?: string;
   targetName?: string;
   details?: {
@@ -207,6 +218,7 @@ export interface TeamActivity {
     oldStatus?: PresentationModerationStatus;
     newStatus?: PresentationModerationStatus;
     moderationNotes?: string;
+    invitedEmail?: string; // For member_invited
     [key: string]: any;
   };
   createdAt: Date;
@@ -282,7 +294,8 @@ export interface Asset {
 }
 
 export type NotificationType =
-  | 'team_invite'
+  | 'team_invite' // Old: now might mean direct add or processed invite
+  | 'team_invitation' // New: for pending invitation requiring accept/decline
   | 'comment_new' // Generic for new comments
   | 'comment_mention' // For @mentions, future enhancement
   | 'presentation_shared'
@@ -303,6 +316,9 @@ export interface Notification {
   actorId?: string; // User ID of who performed the action (optional)
   actorName?: string; // Name of the actor (optional)
   actorProfilePictureUrl?: string; // Profile picture of the actor (optional)
+  // For actionable notifications like team invitations
+  teamIdForAction?: string; 
+  roleForAction?: TeamRole;
 }
 
 export type FeedbackType = "bug" | "feature_request" | "question" | "other";
