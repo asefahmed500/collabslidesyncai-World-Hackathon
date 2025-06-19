@@ -1,7 +1,7 @@
 
-# CollabSlideSyncAI
+# CollabDeck
 
-CollabSlideSyncAI is a powerful, collaborative presentation editor built with Next.js, React, Tailwind CSS, ShadCN UI components, Firebase, MongoDB, and Genkit for AI-powered assistance. It enables users to create, share, and present dynamic slideshows with ease, leveraging real-time collaboration and intelligent features.
+CollabDeck is a powerful, collaborative presentation editor built with Next.js, React, Tailwind CSS, ShadCN UI components, Firebase, MongoDB, and Genkit for AI-powered assistance. It enables users to create, share, and present dynamic slideshows with ease, leveraging real-time collaboration and intelligent features.
 
 ## Core Technologies
 
@@ -226,11 +226,12 @@ This detailed breakdown should clarify how the different parts of the applicatio
 *   **MongoDB URI:** The `MONGODB_URI` must also be configured in the environment where the Next.js backend runs.
 *   **Genkit:** If AI features are used, the necessary Google Cloud credentials/API keys for Genkit must be available in the runtime environment.
 
-This README provides a detailed overview of CollabSlideSyncAI's features and setup.
+This README provides a detailed overview of CollabDeck's features and setup.
 ```
-# collabslidesyncai-World-Hackathon
-This README now provides a good overview of the user features and how they are implemented within the CollabSlideSyncAI application.
+# collabdeck-World-Hackathon
+This README now provides a good overview of the user features and how they are implemented within the CollabDeck application.
 
     
 ```
     
+```

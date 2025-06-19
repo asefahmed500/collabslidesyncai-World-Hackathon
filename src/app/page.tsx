@@ -41,7 +41,7 @@ export default function WelcomePage() {
           <Link href="/" className="flex items-center space-x-2">
             <Zap className="h-7 w-7 text-primary" />
             <span className="font-headline text-2xl font-bold text-primary">
-              CollabSlideSyncAI
+              CollabDeck
             </span>
           </Link>
           <nav className="flex items-center space-x-2">
@@ -63,7 +63,7 @@ export default function WelcomePage() {
               Craft. Collaborate. Captivate.
             </h1>
             <p className="mt-6 max-w-3xl mx-auto text-lg text-foreground/80 md:text-xl">
-              CollabSlideSyncAI revolutionizes how you create presentations. Experience the power of real-time collaboration combined with intelligent AI assistance to build stunning slides, faster.
+              CollabDeck revolutionizes how you create presentations. Experience the power of real-time collaboration combined with intelligent AI assistance to build stunning slides, faster.
             </p>
             <div className="mt-10 flex justify-center space-x-4">
               <Button size="lg" asChild className="shadow-lg hover:shadow-xl transition-shadow">
@@ -82,7 +82,7 @@ export default function WelcomePage() {
                 <div className="relative aspect-video max-w-4xl mx-auto rounded-xl shadow-2xl overflow-hidden border">
                     <Image
                         src="https://placehold.co/1200x675.png"
-                        alt="CollabSlideSyncAI App Preview"
+                        alt="CollabDeck App Preview"
                         layout="fill"
                         objectFit="cover"
                         data-ai-hint="app interface presentation"
@@ -96,7 +96,7 @@ export default function WelcomePage() {
           <div className="container px-4 md:px-6">
             <div className="text-center mb-12">
               <h2 className="font-headline text-3xl font-bold text-primary sm:text-4xl">
-                Why CollabSlideSyncAI?
+                Why CollabDeck?
               </h2>
               <p className="mt-3 max-w-2xl mx-auto text-md text-foreground/70">
                 Discover features designed to boost your productivity and creativity.
@@ -127,7 +127,7 @@ export default function WelcomePage() {
               Ready to Transform Your Presentations?
             </h2>
             <p className="mt-4 max-w-xl mx-auto text-lg text-foreground/80">
-              Join CollabSlideSyncAI today and experience the future of collaborative presentation design.
+              Join CollabDeck today and experience the future of collaborative presentation design.
             </p>
             <div className="mt-8">
               <Button size="lg" asChild className="shadow-lg hover:shadow-xl transition-shadow">
@@ -141,7 +141,7 @@ export default function WelcomePage() {
       {/* Footer */}
       <footer className="py-8 border-t bg-muted/50">
         <div className="container px-4 md:px-6 flex flex-col md:flex-row justify-between items-center text-sm text-foreground/60">
-          <p>&copy; {new Date().getFullYear()} CollabSlideSyncAI. All rights reserved.</p>
+          <p>&copy; {new Date().getFullYear()} CollabDeck. All rights reserved.</p>
           <div className="flex space-x-4 mt-4 md:mt-0">
             <Link href="#" className="hover:text-primary">Privacy Policy</Link>
             <Link href="#" className="hover:text-primary">Terms of Service</Link>
