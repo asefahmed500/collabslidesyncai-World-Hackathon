@@ -14,10 +14,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import type { Team, TeamMember, TeamRole, User as AppUser } from "@/types";
-// Removed direct import of server actions
 import { Loader2, UserPlus, Edit, Trash2, UserCircle, ShieldQuestion, Crown, Mail, Save, X } from 'lucide-react';
-import { Label } from '../ui/label';
-import { Form, FormControl, FormField, FormItem, FormMessage } from '../ui/form';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'; // Changed path to @/ and added FormLabel
 
 const addMemberSchema = z.object({
   email: z.string().email({ message: "Invalid email address." }),
@@ -41,7 +39,7 @@ export function TeamMembersManager({ team, currentUser, onMembersUpdated }: Team
   const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
   const [selectedNewRole, setSelectedNewRole] = useState<TeamRole | ''>('');
   const [memberToRemove, setMemberToRemove] = useState<({id: string, name?: string | null}) | null>(null);
-  const [transferTarget, setTransferTarget] = useState<({id: string, name?: string | null}) | null>(null); // Transfer ownership stub
+  const [transferTarget, setTransferTarget] = useState<({id: string, name?: string | null}) | null>(null); 
 
   const addMemberForm = useForm<AddMemberFormValues>({
     resolver: zodResolver(addMemberSchema),
@@ -130,15 +128,10 @@ export function TeamMembersManager({ team, currentUser, onMembersUpdated }: Team
     setIsSubmitting(false);
   };
 
-  const handleConfirmTransferOwnership = async () => { // Stub for now
+  const handleConfirmTransferOwnership = async () => { 
     if (!transferTarget) return;
     setIsSubmitting(true);
-    // const result = await transferTeamOwnershipAction(team.id, transferTarget.id); // This was a server action
-    // For API route:
-    // const response = await fetch(`/api/teams/${team.id}/transfer-ownership`, { method: 'POST', body: JSON.stringify({ newOwnerId: transferTarget.id, actorUserId: currentUser.id }) });
-    // const result = await response.json();
     toast({ title: "Feature Incomplete", description: "Team ownership transfer via API route is not fully implemented yet.", variant: "info" });
-    // if (result.success && result.updatedTeam) { onMembersUpdated(result.updatedTeam.members); }
     setTransferTarget(null);
     setIsSubmitting(false);
   }
@@ -173,7 +166,7 @@ export function TeamMembersManager({ team, currentUser, onMembersUpdated }: Team
                     name="email"
                     render={({ field }) => (
                     <FormItem>
-                        <Label htmlFor="add-member-email">Email Address</Label>
+                        <FormLabel htmlFor="add-member-email">Email Address</FormLabel>
                         <div className="relative">
                             <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                             <FormControl>
@@ -189,7 +182,7 @@ export function TeamMembersManager({ team, currentUser, onMembersUpdated }: Team
                     name="role"
                     render={({ field }) => (
                     <FormItem>
-                        <Label htmlFor="add-member-role">Assign Role</Label>
+                        <FormLabel htmlFor="add-member-role">Assign Role</FormLabel>
                         <Select onValueChange={field.onChange} defaultValue={field.value}>
                             <FormControl>
                                 <SelectTrigger id="add-member-role" className="mt-1">
@@ -342,4 +335,3 @@ export function TeamMembersManager({ team, currentUser, onMembersUpdated }: Team
     </div>
   );
 }
-    
