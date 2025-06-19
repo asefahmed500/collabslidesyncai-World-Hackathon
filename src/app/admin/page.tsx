@@ -2,7 +2,7 @@
 "use client";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { BarChart, Users, Shield, CreditCard, Activity, FileText, ShieldAlertIcon, MessageSquareWarning, Zap } from "lucide-react";
+import { BarChart, Users, Shield, CreditCard, Activity, FileText, ShieldAlertIcon, MessageSquareWarning, Zap, SettingsIcon } from "lucide-react";
 import Link from "next/link";
 
 export default function AdminDashboardPage() {
@@ -144,6 +144,21 @@ export default function AdminDashboardPage() {
               <div className="text-2xl font-bold">System Wide Logs</div>
               <p className="text-xs text-muted-foreground">
                 (View global activities - Placeholder)
+              </p>
+            </CardContent>
+          </Card>
+        </Link>
+
+        <Link href="/admin/settings" passHref>
+          <Card className="hover:shadow-lg transition-shadow cursor-pointer">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Platform Settings</CardTitle>
+              <SettingsIcon className="h-5 w-5 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">Configure Platform</div>
+              <p className="text-xs text-muted-foreground">
+                (Manage defaults, legal, integrations - Placeholder)
               </p>
             </CardContent>
           </Card>

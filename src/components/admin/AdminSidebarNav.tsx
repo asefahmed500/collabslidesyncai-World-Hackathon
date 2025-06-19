@@ -5,19 +5,20 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { LayoutDashboard, Users, Shield, CreditCard, BarChart, Activity, FileText, ShieldAlertIcon, MessageSquareWarning, Zap } from "lucide-react";
+import { LayoutDashboard, Users, Shield, CreditCard, BarChart, Activity, FileText, ShieldAlertIcon, MessageSquareWarning, Zap, SettingsIcon } from "lucide-react";
 
 const navItems = [
   { href: "/admin", label: "Overview", icon: LayoutDashboard },
   { href: "/admin/users", label: "Users", icon: Users },
-  { href: "/admin/teams", label: "Teams", icon: Users }, // Consider a different icon for Teams if desired, e.g., Briefcase
+  { href: "/admin/teams", label: "Teams", icon: Users }, 
   { href: "/admin/presentations", label: "Presentations", icon: FileText },
   { href: "/admin/moderation", label: "Moderation Queue", icon: ShieldAlertIcon },
   { href: "/admin/feedback", label: "User Feedback", icon: MessageSquareWarning },
   { href: "/admin/billing", label: "Billing", icon: CreditCard },
   { href: "/admin/security", label: "Security Logs", icon: Shield },
-  { href: "/admin/stats", label: "AI Analytics", icon: Zap }, // Changed Icon to Zap and Label
+  { href: "/admin/stats", label: "AI Analytics", icon: Zap },
   { href: "/admin/activities", label: "Global Activity", icon: Activity },
+  { href: "/admin/settings", label: "Platform Settings", icon: SettingsIcon },
 ];
 
 export function AdminSidebarNav() {
