@@ -150,17 +150,17 @@ export default function AdminUsersPage() {
       case 'toggleStatus':
         return {
           title: `${userToModify.disabled ? 'Enable' : 'Disable'} User Account?`,
-          description: `Are you sure you want to ${userToModify.disabled ? 'enable' : 'disable'} the account for ${userName}? This will ${userToModify.disabled ? 'allow' : 'prevent'} them from logging in. (Firebase Auth status is placeholder).`,
+          description: `Are you sure you want to ${userToModify.disabled ? 'enable' : 'disable'} the account for ${userName}? This will affect their ability to log in via Firebase Authentication and their status in the application database.`,
         };
       case 'resetPassword':
         return {
           title: `Reset Password for ${userName}?`,
-          description: `This will initiate a password reset process for ${userName}. (Firebase Admin SDK action is placeholder).`,
+          description: `This will generate a password reset link for ${userName} that you can provide to them. The user will then be able to set a new password.`,
         };
       case 'delete':
         return {
           title: `Delete User ${userName}?`,
-          description: "This action cannot be undone. This will permanently delete the user account from the database (Firebase Auth deletion is placeholder). If the user owns any teams, deletion will be blocked.",
+          description: "This action cannot be undone. This will permanently delete the user account from Firebase Authentication and the application database. If the user owns any teams, deletion will be blocked.",
         };
       default: return { title: "", description: "" };
     }
@@ -311,3 +311,4 @@ export default function AdminUsersPage() {
     </Card>
   );
 }
+
