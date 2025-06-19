@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { CheckCircle } from 'lucide-react';
 import { cn } from "@/lib/utils";
-import { useToast } from '@/hooks/use-toast'; // Import useToast
+import { useToast } from '@/hooks/use-toast'; 
 
 // Define the type for a single pricing plan, matching the structure in page.tsx
 interface PricingPlan {
@@ -25,22 +25,21 @@ interface PricingCardClientProps {
 }
 
 export function PricingCardClient({ plan }: PricingCardClientProps) {
-  const { toast } = useToast(); // Initialize toast
+  const { toast } = useToast(); 
 
-  // The onClick handler that was causing issues in the Server Component
   const handleCtaClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
-    // For "Get Started", we let it navigate normally.
-    // For "Upgrade" buttons, we show a toast because Stripe isn't fully integrated.
-    if (plan.href.includes("plan=")) { // Check if it's an upgrade button
-      e.preventDefault(); // Prevent navigation for upgrade buttons
-      toast({
-        title: "Stripe Checkout Coming Soon!",
-        description: `You would be redirected to Stripe to complete your upgrade to the "${plan.name}" plan. This feature is under development.`,
-        duration: 5000,
-      });
+    // For "Get Started" for free plan, let it navigate normally.
+    if (plan.name.toLowerCase() === "free") {
+      return; 
     }
-    // If it's not an upgrade button (e.g., "Get Started" for free plan),
-    // the default Link behavior will handle navigation.
+
+    // For "Upgrade" buttons, show a toast because Stripe isn't fully integrated.
+    e.preventDefault(); 
+    toast({
+      title: "Stripe Checkout - Coming Soon!",
+      description: `You would normally be redirected to Stripe to subscribe to the "${plan.name}" plan. This feature is currently under development.`,
+      duration: 5000,
+    });
   };
 
   return (
@@ -74,7 +73,7 @@ export function PricingCardClient({ plan }: PricingCardClientProps) {
           size="lg"
           className={cn(
             "w-full transition-transform hover:scale-105",
-            plan.highlight ? "bg-primary hover:bg-primary/90" : "bg-accent hover:bg-accent/90 text-accent-foreground"
+            plan.highlight && plan.name.toLowerCase() !== "free" ? "bg-primary hover:bg-primary/90" : "bg-accent hover:bg-accent/90 text-accent-foreground"
           )}
           asChild
         >

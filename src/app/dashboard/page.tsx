@@ -224,12 +224,9 @@ export default function DashboardPage() {
     .slice(0,3);
 
   const handleUpgradeClick = () => {
-    // TODO: This would eventually call an API to create a Stripe Checkout session
-    // and then redirect the user to Stripe.
-    // router.push('/api/stripe/create-checkout-session?plan=premium_monthly');
     toast({
-      title: "Stripe Checkout Coming Soon!",
-      description: "Integration with Stripe for premium plans is under development. You would be redirected to Stripe to complete your purchase."
+      title: "Stripe Checkout - Coming Soon!",
+      description: "You would be redirected to Stripe to complete your upgrade. This feature is currently under development."
     });
   };
 
@@ -276,7 +273,7 @@ export default function DashboardPage() {
                 className="bg-primary hover:bg-primary/90 text-primary-foreground shadow-md hover:shadow-lg transition-shadow"
                 size="lg"
               >
-                Upgrade to Premium <ExternalLink className="ml-2 h-4 w-4"/>
+                Upgrade to Premium Plan <ExternalLink className="ml-2 h-4 w-4"/>
               </Button>
             </CardContent>
           </Card>

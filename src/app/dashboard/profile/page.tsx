@@ -122,22 +122,16 @@ export default function ProfilePage() {
   };
 
   const handleManageSubscription = () => {
-    // TODO: Replace with actual Stripe Customer Portal link generation and redirect
-    // const portalSessionUrl = await fetch('/api/stripe/create-portal-session').then(res => res.json()).then(data => data.url);
-    // if (portalSessionUrl) router.push(portalSessionUrl);
     toast({
-        title: "Manage Subscription (Coming Soon)", 
-        description: "You will be redirected to the Stripe Customer Portal to manage your billing details, view invoices, or cancel your subscription."
+        title: "Stripe Customer Portal - Coming Soon!", 
+        description: "You would be redirected to the Stripe Customer Portal to manage your billing details, view invoices, or cancel your subscription. This feature is under development."
     });
   };
 
   const handleUpgradeClick = () => {
-    // TODO: This would eventually call an API to create a Stripe Checkout session
-    // and then redirect the user to Stripe.
-    // router.push('/api/stripe/create-checkout-session?plan=premium_monthly'); // Example plan
     toast({
-      title: "Stripe Checkout Coming Soon!",
-      description: "Integration with Stripe for premium plans is under development. You would be redirected to Stripe to complete your purchase."
+      title: "Stripe Checkout - Coming Soon!",
+      description: "You would be redirected to Stripe to complete your upgrade. This feature is currently under development."
     });
   };
 
