@@ -13,7 +13,7 @@ import { AIAssistantPanel } from '@/components/editor/AIAssistantPanel';
 import { CollaborationBar } from '@/components/editor/CollaborationBar';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
-import type { Presentation, Slide, SlideElement, SlideComment, ActiveCollaboratorInfo, User as AppUser, SlideElementType, PresentationActivity, ChartContent, IconContent, SuggestedChartConfig } from '@/types';
+import type { Presentation, Slide, SlideElement, SlideComment, ActiveCollaboratorInfo, User as AppUser, SlideElementType, PresentationActivity, ChartContent, IconContent, SuggestedChartConfig, SlideBackgroundGradient } from '@/types';
 import { AlertTriangle, Home, RotateCcw, Save, Share2, Users, FileText, Loader2, Zap, WifiOff, ShieldAlert, Sparkles, LayoutTemplate, Trash2, Copy, ShieldX, Settings, MessageSquare } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -191,6 +191,7 @@ export default function EditorPage() {
               ...slide,
               backgroundColor: slide.backgroundColor || '#FFFFFF',
               backgroundImageUrl: slide.backgroundImageUrl || undefined,
+              backgroundGradient: slide.backgroundGradient || null,
               elements: (slide.elements || []).map(el => ({
                 ...el,
                 zIndex: el.zIndex === undefined ? 0 : el.zIndex,
@@ -345,7 +346,7 @@ export default function EditorPage() {
 
     setSelectedElementId(elementId);
     setSelectedTool(null); 
-    setIsRightPanelOpen(elementId ? 'properties' : null); // Show properties if element selected, else close panel
+    setIsRightPanelOpen(elementId ? 'properties' : 'properties'); // Always show properties panel, for element or slide
 
     if (elementId) {
         try {
@@ -624,25 +625,45 @@ export default function EditorPage() {
     }
   };
 
-  const handleUpdateSlideProperties = async (updates: { backgroundColor?: string; backgroundImageUrl?: string | null }) => {
+  const handleUpdateSlideProperties = async (updates: { backgroundColor?: string; backgroundImageUrl?: string | null, backgroundGradient?: SlideBackgroundGradient | null }) => {
     if (!presentation || !currentSlideId || !currentUser) return;
+    
     const updatedSlides = presentation.slides.map(s => {
         if (s.id === currentSlideId) {
             const newProps: Partial<Slide> = {};
-            if (updates.hasOwnProperty('backgroundColor')) newProps.backgroundColor = updates.backgroundColor;
+            if (updates.hasOwnProperty('backgroundColor')) {
+                newProps.backgroundColor = updates.backgroundColor;
+                if (updates.backgroundColor !== undefined) { // If solid color is set, clear others
+                    newProps.backgroundImageUrl = undefined;
+                    newProps.backgroundGradient = null;
+                }
+            }
             if (updates.hasOwnProperty('backgroundImageUrl')) {
                 newProps.backgroundImageUrl = updates.backgroundImageUrl === null ? undefined : updates.backgroundImageUrl;
+                 if (updates.backgroundImageUrl !== null) { // If image is set, clear others
+                    newProps.backgroundColor = undefined;
+                    newProps.backgroundGradient = null;
+                }
+            }
+            if (updates.hasOwnProperty('backgroundGradient')) {
+                newProps.backgroundGradient = updates.backgroundGradient;
+                 if (updates.backgroundGradient !== null) { // If gradient is set, clear others
+                    newProps.backgroundColor = undefined;
+                    newProps.backgroundImageUrl = undefined;
+                }
             }
             return { ...s, ...newProps };
         }
         return s;
     });
+
     try {
         await apiUpdatePresentation(presentation.id, { slides: updatedSlides });
         logPresentationActivity(presentation.id, currentUser.id, 'slide_background_updated', { 
             slideId: currentSlideId, 
             newColor: updates.backgroundColor,
-            newImage: updates.backgroundImageUrl
+            newImage: updates.backgroundImageUrl,
+            newGradient: updates.backgroundGradient,
         });
     } catch (e: any) {
         console.error("Error updating slide properties:", e);
@@ -732,7 +753,7 @@ export default function EditorPage() {
   
   const handleApplyAIBackgroundToSlide = (imageUrl: string) => {
     if (currentSlideId) {
-        handleUpdateSlideProperties({ backgroundImageUrl: imageUrl });
+        handleUpdateSlideProperties({ backgroundImageUrl: imageUrl, backgroundGradient: null, backgroundColor: undefined });
     }
   };
 

@@ -268,13 +268,21 @@ export function EditorCanvas({
   const canvasStyle: React.CSSProperties = {
     width: `${canvasBaseWidth * zoom}px`,
     height: `${canvasBaseHeight * zoom}px`,
-    backgroundColor: slide.backgroundColor || '#FFFFFF',
   };
 
-  if (slide.backgroundImageUrl) {
+  if (slide.backgroundGradient) {
+    const { type, startColor, endColor, angle } = slide.backgroundGradient;
+    if (type === 'linear') {
+      canvasStyle.backgroundImage = `linear-gradient(${angle || 0}deg, ${startColor}, ${endColor})`;
+    } else if (type === 'radial') {
+      canvasStyle.backgroundImage = `radial-gradient(circle, ${startColor}, ${endColor})`;
+    }
+  } else if (slide.backgroundImageUrl) {
     canvasStyle.backgroundImage = `url(${slide.backgroundImageUrl})`;
     canvasStyle.backgroundSize = 'cover';
     canvasStyle.backgroundPosition = 'center';
+  } else {
+    canvasStyle.backgroundColor = slide.backgroundColor || '#FFFFFF';
   }
 
 
@@ -334,3 +342,4 @@ export function EditorCanvas({
     </div>
   );
 }
+

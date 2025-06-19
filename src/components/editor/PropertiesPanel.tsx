@@ -7,8 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import type { SlideElement, Slide, SlideComment, SlideElementStyle, ChartContent, IconContent, ChartType } from '@/types';
-import { Text, Image as ImageIconLucide, Shapes, MessageSquare, Send, Palette, UserCircleIcon, Lock, CaseSensitive, AlignCenter, AlignLeft, AlignRight, Bold, Italic, Underline, Trash2, BarChart3, Smile as SmileIcon, Info, ImageOff } from 'lucide-react';
+import type { SlideElement, Slide, SlideComment, SlideElementStyle, ChartContent, IconContent, ChartType, SlideBackgroundGradient } from '@/types';
+import { Text, Image as ImageIconLucide, Shapes, MessageSquare, Send, Palette, UserCircleIcon, Lock, CaseSensitive, AlignCenter, AlignLeft, AlignRight, Bold, Italic, Underline, Trash2, BarChart3, Smile as SmileIcon, Info, ImageOff, Layers } from 'lucide-react';
 import { useState, ChangeEvent, useEffect } from 'react';
 import { Textarea } from '../ui/textarea';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
@@ -20,7 +20,7 @@ interface PropertiesPanelProps {
   onDeleteElement: (elementId: string) => void;
   onAddComment: (text: string) => void;
   onResolveComment: (commentId: string) => void;
-  onUpdateSlideProperties: (updates: { backgroundColor?: string; backgroundImageUrl?: string | null }) => void;
+  onUpdateSlideProperties: (updates: { backgroundColor?: string; backgroundImageUrl?: string | null; backgroundGradient?: SlideBackgroundGradient | null; }) => void;
   disabled?: boolean;
   currentUserId: string;
 }
@@ -39,6 +39,16 @@ export function PropertiesPanel({
   const [newComment, setNewComment] = useState("");
   const [localStyle, setLocalStyle] = useState<SlideElementStyle | null>(null);
   const [localContent, setLocalContent] = useState<string | ChartContent | IconContent | any | null>(null);
+  
+  // State for slide gradient properties
+  const [gradientType, setGradientType] = useState<'linear' | 'radial'>(currentSlide?.backgroundGradient?.type || 'linear');
+  const [gradientStartColor, setGradientStartColor] = useState(currentSlide?.backgroundGradient?.startColor || '#FFFFFF');
+  const [gradientEndColor, setGradientEndColor] = useState(currentSlide?.backgroundGradient?.endColor || '#DDDDDD');
+  const [gradientAngle, setGradientAngle] = useState(currentSlide?.backgroundGradient?.angle || 0);
+  const [activeBackgroundType, setActiveBackgroundType] = useState<'solid' | 'image' | 'gradient'>(
+    currentSlide?.backgroundGradient ? 'gradient' : (currentSlide?.backgroundImageUrl ? 'image' : 'solid')
+  );
+
 
   useEffect(() => {
     if (selectedElement) {
@@ -47,8 +57,16 @@ export function PropertiesPanel({
     } else {
       setLocalStyle(null);
       setLocalContent(null);
+      // Update slide background local state when slide changes or no element is selected
+      setGradientType(currentSlide?.backgroundGradient?.type || 'linear');
+      setGradientStartColor(currentSlide?.backgroundGradient?.startColor || '#FFFFFF');
+      setGradientEndColor(currentSlide?.backgroundGradient?.endColor || '#DDDDDD');
+      setGradientAngle(currentSlide?.backgroundGradient?.angle || 0);
+      setActiveBackgroundType(
+        currentSlide?.backgroundGradient ? 'gradient' : (currentSlide?.backgroundImageUrl ? 'image' : 'solid')
+      );
     }
-  }, [selectedElement]);
+  }, [selectedElement, currentSlide]);
 
   const isElementLockedByOther = selectedElement?.lockedBy && selectedElement.lockedBy !== currentUserId;
   const effectiveDisabled = disabled || isElementLockedByOther;
@@ -85,6 +103,30 @@ export function PropertiesPanel({
     handleContentChange(updatedIconContent);
   };
 
+  const handleApplyGradient = () => {
+    if (!currentSlide || disabled) return;
+    onUpdateSlideProperties({
+        backgroundGradient: { type: gradientType, startColor: gradientStartColor, endColor: gradientEndColor, angle: gradientAngle },
+        backgroundColor: undefined, // Clear solid color
+        backgroundImageUrl: null, // Clear image
+    });
+  };
+  
+  const handleSlideBackgroundTypeChange = (type: 'solid' | 'image' | 'gradient') => {
+    setActiveBackgroundType(type);
+    if (type === 'solid') {
+        onUpdateSlideProperties({ backgroundGradient: null, backgroundImageUrl: null, backgroundColor: currentSlide?.backgroundColor || '#FFFFFF' });
+    } else if (type === 'image') {
+        onUpdateSlideProperties({ backgroundGradient: null, backgroundColor: undefined, backgroundImageUrl: currentSlide?.backgroundImageUrl || '' });
+    } else if (type === 'gradient') {
+         onUpdateSlideProperties({
+            backgroundGradient: { type: gradientType, startColor: gradientStartColor, endColor: gradientEndColor, angle: gradientAngle },
+            backgroundColor: undefined,
+            backgroundImageUrl: null,
+        });
+    }
+  };
+
 
   const handleCommentSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -108,41 +150,87 @@ export function PropertiesPanel({
                 </h3>
                  <Accordion type="single" collapsible defaultValue="appearance" className="w-full">
                     <AccordionItem value="appearance">
-                        <AccordionTrigger className="text-base">Appearance</AccordionTrigger>
+                        <AccordionTrigger className="text-base flex items-center"><Layers className="mr-2 h-4 w-4"/>Background Type</AccordionTrigger>
                         <AccordionContent className="space-y-3 pt-2">
-                            <div>
-                                <Label htmlFor="slideBackgroundColor">Solid Background Color</Label>
-                                <Input
-                                    id="slideBackgroundColor"
-                                    type="color"
-                                    value={currentSlide?.backgroundColor || '#FFFFFF'}
-                                    onChange={(e) => currentSlide && onUpdateSlideProperties({ backgroundColor: e.target.value })}
-                                    className="mt-1 h-10 p-1"
-                                    disabled={disabled || !currentSlide}
-                                />
-                            </div>
-                            <div>
-                                <Label htmlFor="slideBackgroundImageUrl">Background Image URL</Label>
-                                <Input
-                                    id="slideBackgroundImageUrl"
-                                    type="text"
-                                    placeholder="Enter image URL or use AI"
-                                    value={currentSlide?.backgroundImageUrl || ''}
-                                    onChange={(e) => currentSlide && onUpdateSlideProperties({ backgroundImageUrl: e.target.value || null })}
-                                    className="mt-1"
-                                    disabled={disabled || !currentSlide}
-                                />
-                            </div>
-                            {currentSlide?.backgroundImageUrl && (
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => currentSlide && onUpdateSlideProperties({ backgroundImageUrl: null })}
-                                    disabled={disabled || !currentSlide}
-                                    className="w-full"
-                                >
-                                   <ImageOff className="mr-2 h-4 w-4" /> Clear Background Image
-                                </Button>
+                           <Select value={activeBackgroundType} onValueChange={(val) => handleSlideBackgroundTypeChange(val as any)} disabled={disabled || !currentSlide}>
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Select background type"/>
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="solid">Solid Color</SelectItem>
+                                    <SelectItem value="image">Image URL</SelectItem>
+                                    <SelectItem value="gradient">Gradient</SelectItem>
+                                </SelectContent>
+                            </Select>
+
+                            {activeBackgroundType === 'solid' && (
+                                <div>
+                                    <Label htmlFor="slideBackgroundColor">Solid Background Color</Label>
+                                    <Input
+                                        id="slideBackgroundColor"
+                                        type="color"
+                                        value={currentSlide?.backgroundColor || '#FFFFFF'}
+                                        onChange={(e) => currentSlide && onUpdateSlideProperties({ backgroundColor: e.target.value, backgroundGradient: null, backgroundImageUrl: null })}
+                                        className="mt-1 h-10 p-1"
+                                        disabled={disabled || !currentSlide}
+                                    />
+                                </div>
+                            )}
+                             {activeBackgroundType === 'image' && (
+                                <>
+                                    <div>
+                                        <Label htmlFor="slideBackgroundImageUrl">Background Image URL</Label>
+                                        <Input
+                                            id="slideBackgroundImageUrl"
+                                            type="text"
+                                            placeholder="Enter image URL or use AI"
+                                            value={currentSlide?.backgroundImageUrl || ''}
+                                            onChange={(e) => currentSlide && onUpdateSlideProperties({ backgroundImageUrl: e.target.value || null, backgroundGradient: null, backgroundColor: undefined })}
+                                            className="mt-1"
+                                            disabled={disabled || !currentSlide}
+                                        />
+                                    </div>
+                                    {currentSlide?.backgroundImageUrl && (
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => currentSlide && onUpdateSlideProperties({ backgroundImageUrl: null })}
+                                            disabled={disabled || !currentSlide}
+                                            className="w-full mt-2"
+                                        >
+                                        <ImageOff className="mr-2 h-4 w-4" /> Clear Background Image
+                                        </Button>
+                                    )}
+                                </>
+                            )}
+                            {activeBackgroundType === 'gradient' && (
+                                <div className="space-y-3 mt-2 p-3 border rounded-md bg-muted/30">
+                                    <h4 className="text-sm font-medium">Gradient Settings</h4>
+                                    <Select value={gradientType} onValueChange={(val) => setGradientType(val as 'linear'|'radial')} disabled={disabled || !currentSlide}>
+                                        <SelectTrigger><SelectValue placeholder="Gradient Type"/></SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="linear">Linear</SelectItem>
+                                            <SelectItem value="radial">Radial</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div>
+                                            <Label htmlFor="gradientStartColor" className="text-xs">Start Color</Label>
+                                            <Input id="gradientStartColor" type="color" value={gradientStartColor} onChange={(e) => setGradientStartColor(e.target.value)} className="mt-1 h-9 p-0.5" disabled={disabled || !currentSlide} />
+                                        </div>
+                                        <div>
+                                            <Label htmlFor="gradientEndColor" className="text-xs">End Color</Label>
+                                            <Input id="gradientEndColor" type="color" value={gradientEndColor} onChange={(e) => setGradientEndColor(e.target.value)} className="mt-1 h-9 p-0.5" disabled={disabled || !currentSlide} />
+                                        </div>
+                                    </div>
+                                    {gradientType === 'linear' && (
+                                        <div>
+                                            <Label htmlFor="gradientAngle" className="text-xs">Angle (deg)</Label>
+                                            <Input id="gradientAngle" type="number" value={gradientAngle} onChange={(e) => setGradientAngle(parseInt(e.target.value))} className="mt-1 h-9" disabled={disabled || !currentSlide} />
+                                        </div>
+                                    )}
+                                    <Button onClick={handleApplyGradient} size="sm" className="w-full" disabled={disabled || !currentSlide}>Apply Gradient</Button>
+                                </div>
                             )}
                         </AccordionContent>
                     </AccordionItem>
@@ -453,45 +541,6 @@ export function PropertiesPanel({
               </div>
             </AccordionContent>
           </AccordionItem>
-           <AccordionItem value="slideAppearanceGlobal">
-            <AccordionTrigger className="text-base">Slide Background</AccordionTrigger>
-            <AccordionContent className="space-y-3 pt-2">
-                <div>
-                    <Label htmlFor="slideBackgroundColorPanel">Solid Color</Label>
-                    <Input
-                        id="slideBackgroundColorPanel"
-                        type="color"
-                        value={currentSlide?.backgroundColor || '#FFFFFF'}
-                        onChange={(e) => currentSlide && onUpdateSlideProperties({ backgroundColor: e.target.value })}
-                        className="mt-1 h-10 p-1"
-                        disabled={disabled || !currentSlide}
-                    />
-                </div>
-                 <div>
-                    <Label htmlFor="slideBackgroundImageUrlPanel">Image URL</Label>
-                    <Input
-                        id="slideBackgroundImageUrlPanel"
-                        type="text"
-                        placeholder="Enter image URL or use AI"
-                        value={currentSlide?.backgroundImageUrl || ''}
-                        onChange={(e) => currentSlide && onUpdateSlideProperties({ backgroundImageUrl: e.target.value || null })}
-                        className="mt-1"
-                        disabled={disabled || !currentSlide}
-                    />
-                </div>
-                {currentSlide?.backgroundImageUrl && (
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => currentSlide && onUpdateSlideProperties({ backgroundImageUrl: null })}
-                        disabled={disabled || !currentSlide}
-                        className="w-full"
-                    >
-                        <ImageOff className="mr-2 h-4 w-4" /> Clear Background Image
-                    </Button>
-                )}
-            </AccordionContent>
-          </AccordionItem>
         </Accordion>
       </div>
     );
@@ -559,3 +608,4 @@ export function PropertiesPanel({
     </div>
   );
 }
+

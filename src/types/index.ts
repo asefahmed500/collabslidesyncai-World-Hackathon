@@ -130,6 +130,14 @@ export interface SlideComment {
   resolved: boolean;
 }
 
+export interface SlideBackgroundGradient {
+  type: 'linear' | 'radial';
+  startColor: string;
+  endColor: string;
+  angle?: number; // For linear gradients
+  // For radial: position?: string (e.g., 'center', 'top left') - advanced
+}
+
 export interface Slide {
   id:string;
   presentationId: string;
@@ -139,7 +147,8 @@ export interface Slide {
   comments: SlideComment[];
   thumbnailUrl?: string;
   backgroundColor?: string;
-  backgroundImageUrl?: string; // New field for AI-generated or user-provided background images
+  backgroundImageUrl?: string;
+  backgroundGradient?: SlideBackgroundGradient | null; // New field for gradients
 }
 
 export interface ActiveCollaboratorInfo {
