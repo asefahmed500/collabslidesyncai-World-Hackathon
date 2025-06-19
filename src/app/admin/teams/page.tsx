@@ -32,6 +32,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 
 export default function AdminTeamsPage() {
@@ -44,6 +45,7 @@ export default function AdminTeamsPage() {
 
   const { toast } = useToast();
   const { currentUser } = useAuth();
+  const router = useRouter();
 
   const fetchTeams = useCallback(async () => {
     setIsLoading(true);
@@ -170,8 +172,10 @@ export default function AdminTeamsPage() {
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuLabel>Manage Team</DropdownMenuLabel>
-                            {/* In a real app, this might link to a detailed admin view of the team */}
-                            <DropdownMenuItem onClick={() => alert(`Viewing details for team ${team.name} (placeholder). Admin would see member list, presentations, detailed activity log here.`)}>
+                            <DropdownMenuItem 
+                                onClick={() => alert(`Placeholder: Admin view for team "${team.name}" would show members, specific activity logs, and allow admin-specific member management.`)}
+                                title="View detailed team information (Admin perspective)"
+                            >
                                 <Eye className="mr-2 h-4 w-4" /> View Details (Placeholder)
                             </DropdownMenuItem>
                             <DropdownMenuItem 
