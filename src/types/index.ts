@@ -283,14 +283,14 @@ export interface Asset {
   uploaderId: string;
   uploaderName?: string;
   fileName: string;
-  fileType: string;
-  assetType: AssetType;
+  fileType: string; // MIME type
+  assetType: AssetType; // Simplified type
   storagePath: string;
   downloadURL: string;
-  size: number;
-  thumbnailURL?: string;
-  dimensions?: { width: number; height: number };
-  duration?: number;
+  size: number; // in bytes
+  thumbnailURL?: string; // URL for a smaller preview, especially for non-images
+  dimensions?: { width: number; height: number }; // For images
+  duration?: number; // For audio/video in seconds
   tags?: string[];
   description?: string;
   createdAt: FirestoreTimestamp;

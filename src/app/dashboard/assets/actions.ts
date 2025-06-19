@@ -5,7 +5,7 @@ import { auth } from '@/lib/firebaseConfig';
 import { createAssetMetadata, deleteAsset as deleteAssetFromDbAndStorage } from '@/lib/firestoreService';
 import type { Asset } from '@/types';
 import { revalidatePath } from 'next/cache';
-import { getUserFromMongoDB } from '@/lib/mongoUserService'; // For fetching user profile if needed
+import { getUserFromMongoDB } from '@/lib/mongoUserService'; 
 
 interface AssetActionResponse {
   success: boolean;
@@ -26,18 +26,18 @@ export async function createAssetMetadataAction(
   }
 
   try {
-    // Fetch uploader's name from MongoDB for denormalization
     const uploaderProfile = await getUserFromMongoDB(assetData.uploaderId);
-    const dataWithUploaderName = {
+    const dataWithDefaults: Omit<Asset, 'id' | 'createdAt' | 'lastUpdatedAt'> = {
         ...assetData,
         uploaderName: uploaderProfile?.name || 'Unknown User',
+        thumbnailURL: assetData.assetType === 'image' ? assetData.downloadURL : undefined, // Default thumbnail for images
+        // Ensure dimensions is either set or undefined, not null
+        dimensions: assetData.dimensions ? assetData.dimensions : undefined,
     };
 
-    const newAssetId = await createAssetMetadata(dataWithUploaderName);
+    const newAssetId = await createAssetMetadata(dataWithDefaults);
     
     revalidatePath('/dashboard/assets');
-    // It's better to fetch the created asset to return it with server-generated timestamps
-    // For simplicity now, we return success, client can re-fetch or use optimistic updates
     return { success: true, message: 'Asset metadata created successfully.', assetId: newAssetId };
   } catch (error: any) {
     console.error("Error creating asset metadata:", error);
@@ -54,16 +54,10 @@ export async function deleteAssetAction(
     return { success: false, message: 'Authentication required.' };
   }
   
-  // Get user's AppUser profile from MongoDB to access teamId
   const userProfile = await getUserFromMongoDB(firebaseUser.uid);
   if (!userProfile || !userProfile.teamId) {
     return { success: false, message: 'User or team information not found for permission check.' };
   }
-
-  // Permission check: In a real app, verify if user can delete this asset
-  // (e.g., is team admin, or uploaded the asset, and asset belongs to their team)
-  // For now, we assume if they can call this action, they have permission.
-  // The deleteAsset service function will need teamId and actorId for logging.
   
   try {
     await deleteAssetFromDbAndStorage(assetId, storagePath, userProfile.teamId, firebaseUser.uid);

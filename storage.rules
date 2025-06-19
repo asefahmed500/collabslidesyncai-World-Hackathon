@@ -3,33 +3,42 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
-    // Default deny all reads and writes
-    // match /{allPaths=**} {
-    //  allow read, write: if false;
-    // }
-
-    // Assets: Allow authenticated users to upload to a path scoped by their team and user ID.
-    // Read access is granted if the user is authenticated and part of the team (requires teamId in custom claims or Firestore lookup).
-    // For simplicity now, we'll allow authenticated users to read if they know the path.
-    // Public assets could be handled by making downloadURLs public or using a separate "public" folder.
-    match /assets/{teamId}/{userId}/{fileName} {
-      allow read: if request.auth != null; // Or true if assets are generally public via URL
-      // User must be authenticated and their UID must match the {userId} in the path.
-      // Optionally, you could also verify if request.auth.token.teamId == teamId if you set custom claims.
-      allow write: if request.auth != null && request.auth.uid == userId;
-    }
-
-    // Profile Pictures: Allow users to upload/update their own profile pictures.
-    match /profilePictures/{userId}/{fileName} {
-      allow read: if true; // Profile pictures are generally public.
-      allow write: if request.auth != null && request.auth.uid == userId;
-    }
-    
-    // Catch-all for any other paths - deny by default for safety.
-    // If you need other public buckets or specific paths, define them explicitly above this.
+    // Default deny all
     match /{allPaths=**} {
-      allow read: if false; // More secure default for reads
-      allow write: if false;
+      allow read, write: if false;
     }
+
+    // Assets:
+    // - Allow authenticated users to read assets if they are part of the team (or if asset is public - future)
+    // - Allow authenticated users to write (upload/delete) assets to their own team's folder, specifically under their own userId subfolder.
+    // - Team admins/owners might have broader delete permissions (handled via backend logic for now, not Storage rules for simplicity)
+    match /assets/{teamId}/{userId}/{fileName} {
+      allow read: if request.auth != null && (exists(/databases/(default)/documents/teams/$(teamId)) && request.auth.uid in get(/databases/(default)/documents/teams/$(teamId)).data.members);
+      // Write (upload): User must be authenticated and match the userId in the path.
+      allow write: if request.auth != null && request.auth.uid == userId;
+      // Delete: User must be authenticated and match the userId in path (they can delete their own uploads).
+      // Broader team admin delete permissions should be handled by a backend function calling Admin SDK.
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // User Profile Pictures (example rule, adjust path as needed)
+    // Allow users to upload their own profile pictures
+    // Path could be /users/{userId}/profilePicture.jpg or similar
+    match /users/{userId}/{fileName} {
+        allow read: if true; // Publicly readable or based on your app's privacy for profiles
+        allow write: if request.auth != null && request.auth.uid == userId && request.resource.size < 1 * 1024 * 1024; // Max 1MB
+    }
+
+    // Team Logos (example rule)
+    // Allow team owners/admins to upload team logos
+    // Path could be /teams/{teamId}/logo.jpg
+    match /teams/{teamId}/{fileName} {
+        allow read: if true; // Usually public
+        // Write requires checking if the user is an admin/owner of teamId.
+        // This is complex for Storage Rules alone, often better handled by backend function triggers.
+        // Simplified: allow if authenticated and part of team (backend should verify role before generating upload URL)
+        allow write: if request.auth != null && (exists(/databases/(default)/documents/teams/$(teamId)) && request.auth.uid in get(/databases/(default)/documents/teams/$(teamId)).data.members) && request.resource.size < 1 * 1024 * 1024;
+    }
+
   }
 }

@@ -10,10 +10,10 @@ import { AssetCard } from '@/components/assets/AssetCard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, Search, Library, FileWarning, ShieldAlert, Trash2 } from 'lucide-react';
+import { Loader2, Search, Library, FileWarning, ShieldAlert, Trash2, Film, Music, FileText as FileTextIcon, Info } from 'lucide-react';
 import type { Asset } from '@/types';
-import { getTeamAssets } from '@/lib/firestoreService'; // Directly use firestoreService
-import { deleteAssetAction } from './actions'; // Use server action for delete
+import { getTeamAssets } from '@/lib/firestoreService'; 
+import { deleteAssetAction } from './actions'; 
 import { useToast } from '@/hooks/use-toast';
 import {
   AlertDialog,
@@ -62,7 +62,6 @@ export default function AssetLibraryPage() {
   }, [currentUser, authLoading, router, toast, fetchAssets]);
 
   const handleAssetUploaded = (newAsset: Asset) => {
-    // Optimistically add or re-fetch
     fetchAssets(); 
   };
 
@@ -126,19 +125,19 @@ export default function AssetLibraryPage() {
           <h1 className="font-headline text-4xl font-bold text-primary flex items-center">
             <Library className="mr-3 h-10 w-10" /> Team Asset Library
           </h1>
-          <p className="text-muted-foreground">Manage your team's shared images and other files.</p>
+          <p className="text-muted-foreground">Manage your team's shared images. Support for video, audio, and PDFs coming soon!</p>
         </div>
 
         <Card className="mb-8 shadow-lg">
           <CardHeader>
-            <CardTitle>Upload New Asset</CardTitle>
+            <CardTitle>Upload New Image</CardTitle>
             <CardDescription>Add images to your team's library. Max file size: 5MB.</CardDescription>
           </CardHeader>
           <CardContent>
             <AssetUploadDropzone 
               teamId={currentUser.teamId} 
               uploaderId={currentUser.id}
-              uploaderName={currentUser.name || 'Unknown User'} // Pass uploaderName
+              uploaderName={currentUser.name || 'Unknown User'} 
               onAssetUploaded={handleAssetUploaded} 
             />
             <p className="text-xs text-muted-foreground mt-2">
@@ -146,12 +145,22 @@ export default function AssetLibraryPage() {
             </p>
           </CardContent>
         </Card>
+        
+        <div className="mb-8 p-4 border border-dashed rounded-lg bg-muted/30">
+            <h3 className="text-lg font-semibold flex items-center mb-2"><Info className="mr-2 h-5 w-5 text-blue-500"/>Coming Soon Features:</h3>
+            <ul className="list-disc list-inside text-sm text-muted-foreground space-y-1">
+                <li>Upload and manage video (<Film className="inline h-4 w-4 mx-1"/>) and audio (<Music className="inline h-4 w-4 mx-1"/>) files.</li>
+                <li>Import PDF (<FileTextIcon className="inline h-4 w-4 mx-1"/>) and PPT files.</li>
+                <li>AI-powered background removal for images.</li>
+                <li>Automatic media compression and optimization.</li>
+            </ul>
+        </div>
 
         <Card className="shadow-lg">
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
-              <CardTitle>Your Team Assets ({filteredAssets.length})</CardTitle>
-              <CardDescription>Browse and manage your uploaded assets.</CardDescription>
+              <CardTitle>Your Team Images ({filteredAssets.length})</CardTitle>
+              <CardDescription>Browse and manage your uploaded images.</CardDescription>
             </div>
             <div className="relative w-full sm:max-w-xs">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -170,10 +179,10 @@ export default function AssetLibraryPage() {
               <div className="text-center py-12 border-2 border-dashed rounded-lg">
                 <FileWarning className="mx-auto h-16 w-16 text-muted-foreground mb-4" />
                 <h3 className="text-xl font-semibold text-muted-foreground">
-                  {assets.length === 0 ? "No assets in your library yet." : "No assets match your search."}
+                  {assets.length === 0 ? "No images in your library yet." : "No images match your search."}
                 </h3>
                 <p className="text-sm text-muted-foreground">
-                  {assets.length === 0 ? "Upload some files to get started!" : "Try a different search term or clear the search."}
+                  {assets.length === 0 ? "Upload some images to get started!" : "Try a different search term or clear the search."}
                 </p>
                 {assets.length > 0 && searchTerm && (
                     <Button variant="outline" className="mt-4" onClick={() => setSearchTerm('')}>Clear Search</Button>

@@ -31,9 +31,11 @@ export function AssetUploadDropzone({ teamId, uploaderId, uploaderName, onAssetU
   const { toast } = useToast();
 
   const getAssetTypeFromFile = (file: FileWithPath): AssetType => {
-    const mimeType = file.type;
+    const mimeType = file.type.toLowerCase();
     if (mimeType.startsWith('image/')) return 'image';
-    // Future: Add video, audio, pdf checks
+    if (mimeType.startsWith('video/')) return 'video';
+    if (mimeType.startsWith('audio/')) return 'audio';
+    if (mimeType === 'application/pdf') return 'pdf';
     return 'other';
   };
 
@@ -53,7 +55,15 @@ export function AssetUploadDropzone({ teamId, uploaderId, uploaderName, onAssetU
     }
 
     if (acceptedFiles.length > 0) {
-      setFilesToUpload([acceptedFiles[0]]); 
+      // For now, focusing on image uploads primarily through UI indication
+      const firstFile = acceptedFiles[0];
+      const assetType = getAssetTypeFromFile(firstFile);
+      if (assetType !== 'image') {
+          toast({ title: "Unsupported File Type", description: `Currently, only image uploads are fully supported via this interface. Video, audio, and PDF support is coming soon.`, variant: "info" });
+          setFilesToUpload([]); // Clear selection if not an image for this iteration
+          return;
+      }
+      setFilesToUpload([firstFile]); 
       setUploadError(null);
       setUploadProgress(null);
     }
@@ -61,8 +71,11 @@ export function AssetUploadDropzone({ teamId, uploaderId, uploaderName, onAssetU
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: {
+    accept: { // Primarily accept images for now
       'image/*': ['.jpeg', '.jpg', '.png', '.gif', '.webp'],
+      // 'video/*': ['.mp4', '.mov', '.avi'], // Future
+      // 'audio/*': ['.mp3', '.wav'], // Future
+      // 'application/pdf': ['.pdf'], // Future
     },
     multiple: false, 
     maxSize: MAX_FILE_SIZE_BYTES,
@@ -122,8 +135,7 @@ export function AssetUploadDropzone({ teamId, uploaderId, uploaderName, onAssetU
                     image.src = URL.createObjectURL(file);
                 });
                 assetMetadata.dimensions = { width: img.width, height: img.height };
-                // For images, full URL can be thumbnail. Could generate smaller one with Cloud Functions.
-                assetMetadata.thumbnailURL = downloadURL; 
+                assetMetadata.thumbnailURL = downloadURL; // For images, use full URL as thumbnail by default
                 URL.revokeObjectURL(img.src);
             } catch (e) { console.warn("Could not get image dimensions for", file.name); }
           }
@@ -137,7 +149,7 @@ export function AssetUploadDropzone({ teamId, uploaderId, uploaderName, onAssetU
                 ...assetMetadata,
                 id: result.assetId,
                 createdAt: new Date() as any, 
-                thumbnailURL: assetMetadata.thumbnailURL || downloadURL, // Ensure thumbnail is passed
+                thumbnailURL: assetMetadata.thumbnailURL || downloadURL, 
             };
             onAssetUploaded(newAssetForCallback);
             setFilesToUpload([]); 
@@ -170,7 +182,7 @@ export function AssetUploadDropzone({ teamId, uploaderId, uploaderName, onAssetU
         ) : (
           <p className="text-muted-foreground">Drag & drop an image here, or click to select file</p>
         )}
-        <p className="text-xs text-muted-foreground mt-1">Supports: JPG, PNG, GIF, WEBP (Max {MAX_FILE_SIZE_MB}MB)</p>
+        <p className="text-xs text-muted-foreground mt-1">Images (JPG, PNG, GIF, WEBP). Max {MAX_FILE_SIZE_MB}MB. Video/Audio/PDF support coming soon.</p>
       </div>
 
       {filesToUpload.length > 0 && (
