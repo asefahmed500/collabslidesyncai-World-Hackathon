@@ -29,7 +29,7 @@ export default function AdminActivitiesPage() {
           <p className="text-muted-foreground mb-4">
             This section is intended to show a stream of significant events happening across the entire platform,
             beyond individual team activities. This might include new user sign-ups, global setting changes,
-            system alerts, etc.
+            system alerts, admin actions not tied to a specific team, etc.
           </p>
           <p className="text-sm text-muted-foreground">
             Implementing a comprehensive global activity feed requires a robust logging strategy and
