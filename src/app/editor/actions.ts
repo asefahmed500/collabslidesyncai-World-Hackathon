@@ -117,6 +117,10 @@ export async function updatePresentationShareSettingsAction(
     if (userToInvite.id === presentation.creatorId) {
          return { success: false, message: `User ${inviteEmail} is already the owner.` };
     }
+    if (presentation.access && presentation.access[userToInvite.id] === inviteRole) {
+        return { success: false, message: `User ${inviteEmail} already has the role of ${inviteRole}.` };
+    }
+    
     updates.access![userToInvite.id] = inviteRole;
     
     await logPresentationActivity(presentationId, currentUserId, 'collaborator_added', {
@@ -216,7 +220,15 @@ export async function updatePresentationShareSettingsAction(
             );
             try {
                 await sendEmail({ to: collaboratorUser.email, subject: emailContent.subject, htmlBody: emailContent.htmlBody });
-            } catch (emailError) { console.warn("Failed to send role change email:", emailError); }
+                 await createNotification(
+                    collaboratorUser.id,
+                    'generic_info',
+                    `Role Changed for "${presentation.title}"`,
+                    `${currentUserName} changed your role to ${newRoleOrAction as PresentationAccessRole} for "${presentation.title}".`,
+                    `/editor/${presentationId}`,
+                    currentUserId, currentUserName, currentUserProfilePic
+                );
+            } catch (emailError) { console.warn("Failed to send role change email/notification:", emailError); }
          }
       }
     }
@@ -266,3 +278,4 @@ export async function verifyPasswordAction(
     return { success: false, message: 'Incorrect password.' };
   }
 }
+
