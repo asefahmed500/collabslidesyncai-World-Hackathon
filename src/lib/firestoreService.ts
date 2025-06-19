@@ -23,7 +23,7 @@ import {
   Unsubscribe,
 } from 'firebase/firestore';
 import { ref, deleteObject } from 'firebase/storage';
-import type { Presentation, Slide, SlideElement, SlideComment, User as AppUserTypeFromFirestore, Team, ActiveCollaboratorInfo, TeamRole, TeamMember, TeamActivity, TeamActivityType, PresentationActivity, PresentationActivityType, PresentationAccessRole, Asset, AssetType, SlideElementType, Notification, NotificationType as NotificationEnumType, PresentationModerationStatus, FeedbackSubmission } from '@/types';
+import type { Presentation, Slide, SlideElement, SlideComment, User as AppUserTypeFromFirestore, Team, ActiveCollaboratorInfo, TeamRole, TeamMember, TeamActivity, TeamActivityType, PresentationActivity, PresentationActivityType, PresentationAccessRole, Asset, AssetType, SlideElementType, Notification, NotificationType as NotificationEnumType, PresentationModerationStatus, FeedbackSubmission, SlideBackgroundGradient } from '@/types';
 import { logTeamActivityInMongoDB } from './mongoTeamService'; 
 import { getUserByEmailFromMongoDB, getUserFromMongoDB as getUserProfileFromMongoDB } from './mongoUserService'; 
 import { v4 as uuidv4 } from 'uuid';
@@ -83,8 +83,7 @@ export async function createPresentation(userId: string, title: string, teamId?:
       position: { x: 50, y: 50 },
       size: { width: 700, height: 100 },
       style: { fontFamily: 'Space Grotesk', fontSize: '36px', color: '#333333', backgroundColor: 'transparent', textAlign: 'left', fontWeight: 'bold', fontStyle: 'normal', textDecoration: 'none', opacity: 1 },
-      zIndex: 1,
-      rotation: 0,
+      zIndex: 1, rotation: 0,
       lockedBy: null,
       lockTimestamp: null,
     }],
@@ -92,6 +91,7 @@ export async function createPresentation(userId: string, title: string, teamId?:
     comments: [],
     thumbnailUrl: `https://placehold.co/160x90.png?text=S1`,
     backgroundColor: '#FFFFFF',
+    backgroundGradient: null,
   };
 
   const newPresentationData: Omit<Presentation, 'id' | 'slides' | 'activeCollaborators'> & { slides: Omit<Slide, 'presentationId'>[] } = {
@@ -395,6 +395,7 @@ export async function addSlideToPresentation(presentationId: string, newSlideDat
       speakerNotes: newSlideData.speakerNotes || "", comments: newSlideData.comments || [],
       thumbnailUrl: newSlideData.thumbnailUrl || `https://placehold.co/160x90.png?text=S${slideNumber}`,
       backgroundColor: newSlideData.backgroundColor || '#FFFFFF',
+      backgroundGradient: newSlideData.backgroundGradient || null,
     };
 
     const updatedSlidesArray = [...currentSlides, newSlide];
@@ -461,6 +462,7 @@ export async function duplicateSlideInPresentation(presentationId: string, slide
       elements: duplicatedElements,
       comments: [], 
       thumbnailUrl: originalSlide.thumbnailUrl ? `${originalSlide.thumbnailUrl.split('?')[0]}?text=Copy` : `https://placehold.co/160x90.png?text=Copy`,
+      backgroundGradient: originalSlide.backgroundGradient || null,
     };
 
     slides.splice(originalSlideIndex + 1, 0, duplicatedSlide);
@@ -979,8 +981,8 @@ export async function getPresentationsForModerationReview(): Promise<Presentatio
   const q = query(
     presentationsCollection,
     where('moderationStatus', '==', 'under_review'),
-    where('deleted', '==', false), 
-    orderBy('lastUpdatedAt', 'desc') 
+    where('deleted', '==', false), // Ensure not to review already soft-deleted items
+    orderBy('lastUpdatedAt', 'desc') // Review more recent ones first or by flag date
   );
   const snapshot = await getDocs(q);
   return snapshot.docs.map(docSnap => ({ id: docSnap.id, ...convertTimestamps(docSnap.data()) } as Presentation));
@@ -1024,6 +1026,7 @@ export async function duplicatePresentation(originalPresentationId: string, newO
       lockTimestamp: null,
     })),
     comments: [], 
+    backgroundGradient: slide.backgroundGradient || null,
   }));
 
   const newPresentationData: Omit<Presentation, 'id' | 'activeCollaborators'> = {

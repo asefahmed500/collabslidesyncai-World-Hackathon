@@ -15,8 +15,9 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth'; 
 import Link from 'next/link';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label'; // Added Label import
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'; // Added Select imports
+import { Label } from '@/components/ui/label'; 
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'; 
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 
 export default function AdminContentModerationPage() {
@@ -55,8 +56,13 @@ export default function AdminContentModerationPage() {
     let newStatus: PresentationModerationStatus | undefined = undefined;
     if (actionType === 'approve') newStatus = 'active';
     if (actionType === 'take_down') newStatus = 'taken_down';
+    if (actionType === 'edit_notes' && selectedPresentation.moderationStatus !== currentNewStatusForEdit) {
+        newStatus = currentNewStatusForEdit;
+    } else if (actionType === 'edit_notes') {
+        newStatus = selectedPresentation.moderationStatus; // Maintain current status if not explicitly changed
+    }
     
-    if (!newStatus && actionType !== 'edit_notes') {
+    if (!newStatus && actionType !== 'edit_notes') { // Should only allow no newStatus for 'edit_notes' if status is not changing
         toast({title: "Invalid Action", description: "No valid action specified.", variant: "destructive"});
         return;
     }
@@ -87,13 +93,21 @@ export default function AdminContentModerationPage() {
       setSelectedPresentation(null);
       setActionType(null);
       setModerationNotes('');
+      setCurrentNewStatusForEdit(undefined);
     }
   };
+
+  const [currentNewStatusForEdit, setCurrentNewStatusForEdit] = useState<PresentationModerationStatus | undefined>(undefined);
 
   const openActionDialog = (presentation: Presentation, type: 'approve' | 'take_down' | 'edit_notes') => {
     setSelectedPresentation(presentation);
     setActionType(type);
     setModerationNotes(presentation.moderationNotes || '');
+    if (type === 'edit_notes') {
+        setCurrentNewStatusForEdit(presentation.moderationStatus); // Initialize with current status for edit dialog
+    } else {
+        setCurrentNewStatusForEdit(undefined);
+    }
   };
 
   const getDialogDetails = () => {
@@ -104,7 +118,7 @@ export default function AdminContentModerationPage() {
       case 'take_down':
         return { title: `Take Down "${selectedPresentation.title}"?`, description: "This will make the presentation inaccessible to regular users. Add notes for context.", actionText: "Take Down Presentation" };
       case 'edit_notes':
-        return { title: `Edit Moderation Notes for "${selectedPresentation.title}"`, description: "Update the internal moderation notes for this presentation. Current status will be maintained unless changed here.", actionText: "Save Notes & Status"};
+        return { title: `Edit Moderation Notes for "${selectedPresentation.title}"`, description: "Update the internal moderation notes for this presentation. You can also change its status here.", actionText: "Save Notes & Status"};
       default:
         return { title: "", description: "", actionText: "" };
     }
@@ -159,9 +173,16 @@ export default function AdminContentModerationPage() {
               {reviewQueue.map((pres) => (
                 <TableRow key={pres.id}>
                   <TableCell className="font-medium max-w-xs truncate" title={pres.title}>
-                    <Link href={`/editor/${pres.id}`} target="_blank" className="hover:underline text-primary">
-                      {pres.title}
-                    </Link>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Link href={`/editor/${pres.id}`} target="_blank" className="hover:underline text-primary">
+                            {pres.title} <Eye className="inline h-4 w-4 ml-1 opacity-70"/>
+                          </Link>
+                        </TooltipTrigger>
+                        <TooltipContent><p>Open presentation in editor (new tab)</p></TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                   </TableCell>
                   <TableCell className="font-mono text-xs">{pres.creatorId.substring(0,12)}...</TableCell>
                   <TableCell className="text-xs">
@@ -205,7 +226,7 @@ export default function AdminContentModerationPage() {
             <div className="py-4 space-y-3">
                 {(actionType === 'take_down' || actionType === 'edit_notes') && (
                     <div>
-                        <Label htmlFor="moderationNotesTextarea">Moderation Notes (Optional for Approve, Recommended for Take Down)</Label>
+                        <Label htmlFor="moderationNotesTextarea">Moderation Notes {actionType === 'take_down' ? '(Required)' : '(Optional)'}</Label>
                         <Textarea
                             id="moderationNotesTextarea"
                             value={moderationNotes}
@@ -220,16 +241,8 @@ export default function AdminContentModerationPage() {
                      <div>
                         <Label htmlFor="newStatusSelect">Change Status (Optional)</Label>
                         <Select 
-                            defaultValue={selectedPresentation.moderationStatus}
-                            onValueChange={(value) => {
-                                // This is tricky with a single 'handleAction'.
-                                // For simplicity, we'll keep the main actionType, and if status changes here,
-                                // the 'handleAction' will use this new status.
-                                // A more complex setup would have separate state for newStatus in this dialog.
-                                if(value === 'active') setActionType('approve');
-                                else if (value === 'taken_down') setActionType('take_down');
-                                // else 'under_review' means no status change for this specific 'Save Notes' path if it was already under review
-                            }}
+                            value={currentNewStatusForEdit}
+                            onValueChange={(value) => setCurrentNewStatusForEdit(value as PresentationModerationStatus)}
                         >
                             <SelectTrigger id="newStatusSelect" className="mt-1">
                                 <SelectValue placeholder="Keep current status" />
@@ -248,7 +261,7 @@ export default function AdminContentModerationPage() {
               <Button variant="outline" onClick={() => {setSelectedPresentation(null); setActionType(null);}} disabled={isSubmitting}>Cancel</Button>
               <Button 
                 onClick={handleAction} 
-                disabled={isSubmitting}
+                disabled={isSubmitting || (actionType === 'take_down' && !moderationNotes.trim())}
                 className={actionType === 'take_down' ? "bg-destructive hover:bg-destructive/90 text-destructive-foreground" : (actionType === 'approve' ? "bg-green-600 hover:bg-green-700 text-white" : "")}
               >
                 {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : getDialogDetails().actionText}
@@ -273,3 +286,4 @@ export default function AdminContentModerationPage() {
     </Card>
   );
 }
+

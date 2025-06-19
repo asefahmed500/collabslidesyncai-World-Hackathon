@@ -10,7 +10,7 @@ export default function AdminDashboardPage() {
     <div className="space-y-8">
       <div className="mb-8">
         <h1 className="font-headline text-4xl font-bold text-primary">Admin Dashboard</h1>
-        <p className="text-muted-foreground">Oversee and manage CollabSlideSyncAI operations.</p>
+        <p className="text-muted-foreground">Oversee and manage CollabDeck operations.</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -62,13 +62,13 @@ export default function AdminDashboardPage() {
         <Link href="/admin/moderation" passHref>
           <Card className="hover:shadow-lg transition-shadow cursor-pointer">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Content Moderation</CardTitle>
+              <CardTitle className="text-sm font-medium">Content Moderation Queue</CardTitle>
               <ShieldAlertIcon className="h-5 w-5 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">Review Content</div>
               <p className="text-xs text-muted-foreground">
-                Manage flagged content.
+                Manage presentations flagged for review.
               </p>
             </CardContent>
           </Card>
