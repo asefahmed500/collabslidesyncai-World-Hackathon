@@ -73,6 +73,7 @@ export interface ChartContent {
   data: any; // Can be array of objects, specific structure depends on chart library
   options?: any; // Chart-specific options
   label?: string;
+  aiSuggestionNotes?: string; // To store AI's textual data mapping advice
 }
 
 export interface IconContent {
@@ -303,3 +304,6 @@ export interface Notification {
   actorName?: string; // Name of the actor (optional)
   actorProfilePictureUrl?: string; // Profile picture of the actor (optional)
 }
+
+// For AI Chart Suggestions (from design-assistant.ts flow, but used in editor for better integration)
+export type { SuggestedChartConfig };

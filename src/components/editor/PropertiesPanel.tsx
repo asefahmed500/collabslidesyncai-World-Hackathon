@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import type { SlideElement, Slide, SlideComment, SlideElementStyle, ChartContent, IconContent, ChartType } from '@/types';
-import { Text, Image as ImageIcon, Shapes, MessageSquare, Send, Palette, UserCircleIcon, Lock, CaseSensitive, AlignCenter, AlignLeft, AlignRight, Bold, Italic, Underline, Trash2, BarChart3, Smile as SmileIcon } from 'lucide-react';
+import { Text, Image as ImageIcon, Shapes, MessageSquare, Send, Palette, UserCircleIcon, Lock, CaseSensitive, AlignCenter, AlignLeft, AlignRight, Bold, Italic, Underline, Trash2, BarChart3, Smile as SmileIcon, Info } from 'lucide-react';
 import { useState, ChangeEvent, useEffect } from 'react';
 import { Textarea } from '../ui/textarea';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
@@ -206,6 +206,12 @@ export function PropertiesPanel({
              <AccordionItem value="content">
                 <AccordionTrigger className="text-base">Chart Data & Type</AccordionTrigger>
                 <AccordionContent className="space-y-3 pt-2">
+                    {(currentElementContent as ChartContent)?.aiSuggestionNotes && (
+                        <div className="p-2.5 mb-2 text-xs bg-blue-50 border border-blue-200 text-blue-700 rounded-md">
+                            <p className="font-semibold flex items-center"><Info className="h-3.5 w-3.5 mr-1.5"/>AI Suggestion Notes:</p>
+                            <pre className="whitespace-pre-wrap font-mono text-xs leading-snug mt-1">{ (currentElementContent as ChartContent).aiSuggestionNotes}</pre>
+                        </div>
+                    )}
                     <div>
                         <Label htmlFor="chartType">Chart Type</Label>
                         <Select 

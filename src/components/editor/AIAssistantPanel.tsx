@@ -12,7 +12,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import { Lightbulb, Palette, Sparkles, Wand2, Edit, FileText, Type, AlignLeft, Loader2, LayoutDashboard, BarChart3, ImagePlus } from 'lucide-react';
+import { Lightbulb, Palette, Sparkles, Wand2, Edit, FileText, Type, AlignLeft, Loader2, LayoutDashboard, BarChart3, ImagePlus, PlusCircle } from 'lucide-react';
 
 import { suggestDesignLayout, SuggestDesignLayoutInput, SuggestDesignLayoutOutput } from '@/ai/flows/design-assistant';
 import { getSmartSuggestions, SmartSuggestionsInput, SmartSuggestionsOutput } from '@/ai/flows/smart-suggestions';
@@ -34,7 +34,8 @@ interface AIAssistantPanelProps {
   selectedElement: SlideElement | null;
   onApplyAITextUpdate?: (elementId: string, newContent: string) => void;
   onApplyAISpeakerNotes?: (notes: string) => void;
-  // Potentially add onApplyGeneratedIcon, onApplyGeneratedChart in future
+  onAddImageElementFromAI?: (iconDataUri: string, description: string) => void;
+  onAddChartElementFromAI?: (suggestedConfig: SuggestedChartConfig) => void;
 }
 
 export function AIAssistantPanel({ 
@@ -42,7 +43,9 @@ export function AIAssistantPanel({
     currentPresentation, 
     selectedElement,
     onApplyAITextUpdate,
-    onApplyAISpeakerNotes 
+    onApplyAISpeakerNotes,
+    onAddImageElementFromAI,
+    onAddChartElementFromAI,
 }: AIAssistantPanelProps) {
   const { toast } = useToast();
 
@@ -83,9 +86,9 @@ export function AIAssistantPanel({
   
   useEffect(() => {
     if (selectedElement && selectedElement.type === 'text') {
-      setTextToImprove(selectedElement.content);
-      setContentGenInput(selectedElement.content);
-      setTextToAdjust(selectedElement.content);
+      setTextToImprove(selectedElement.content as string);
+      setContentGenInput(selectedElement.content as string);
+      setTextToAdjust(selectedElement.content as string);
     } else {
       setTextToImprove('');
       setContentGenInput('');
@@ -237,6 +240,24 @@ export function AIAssistantPanel({
     finally { setIsLoadingChart(false); }
   };
 
+  const handleAddIconToSlide = () => {
+    if (generatedIcon?.iconDataUri && onAddImageElementFromAI) {
+        onAddImageElementFromAI(generatedIcon.iconDataUri, iconDescription || "AI Generated Icon");
+        toast({ title: "Icon Added", description: "Generated icon added to the current slide." });
+    } else {
+        toast({ title: "Error", description: "No icon available to add or action not configured.", variant: "destructive" });
+    }
+  };
+
+  const handleAddChartToSlide = (suggestion: SuggestedChartConfig) => {
+    if (onAddChartElementFromAI) {
+        onAddChartElementFromAI(suggestion);
+        toast({ title: "Chart Added", description: `A new ${suggestion.chartType} chart titled "${suggestion.titleSuggestion || 'Untitled'}" has been added to the slide.` });
+    } else {
+        toast({ title: "Error", description: "Action to add chart not configured.", variant: "destructive" });
+    }
+  };
+
 
   const renderLoadingSkeletons = (count: number = 2, itemHeight: string = "h-10") => (
     <div className="space-y-3 mt-2">
@@ -327,7 +348,7 @@ export function AIAssistantPanel({
                       <SelectItem value="conciseness">Conciseness</SelectItem>
                     </SelectContent>
                   </Select>
-                  <Button onClick={handleImproveText} disabled={isLoadingImproveText} className="w-full">
+                  <Button onClick={handleImproveText} disabled={isLoadingImproveText || !textToImprove.trim()} className="w-full">
                     {isLoadingImproveText ? <Loader2 className="animate-spin mr-2" /> : <Wand2 className="mr-2 h-4 w-4" />} Improve Text
                   </Button>
                   {isLoadingImproveText && renderLoadingSkeletons(1)}
@@ -393,7 +414,7 @@ export function AIAssistantPanel({
                         <SelectItem value="neutral">Neutral</SelectItem>
                       </SelectContent>
                     </Select>
-                    <Button onClick={handleAdjustTone} disabled={isLoadingAdjustTone} className="w-full">
+                    <Button onClick={handleAdjustTone} disabled={isLoadingAdjustTone || !textToAdjust.trim()} className="w-full">
                       {isLoadingAdjustTone ? <Loader2 className="animate-spin mr-2" /> : <Wand2 className="mr-2 h-4 w-4" />} Adjust Tone
                     </Button>
                     {isLoadingAdjustTone && renderLoadingSkeletons(1)}
@@ -426,17 +447,21 @@ export function AIAssistantPanel({
                 </TabsList>
                 <TabsContent value="icon-gen" className="space-y-3">
                   <Input placeholder="Describe the icon (e.g., 'red apple icon')" value={iconDescription} onChange={(e) => setIconDescription(e.target.value)} />
-                  <Button onClick={handleGenerateIcon} disabled={isLoadingIcon} className="w-full">
+                  <Button onClick={handleGenerateIcon} disabled={isLoadingIcon || !iconDescription.trim()} className="w-full">
                     {isLoadingIcon ? <Loader2 className="animate-spin mr-2" /> : <Wand2 className="mr-2 h-4 w-4" />} Generate Icon
                   </Button>
                   {isLoadingIcon && <div className="flex justify-center py-4"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>}
                   {generatedIcon && generatedIcon.iconDataUri && (
                     <Card className="mt-2 bg-muted/50">
                       <CardHeader className="p-2"><CardTitle className="text-sm">Generated Icon:</CardTitle></CardHeader>
-                      <CardContent className="p-2 flex justify-center">
+                      <CardContent className="p-2 flex flex-col items-center gap-2">
                         <Image src={generatedIcon.iconDataUri} alt={iconDescription || "Generated icon"} width={100} height={100} className="border rounded" data-ai-hint="generated icon" />
+                        {onAddImageElementFromAI && currentSlide && (
+                            <Button size="sm" variant="outline" onClick={handleAddIconToSlide} className="w-full">
+                                <PlusCircle className="mr-2 h-4 w-4" /> Add Icon to Slide
+                            </Button>
+                        )}
                       </CardContent>
-                       {/* Add to slide button could be here */}
                     </Card>
                   )}
                   {generatedIcon && !generatedIcon.iconDataUri && generatedIcon.feedback && (
@@ -446,7 +471,7 @@ export function AIAssistantPanel({
                 <TabsContent value="chart-gen" className="space-y-3">
                     <Textarea placeholder="Describe your data or paste simple data (e.g., 'Categories: Sales, Marketing, HR. Budgets: 50k, 30k, 20k')" value={chartDataDescription} onChange={(e) => setChartDataDescription(e.target.value)} rows={4}/>
                     <Input placeholder="Optional: Goal of the chart (e.g., 'Compare budgets')" value={chartGoal} onChange={(e) => setChartGoal(e.target.value)} />
-                    <Button onClick={handleSuggestChart} disabled={isLoadingChart} className="w-full">
+                    <Button onClick={handleSuggestChart} disabled={isLoadingChart || !chartDataDescription.trim()} className="w-full">
                         {isLoadingChart ? <Loader2 className="animate-spin mr-2" /> : <Wand2 className="mr-2 h-4 w-4" />} Suggest Chart Config
                     </Button>
                     {isLoadingChart && renderLoadingSkeletons(2, "h-12")}
@@ -462,6 +487,11 @@ export function AIAssistantPanel({
                                         <p><strong>Type:</strong> {sugg.chartType}</p>
                                         <p><strong>Mapping:</strong> {sugg.dataMapping}</p>
                                         {sugg.additionalNotes && <p className="mt-1 italic text-muted-foreground"><strong>Notes:</strong> {sugg.additionalNotes}</p>}
+                                        {onAddChartElementFromAI && currentSlide && (
+                                            <Button size="xs" variant="link" onClick={() => handleAddChartToSlide(sugg)} className="mt-1 p-0 h-auto text-primary">
+                                                <PlusCircle className="mr-1 h-3 w-3" /> Add this chart to slide
+                                            </Button>
+                                        )}
                                     </CardContent>
                                 </Card>
                             ))}

@@ -13,7 +13,7 @@ import { AIAssistantPanel } from '@/components/editor/AIAssistantPanel';
 import { CollaborationBar } from '@/components/editor/CollaborationBar';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
-import type { Presentation, Slide, SlideElement, SlideComment, ActiveCollaboratorInfo, User as AppUser, SlideElementType, PresentationActivity, ChartContent, IconContent } from '@/types';
+import type { Presentation, Slide, SlideElement, SlideComment, ActiveCollaboratorInfo, User as AppUser, SlideElementType, PresentationActivity, ChartContent, IconContent, SuggestedChartConfig } from '@/types';
 import { AlertTriangle, Home, RotateCcw, Save, Share2, Users, FileText, Loader2, Zap, WifiOff, ShieldAlert, Sparkles, LayoutTemplate, Trash2, Copy, ShieldX } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -647,6 +647,58 @@ export default function EditorPage() {
     }
   };
 
+  const handleAddImageElementFromAI = async (iconDataUri: string, description: string) => {
+    if (!presentation || !currentSlideId || !currentUser) return;
+    const newElementPartial: Omit<SlideElement, 'id'> = {
+        type: 'image',
+        content: iconDataUri,
+        position: { x: 50, y: 50 }, // Default position
+        size: { width: 60, height: 60 }, // Default size for an icon
+        style: { (('data-ai-hint' as any)): description, opacity: 1, backgroundColor: 'transparent' },
+        zIndex: (currentSlide?.elements.length || 0) + 1,
+        rotation: 0,
+        lockedBy: null,
+        lockTimestamp: null,
+    };
+    try {
+        const newElementId = await apiAddElementToSlide(presentation.id, currentSlideId, newElementPartial);
+        await handleElementSelect(newElementId);
+        logPresentationActivity(presentation.id, currentUser.id, 'element_added', { elementType: 'image', elementId: newElementId, source: 'ai_icon_generation' });
+    } catch (error: any) {
+        console.error("Error adding AI generated icon:", error);
+        toast({ title: "Error Adding Icon", description: error.message || "Could not add the icon.", variant: "destructive" });
+    }
+  };
+
+  const handleAddChartElementFromAI = async (suggestedConfig: SuggestedChartConfig) => {
+    if (!presentation || !currentSlideId || !currentUser) return;
+    const newElementPartial: Omit<SlideElement, 'id'> = {
+        type: 'chart',
+        content: { 
+            type: suggestedConfig.chartType, 
+            data: {}, // User will fill this based on suggestion
+            label: suggestedConfig.titleSuggestion || 'New Chart',
+            aiSuggestionNotes: `Data Mapping: ${suggestedConfig.dataMapping}\nAdditional Notes: ${suggestedConfig.additionalNotes || 'None'}`,
+        } as ChartContent,
+        position: { x: 100, y: 100 }, // Default position
+        size: { width: 400, height: 300 }, // Default size
+        style: { opacity: 1 },
+        zIndex: (currentSlide?.elements.length || 0) + 1,
+        rotation: 0,
+        lockedBy: null,
+        lockTimestamp: null,
+    };
+    try {
+        const newElementId = await apiAddElementToSlide(presentation.id, currentSlideId, newElementPartial);
+        await handleElementSelect(newElementId);
+        logPresentationActivity(presentation.id, currentUser.id, 'element_added', { elementType: 'chart', elementId: newElementId, source: 'ai_chart_suggestion' });
+    } catch (error: any) {
+        console.error("Error adding AI suggested chart:", error);
+        toast({ title: "Error Adding Chart", description: error.message || "Could not add the chart.", variant: "destructive" });
+    }
+  };
+
+
   const handlePasswordVerified = async () => {
     setPasswordVerifiedInSession(true);
     sessionStorage.setItem(`passwordVerified_${presentationId}`, 'true');
@@ -860,6 +912,8 @@ export default function EditorPage() {
             selectedElement={selectedElement}
             onApplyAITextUpdate={handleApplyAITextUpdate}
             onApplyAISpeakerNotes={handleApplyAISpeakerNotes}
+            onAddImageElementFromAI={handleAddImageElementFromAI}
+            onAddChartElementFromAI={handleAddChartElementFromAI}
           />
         )}
       </div>
@@ -928,6 +982,8 @@ export default function EditorPage() {
                     selectedElement={selectedElement}
                     onApplyAITextUpdate={handleApplyAITextUpdate}
                     onApplyAISpeakerNotes={handleApplyAISpeakerNotes}
+                    onAddImageElementFromAI={handleAddImageElementFromAI}
+                    onAddChartElementFromAI={handleAddChartElementFromAI}
                   />
               </div>
             </SheetContent>
