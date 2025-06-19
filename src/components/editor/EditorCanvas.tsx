@@ -1,10 +1,10 @@
 
 "use client";
 
-import type { Slide, SlideElement, SlideElementStyle, ActiveCollaboratorInfo, User } from '@/types';
+import type { Slide, SlideElement, SlideElementStyle, ActiveCollaboratorInfo, User, ChartContent, IconContent } from '@/types';
 import { useEffect, useState, useRef } from 'react';
 import Image from 'next/image';
-import { Lock, BarChart3 as BarChartIcon, Smile } from 'lucide-react';
+import { Lock, BarChart3 as BarChartIcon, Smile } from 'lucide-react'; // Import Smile
 
 interface EditorCanvasProps {
   slide: Slide | null;
@@ -152,14 +152,15 @@ const renderElement = (
         </div>
       );
     case 'image':
+      const imageContent = element.content as string;
       return (
         <div {...commonProps}>
           <Image
-            src={element.content || "https://placehold.co/200x150.png?text=Image"}
-            alt={typeof element.content === 'string' && element.content.startsWith('http') ? 'Slide image' : 'Placeholder'}
+            src={imageContent || "https://placehold.co/200x150.png?text=Image"}
+            alt={typeof imageContent === 'string' && imageContent.startsWith('http') ? 'Slide image' : 'Placeholder'}
             layout="fill"
             objectFit="cover"
-            data-ai-hint="slide image"
+            data-ai-hint={(element.style as any)['data-ai-hint'] || "slide image"}
             draggable="false"
           />
           {lockIcon}
@@ -173,33 +174,35 @@ const renderElement = (
       if (style.shapeType === 'circle') {
         shapeStyle.borderRadius = '50%';
       }
-      // Triangle would require more complex CSS or SVG
       return (
         <div {...commonProps} style={shapeStyle}>
-         {/* For triangle, one might use borders or ::after pseudo-elements, or SVG content */}
          {style.shapeType === 'triangle' && <div className="w-full h-full text-xs flex items-center justify-center text-muted-foreground">[Triangle]</div>}
          {lockIcon}
         </div>
       );
     case 'chart':
+      const chartData = element.content as ChartContent;
       return (
          <div
           {...commonProps}
           className="flex flex-col items-center justify-center border border-dashed border-muted-foreground/50 p-2 bg-muted/20"
         >
           <BarChartIcon className="h-1/2 w-1/2 text-muted-foreground opacity-50"/>
-          <p className="text-muted-foreground text-xs mt-1">Chart Placeholder</p>
+          <p className="text-muted-foreground text-xs mt-1 capitalize">{chartData?.label || `${chartData?.type || 'Chart'} Placeholder`}</p>
           {lockIcon}
         </div>
       );
      case 'icon':
+      const iconData = element.content as IconContent;
+      // For now, we render a generic icon placeholder. Dynamic icon rendering would be more complex.
       return (
          <div
           {...commonProps}
           className="flex flex-col items-center justify-center border border-dashed border-muted-foreground/50 p-2 bg-muted/20"
+          style={{ ...baseStyle, fontSize: style.fontSize, color: style.color }} // Apply color and size to the container for the icon
         >
-          <Smile className="h-1/2 w-1/2 text-muted-foreground opacity-50"/>
-          <p className="text-muted-foreground text-xs mt-1">Icon Placeholder</p>
+          <Smile className="h-1/2 w-1/2 opacity-70"/> {/* Generic placeholder, or try to render iconData.name if library allows */}
+          <p className="text-muted-foreground text-xs mt-1 capitalize" style={{fontSize: '10px'}}>Icon: {iconData?.name || 'Placeholder'}</p>
           {lockIcon}
         </div>
       );
@@ -243,6 +246,8 @@ export function EditorCanvas({
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (disabled) return;
+    // Check if the click target is the canvas itself or one of its direct children that isn't an element.
+    // Elements have their own click handlers that stop propagation.
     if (e.target === canvasRef.current) {
       if (selectedTool) {
         const rect = canvasRef.current.getBoundingClientRect();
@@ -324,4 +329,3 @@ export function EditorCanvas({
     </div>
   );
 }
-

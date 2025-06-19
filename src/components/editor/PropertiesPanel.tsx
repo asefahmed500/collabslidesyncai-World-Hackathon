@@ -7,8 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import type { SlideElement, Slide, SlideComment, SlideElementStyle } from '@/types';
-import { Text, Image as ImageIcon, Shapes, MessageSquare, Send, Palette, UserCircleIcon, Lock, CaseSensitive, AlignCenter, AlignLeft, AlignRight, Bold, Italic, Underline, Trash2 } from 'lucide-react';
+import type { SlideElement, Slide, SlideComment, SlideElementStyle, ChartContent, IconContent, ChartType } from '@/types';
+import { Text, Image as ImageIcon, Shapes, MessageSquare, Send, Palette, UserCircleIcon, Lock, CaseSensitive, AlignCenter, AlignLeft, AlignRight, Bold, Italic, Underline, Trash2, BarChart3, Smile as SmileIcon } from 'lucide-react';
 import { useState, ChangeEvent, useEffect } from 'react';
 import { Textarea } from '../ui/textarea';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
@@ -38,7 +38,7 @@ export function PropertiesPanel({
 }: PropertiesPanelProps) {
   const [newComment, setNewComment] = useState("");
   const [localStyle, setLocalStyle] = useState<SlideElementStyle | null>(null);
-  const [localContent, setLocalContent] = useState<string | any | null>(null); // Can be string or object for chart
+  const [localContent, setLocalContent] = useState<string | ChartContent | IconContent | any | null>(null);
 
   useEffect(() => {
     if (selectedElement) {
@@ -65,11 +65,26 @@ export function PropertiesPanel({
     onUpdateElement({ id: selectedElement.id, style: updatedStyle });
   };
 
-  const handleContentChange = (value: string | any) => {
+  const handleContentChange = (value: string | ChartContent | IconContent | any) => {
     if (!selectedElement || effectiveDisabled) return;
-    setLocalContent(value);
+    setLocalContent(value); // Update local state for controlled components
     onUpdateElement({ id: selectedElement.id, content: value });
-  }
+  };
+
+  const handleChartContentChange = (chartProp: keyof ChartContent, value: any) => {
+    if (!selectedElement || effectiveDisabled || selectedElement.type !== 'chart') return;
+    const currentChartContent = (localContent || selectedElement.content) as ChartContent;
+    const updatedChartContent: ChartContent = { ...currentChartContent, [chartProp]: value };
+    handleContentChange(updatedChartContent);
+  };
+  
+  const handleIconContentChange = (iconProp: keyof IconContent, value: any) => {
+    if (!selectedElement || effectiveDisabled || selectedElement.type !== 'icon') return;
+    const currentIconContent = (localContent || selectedElement.content) as IconContent;
+    const updatedIconContent: IconContent = { ...currentIconContent, [iconProp]: value };
+    handleContentChange(updatedIconContent);
+  };
+
 
   const handleCommentSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -115,7 +130,8 @@ export function PropertiesPanel({
     }
 
     const currentProps = selectedElement;
-    const currentStyle = localStyle || selectedElement.style || {}; // Use localStyle for immediate feedback
+    const currentStyle = localStyle || selectedElement.style || {};
+    const currentElementContent = localContent || selectedElement.content;
 
     return (
       <div className="space-y-4 p-4">
@@ -124,8 +140,8 @@ export function PropertiesPanel({
             {selectedElement.type === 'text' && <Text className="mr-2 h-5 w-5" />}
             {selectedElement.type === 'image' && <ImageIcon className="mr-2 h-5 w-5" />}
             {selectedElement.type === 'shape' && <Shapes className="mr-2 h-5 w-5" />}
-            {selectedElement.type === 'chart' && <Text className="mr-2 h-5 w-5" />}
-            {selectedElement.type === 'icon' && <Text className="mr-2 h-5 w-5" />}
+            {selectedElement.type === 'chart' && <BarChart3 className="mr-2 h-5 w-5" />}
+            {selectedElement.type === 'icon' && <SmileIcon className="mr-2 h-5 w-5" />}
             Properties
             {isElementLockedByOther && <Lock title={`Locked by ${selectedElement.lockedBy === currentUserId ? 'you' : 'another user'}`} className="ml-2 h-4 w-4 text-destructive" />}
             </h3>
@@ -146,7 +162,7 @@ export function PropertiesPanel({
                         <Label htmlFor="content">Text</Label>
                         <Textarea
                         id="content"
-                        value={typeof localContent === 'string' ? localContent : ''}
+                        value={typeof currentElementContent === 'string' ? currentElementContent : ''}
                         onChange={(e: ChangeEvent<HTMLTextAreaElement>) => handleContentChange(e.target.value)}
                         className="mt-1"
                         rows={4}
@@ -164,12 +180,98 @@ export function PropertiesPanel({
                     <Label htmlFor="imageUrl">Image URL</Label>
                     <Input
                         id="imageUrl"
-                        value={typeof localContent === 'string' ? localContent : ''}
+                        value={typeof currentElementContent === 'string' ? currentElementContent : ''}
                         onChange={(e: ChangeEvent<HTMLInputElement>) => handleContentChange(e.target.value)}
                         className="mt-1"
                         placeholder="https://example.com/image.png"
                         disabled={effectiveDisabled}
                     />
+                    </div>
+                    <div>
+                        <Label htmlFor="imageAiHint">AI Image Hint (max 2 words)</Label>
+                        <Input
+                            id="imageAiHint"
+                            value={(currentStyle as any)['data-ai-hint'] || ''}
+                            onChange={(e) => handleStyleChange('data-ai-hint' as any, e.target.value)}
+                            className="mt-1"
+                            placeholder="e.g. office team"
+                            disabled={effectiveDisabled}
+                            maxLength={30} 
+                        />
+                    </div>
+                </AccordionContent>
+             </AccordionItem>
+          )}
+          {selectedElement.type === 'chart' && (
+             <AccordionItem value="content">
+                <AccordionTrigger className="text-base">Chart Data & Type</AccordionTrigger>
+                <AccordionContent className="space-y-3 pt-2">
+                    <div>
+                        <Label htmlFor="chartType">Chart Type</Label>
+                        <Select 
+                            value={(currentElementContent as ChartContent)?.type || 'bar'} 
+                            onValueChange={(val) => handleChartContentChange('type', val as ChartType)} 
+                            disabled={effectiveDisabled}
+                        >
+                            <SelectTrigger id="chartType" className="mt-1">
+                                <SelectValue placeholder="Select chart type" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="bar">Bar Chart</SelectItem>
+                                <SelectItem value="line">Line Chart</SelectItem>
+                                <SelectItem value="pie">Pie Chart</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                     <div>
+                        <Label htmlFor="chartLabel">Chart Label / Title</Label>
+                        <Input
+                            id="chartLabel"
+                            value={(currentElementContent as ChartContent)?.label || ''}
+                            onChange={(e) => handleChartContentChange('label', e.target.value)}
+                            className="mt-1"
+                            placeholder="e.g., Quarterly Sales"
+                            disabled={effectiveDisabled}
+                        />
+                    </div>
+                    <div>
+                        <Label htmlFor="chartData">Chart Data (JSON)</Label>
+                        <Textarea
+                            id="chartData"
+                            value={typeof (currentElementContent as ChartContent)?.data === 'object' ? JSON.stringify((currentElementContent as ChartContent).data, null, 2) : ''}
+                            onChange={(e) => {
+                                try {
+                                    const parsedData = JSON.parse(e.target.value);
+                                    handleChartContentChange('data', parsedData);
+                                } catch (err) {
+                                    // Handle invalid JSON, maybe show an error
+                                    console.warn("Invalid JSON for chart data");
+                                }
+                            }}
+                            className="mt-1 font-mono text-xs"
+                            rows={5}
+                            placeholder={`[{"name": "A", "value": 10}, ... ]`}
+                            disabled={effectiveDisabled}
+                        />
+                    </div>
+                </AccordionContent>
+             </AccordionItem>
+          )}
+           {selectedElement.type === 'icon' && (
+             <AccordionItem value="content">
+                <AccordionTrigger className="text-base">Icon Properties</AccordionTrigger>
+                <AccordionContent className="space-y-3 pt-2">
+                    <div>
+                        <Label htmlFor="iconName">Icon Name (Lucide)</Label>
+                        <Input
+                            id="iconName"
+                            value={(currentElementContent as IconContent)?.name || ''}
+                            onChange={(e) => handleIconContentChange('name', e.target.value)}
+                            className="mt-1"
+                            placeholder="e.g., home, settings, check"
+                            disabled={effectiveDisabled}
+                        />
+                         <p className="text-xs text-muted-foreground mt-1">Find names at <a href="https://lucide.dev/icons/" target="_blank" rel="noopener noreferrer" className="text-primary underline">lucide.dev/icons</a></p>
                     </div>
                 </AccordionContent>
              </AccordionItem>
@@ -232,7 +334,7 @@ export function PropertiesPanel({
                   </div>
                 </>
               )}
-              {(selectedElement.type === 'shape' || selectedElement.type === 'text' || selectedElement.type === 'icon') && (
+              {(selectedElement.type === 'shape' || selectedElement.type === 'text') && (
                 <div>
                   <Label htmlFor="backgroundColor">Fill / Background Color</Label>
                   <Input
@@ -244,6 +346,18 @@ export function PropertiesPanel({
                     disabled={effectiveDisabled}
                   />
                 </div>
+              )}
+              {selectedElement.type === 'icon' && (
+                <>
+                  <div>
+                    <Label htmlFor="iconSize">Icon Size (px, like font size)</Label>
+                    <Input id="iconSize" type="number" value={parseInt(String(currentStyle.fontSize || '48').replace('px',''))} onChange={(e) => handleStyleChange('fontSize', `${e.target.value}px`)} className="mt-1" disabled={effectiveDisabled} min="8"/>
+                  </div>
+                   <div>
+                      <Label htmlFor="iconColor">Icon Color</Label>
+                      <Input id="iconColor" type="color" value={currentStyle.color || '#000000'} onChange={(e) => handleStyleChange('color', e.target.value)} className="mt-1 h-10 p-1" disabled={effectiveDisabled} />
+                    </div>
+                </>
               )}
               {selectedElement.type === 'shape' && (
                 <>
@@ -336,7 +450,7 @@ export function PropertiesPanel({
               <li key={comment.id} className={`text-sm p-2.5 rounded-md shadow-sm ${comment.resolved ? 'bg-muted/30 opacity-70' : 'bg-card border'}`}>
                 <div className="flex items-start mb-1.5">
                    <Avatar className="w-6 h-6 mr-2.5 mt-0.5">
-                      <AvatarImage src={comment.userAvatarUrl || undefined} alt={comment.userName} data-ai-hint="profile avatar small" />
+                      <AvatarImage src={comment.userAvatarUrl || undefined} alt={comment.userName} data-ai-hint="profile avatar small"/>
                       <AvatarFallback className="text-xs">
                         {comment.userName ? comment.userName.charAt(0).toUpperCase() : <UserCircleIcon size={12}/>}
                       </AvatarFallback>
@@ -382,4 +496,3 @@ export function PropertiesPanel({
     </div>
   );
 }
-

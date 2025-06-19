@@ -13,7 +13,7 @@ import { AIAssistantPanel } from '@/components/editor/AIAssistantPanel';
 import { CollaborationBar } from '@/components/editor/CollaborationBar';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
-import type { Presentation, Slide, SlideElement, SlideComment, ActiveCollaboratorInfo, User as AppUser, SlideElementType, PresentationActivity } from '@/types';
+import type { Presentation, Slide, SlideElement, SlideComment, ActiveCollaboratorInfo, User as AppUser, SlideElementType, PresentationActivity, ChartContent, IconContent } from '@/types';
 import { AlertTriangle, Home, RotateCcw, Save, Share2, Users, FileText, Loader2, Zap, WifiOff, ShieldAlert, Sparkles, LayoutTemplate, Trash2, Copy, ShieldX } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -327,10 +327,9 @@ export default function EditorPage() {
     setSelectedTool(null);
   }, [presentationId, currentSlideId, selectedElementId, currentUser]);
 
-  const handleElementSelect = useCallback(async (elementId: string | null) => {
+ const handleElementSelect = useCallback(async (elementId: string | null) => {
     if (!currentUser || !currentSlideId || !presentation) return;
 
-    // Release previous lock if current user held it
     if (selectedElementId && selectedElementId !== elementId) {
         const prevSelectedElement = presentation.slides.find(s => s.id === currentSlideId)?.elements.find(el => el.id === selectedElementId);
         if (prevSelectedElement && prevSelectedElement.lockedBy === currentUser.id) {
@@ -339,22 +338,20 @@ export default function EditorPage() {
     }
 
     setSelectedElementId(elementId);
-    setSelectedTool(null); // Deselect any active drawing tool when an element is selected
-    setIsRightPanelOpen('properties'); // Default to properties panel when an element is selected
+    setSelectedTool(null); 
+    setIsRightPanelOpen('properties');
 
     if (elementId) {
         try {
             await apiAcquireLock(presentationId, currentSlideId, elementId, currentUser.id);
-            // Lock acquired successfully, no toast needed here unless for confirmation (which might be too noisy)
         } catch (error: any) {
-            // Error already logged in firestoreService, toast here for user feedback
             const currentLockerId = presentation.slides.find(s => s.id === currentSlideId)
                                       ?.elements.find(el => el.id === elementId)?.lockedBy;
             const lockerName = currentLockerId ? presentation.activeCollaborators?.[currentLockerId]?.name || "another user" : "another user";
             toast({ title: "Element Locked", description: `This element is currently being edited by ${lockerName}. You can view its properties.`, variant: "default", duration: 3000 });
         }
     }
-  }, [currentUser, currentSlideId, presentation, selectedElementId, presentationId, toast]);
+}, [currentUser, currentSlideId, presentation, selectedElementId, presentationId, toast]);
 
 
   const handleAddSlide = async () => {
@@ -461,7 +458,7 @@ export default function EditorPage() {
 
     let newElementPartial: Omit<SlideElement, 'id'> = {
         type: 'text' as SlideElementType,
-        content: '',
+        content: '', // Default, will be overridden by specific types
         position,
         size: { width: 150, height: 50 },
         style: { fontFamily: 'PT Sans', fontSize: '16px', color: '#333333', backgroundColor: 'transparent', textAlign: 'left', opacity: 1 },
@@ -477,7 +474,8 @@ export default function EditorPage() {
         newElementPartial.size = { width: 200, height: 40 };
     } else if (selectedTool === 'image') {
         newElementPartial.type = 'image';
-        newElementPartial.content = 'https://placehold.co/300x200.png?text=New+Image';
+        newElementPartial.content = 'https://placehold.co/300x200.png?text=New+Image'; // Placeholder URL
+        (newElementPartial.style as any)['data-ai-hint'] = 'abstract image';
         newElementPartial.size = { width: 300, height: 200 };
     } else if (selectedTool === 'shape-rectangle') {
         newElementPartial.type = 'shape';
@@ -488,14 +486,15 @@ export default function EditorPage() {
         newElementPartial.size = { width: 100, height: 100 };
     } else if (selectedTool === 'chart') {
         newElementPartial.type = 'chart';
-        newElementPartial.content = { type: 'bar', data: {} }; // Placeholder for chart data structure
+        newElementPartial.content = { type: 'bar', data: {}, label: 'New Chart' } as ChartContent;
         newElementPartial.size = { width: 400, height: 300 };
     } else if (selectedTool === 'icon') {
         newElementPartial.type = 'icon';
-        newElementPartial.content = 'smile'; // Default Lucide icon name
-         newElementPartial.style = { ...newElementPartial.style, color: '#333333' };
+        newElementPartial.content = { name: 'smile' } as IconContent;
+        newElementPartial.style = { ...newElementPartial.style, color: '#333333', fontSize: '48px' }; // Icon size controlled by fontSize
+        newElementPartial.size = { width: 60, height: 60 };
     } else {
-        return;
+        return; // Unknown tool
     }
 
     try {
@@ -506,7 +505,7 @@ export default function EditorPage() {
         console.error("Error adding element:", error);
         toast({ title: "Error Adding Element", description: error.message || "Could not add the element.", variant: "destructive" });
     }
-    setSelectedTool(null);
+    setSelectedTool(null); // Deselect tool after adding element
   };
 
   const handleDeleteElement = async (elementId: string) => {
@@ -516,7 +515,7 @@ export default function EditorPage() {
 
     // Check lock before deleting
     if (elementToDelete.lockedBy && elementToDelete.lockedBy !== currentUser.id) {
-        const lockerName = presentation.activeCollaborators?.[elementToDelete.lockedBy]?.name || "another user";
+        const lockerName = presentation.activeCollaborators?.[elementToDelete.lockedBy!]?.name || "another user";
         toast({ title: "Delete Failed", description: `Element is locked by ${lockerName}.`, variant: "destructive" });
         return;
     }

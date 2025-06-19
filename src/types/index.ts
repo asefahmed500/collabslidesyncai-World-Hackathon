@@ -66,10 +66,24 @@ export type SlideElementType = 'text' | 'image' | 'shape' | 'chart' | 'icon';
 export type PresentationAccessRole = 'owner' | 'editor' | 'viewer';
 export type PresentationModerationStatus = 'active' | 'under_review' | 'taken_down';
 
+export type ChartType = 'bar' | 'line' | 'pie'; // Define specific chart types
+
+export interface ChartContent {
+  type: ChartType;
+  data: any; // Can be array of objects, specific structure depends on chart library
+  options?: any; // Chart-specific options
+  label?: string;
+}
+
+export interface IconContent {
+  name: string; // e.g., a Lucide icon name like 'home', 'settings'
+}
+
+
 export interface SlideElementStyle {
   color?: string;
   fontFamily?: string;
-  fontSize?: string;
+  fontSize?: string; // For text, and can be used for icon size
   backgroundColor?: string;
   borderColor?: string;
   textAlign?: 'left' | 'center' | 'right';
@@ -85,7 +99,7 @@ export interface SlideElementStyle {
 export interface SlideElement {
   id: string;
   type: SlideElementType;
-  content: any;
+  content: string | ChartContent | IconContent | any; // Allow more specific types for chart/icon
   position: { x: number; y: number };
   size: { width: number; height: number };
   style: SlideElementStyle;
@@ -166,7 +180,8 @@ export type TeamActivityType =
   | 'presentation_permanently_deleted'
   | 'presentation_status_changed' // For moderation status changes
   | 'asset_uploaded'
-  | 'asset_deleted';
+  | 'asset_deleted'
+  | 'team_deleted';
 
 export interface TeamActivity {
   id: string;
@@ -288,6 +303,3 @@ export interface Notification {
   actorName?: string; // Name of the actor (optional)
   actorProfilePictureUrl?: string; // Profile picture of the actor (optional)
 }
-
-
-    

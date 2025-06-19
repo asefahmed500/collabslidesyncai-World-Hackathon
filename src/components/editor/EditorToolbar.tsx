@@ -27,8 +27,8 @@ const editorTools = [
   { id: "shape-rectangle", label: "Rectangle", icon: Square },
   { id: "shape-circle", label: "Circle", icon: CircleIcon },
   { id: "image", label: "Image", icon: ImageIcon },
-  { id: "chart", label: "Chart (Placeholder)", icon: BarChartIcon },
-  { id: "icon", label: "Icon (Placeholder)", icon: Smile },
+  { id: "chart", label: "Chart", icon: BarChartIcon }, 
+  { id: "icon", label: "Icon", icon: Smile },
 ];
 
 const actionTools = [
@@ -69,6 +69,7 @@ export function EditorToolbar({ presentationId, onToolSelect, onAction, onShowSl
                 onClick={() => onToolSelect(selectedTool === tool.id ? null : tool.id)}
                 aria-label={tool.label}
                 aria-pressed={selectedTool === tool.id}
+                 // Enable chart and icon tools
               >
                 <tool.icon className="h-5 w-5" />
               </Button>
@@ -160,4 +161,3 @@ export function EditorToolbar({ presentationId, onToolSelect, onAction, onShowSl
     </TooltipProvider>
   );
 }
-
