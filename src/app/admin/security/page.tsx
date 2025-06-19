@@ -1,3 +1,4 @@
+
 "use client";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,7 +21,7 @@ export default function AdminSecurityPage() {
             suspicious IP activity, admin actions, and data access patterns.
           </p>
           <p className="text-sm text-muted-foreground">
-            Integrating robust security logging requires dedicated backend setup and potentially
+            Implementing robust security logging requires dedicated backend setup and potentially
             third-party services for advanced threat detection.
           </p>
         </div>
