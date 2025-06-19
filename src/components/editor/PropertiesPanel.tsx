@@ -8,10 +8,14 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import type { SlideElement, Slide, SlideComment, SlideElementStyle, ChartContent, IconContent, ChartType, SlideBackgroundGradient } from '@/types';
-import { Text, Image as ImageIconLucide, Shapes, MessageSquare, Send, Palette, UserCircleIcon, Lock, CaseSensitive, AlignCenter, AlignLeft, AlignRight, Bold, Italic, Underline, Trash2, BarChart3, Smile as SmileIcon, Info, ImageOff, Layers } from 'lucide-react';
-import { useState, ChangeEvent, useEffect } from 'react';
+import { Text, Image as ImageIconLucide, Shapes, MessageSquare, Send, Palette, UserCircleIcon, Lock, CaseSensitive, AlignCenter, AlignLeft, AlignRight, Bold, Italic, Underline, Trash2, BarChart3, Smile as SmileIcon, Info, ImageOff, Layers, UploadCloud, Loader2 } from 'lucide-react';
+import { useState, ChangeEvent, useEffect, useRef } from 'react';
 import { Textarea } from '../ui/textarea';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
+import { storage as fbStorage } from '@/lib/firebaseConfig';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { useToast } from '@/hooks/use-toast';
+import { Progress } from '@/components/ui/progress';
 
 interface PropertiesPanelProps {
   selectedElement: SlideElement | null;
@@ -20,7 +24,7 @@ interface PropertiesPanelProps {
   onDeleteElement: (elementId: string) => void;
   onAddComment: (text: string) => void;
   onResolveComment: (commentId: string) => void;
-  onUpdateSlideProperties: (updates: { backgroundColor?: string; backgroundImageUrl?: string | null; backgroundGradient?: SlideBackgroundGradient | null; }) => void;
+  onUpdateSlideProperties: (updates: { backgroundColor?: string; backgroundImageUrl?: string | null, backgroundGradient?: SlideBackgroundGradient | null; }) => void;
   disabled?: boolean;
   currentUserId: string;
 }
@@ -39,6 +43,10 @@ export function PropertiesPanel({
   const [newComment, setNewComment] = useState("");
   const [localStyle, setLocalStyle] = useState<SlideElementStyle | null>(null);
   const [localContent, setLocalContent] = useState<string | ChartContent | IconContent | any | null>(null);
+  const { toast } = useToast();
+  const [imageUploadProgress, setImageUploadProgress] = useState<number | null>(null);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   // State for slide gradient properties
   const [gradientType, setGradientType] = useState<'linear' | 'radial'>(currentSlide?.backgroundGradient?.type || 'linear');
@@ -66,6 +74,8 @@ export function PropertiesPanel({
         currentSlide?.backgroundGradient ? 'gradient' : (currentSlide?.backgroundImageUrl ? 'image' : 'solid')
       );
     }
+    setImageUploadProgress(null); // Reset progress when selection changes
+    setIsUploadingImage(false);
   }, [selectedElement, currentSlide]);
 
   const isElementLockedByOther = selectedElement?.lockedBy && selectedElement.lockedBy !== currentUserId;
@@ -102,6 +112,51 @@ export function PropertiesPanel({
     const updatedIconContent: IconContent = { ...currentIconContent, [iconProp]: value };
     handleContentChange(updatedIconContent);
   };
+
+  const handleImageFileUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    if (!event.target.files || event.target.files.length === 0 || !selectedElement || effectiveDisabled || !currentSlide) {
+      return;
+    }
+    const file = event.target.files[0];
+    if (file.size > 5 * 1024 * 1024) { // 5MB limit
+        toast({ title: "File too large", description: "Image size should not exceed 5MB.", variant: "destructive"});
+        return;
+    }
+    setIsUploadingImage(true);
+    setImageUploadProgress(0);
+
+    const storagePath = `elementAssets/${currentSlide.presentationId}/${selectedElement.id}/${Date.now()}_${file.name}`;
+    const storageRef = ref(fbStorage, storagePath);
+    const uploadTask = uploadBytesResumable(storageRef, file);
+
+    uploadTask.on(
+      'state_changed',
+      (snapshot) => {
+        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+        setImageUploadProgress(progress);
+      },
+      (error) => {
+        console.error("Image upload failed:", error);
+        toast({ title: "Upload Failed", description: error.message, variant: "destructive" });
+        setIsUploadingImage(false);
+        setImageUploadProgress(null);
+      },
+      async () => {
+        try {
+          const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+          handleContentChange(downloadURL); // Update element content with new URL
+          toast({ title: "Image Uploaded", description: "Image successfully set for the element."});
+        } catch (error: any) {
+          toast({ title: "Error", description: `Failed to get download URL: ${error.message}`, variant: "destructive"});
+        } finally {
+          setIsUploadingImage(false);
+          setImageUploadProgress(null);
+          if(fileInputRef.current) fileInputRef.current.value = ""; // Reset file input
+        }
+      }
+    );
+  };
+
 
   const handleApplyGradient = () => {
     if (!currentSlide || disabled) return;
@@ -296,8 +351,32 @@ export function PropertiesPanel({
                         onChange={(e: ChangeEvent<HTMLInputElement>) => handleContentChange(e.target.value)}
                         className="mt-1"
                         placeholder="https://example.com/image.png"
-                        disabled={effectiveDisabled}
+                        disabled={effectiveDisabled || isUploadingImage}
                     />
+                    </div>
+                    <div className="text-sm text-muted-foreground text-center">OR</div>
+                    <div>
+                        <Label htmlFor="imageUpload">Upload Image</Label>
+                        <Input
+                            id="imageUpload"
+                            type="file"
+                            accept="image/*"
+                            ref={fileInputRef}
+                            onChange={handleImageFileUpload}
+                            className="mt-1 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
+                            disabled={effectiveDisabled || isUploadingImage}
+                        />
+                        {isUploadingImage && imageUploadProgress !== null && (
+                            <div className="mt-2">
+                                <Progress value={imageUploadProgress} className="h-2" />
+                                <p className="text-xs text-muted-foreground text-center">{Math.round(imageUploadProgress)}%</p>
+                            </div>
+                        )}
+                        {isUploadingImage && (
+                            <Button variant="outline" size="sm" className="mt-2 w-full" disabled>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin"/> Uploading...
+                            </Button>
+                        )}
                     </div>
                     <div>
                         <Label htmlFor="imageAiHint">AI Image Hint (max 2 words)</Label>
@@ -307,7 +386,7 @@ export function PropertiesPanel({
                             onChange={(e) => handleStyleChange('data-ai-hint', e.target.value)}
                             className="mt-1"
                             placeholder="e.g. office team"
-                            disabled={effectiveDisabled}
+                            disabled={effectiveDisabled || isUploadingImage}
                             maxLength={30} 
                         />
                     </div>

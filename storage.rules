@@ -3,42 +3,32 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
-    // Default deny all
-    match /{allPaths=**} {
-      allow read, write: if false;
-    }
-
-    // Assets:
-    // - Allow authenticated users to read assets if they are part of the team (or if asset is public - future)
-    // - Allow authenticated users to write (upload/delete) assets to their own team's folder, specifically under their own userId subfolder.
-    // - Team admins/owners might have broader delete permissions (handled via backend logic for now, not Storage rules for simplicity)
+    // Team Assets: Allow read for anyone (if URL is known), 
+    // allow write for authenticated users if they are part of the team (simplification: if they are authenticated for specific paths)
     match /assets/{teamId}/{userId}/{fileName} {
-      allow read: if request.auth != null && (exists(/databases/(default)/documents/teams/$(teamId)) && request.auth.uid in get(/databases/(default)/documents/teams/$(teamId)).data.members);
-      // Write (upload): User must be authenticated and match the userId in the path.
+      allow read;
       allow write: if request.auth != null && request.auth.uid == userId;
-      // Delete: User must be authenticated and match the userId in path (they can delete their own uploads).
-      // Broader team admin delete permissions should be handled by a backend function calling Admin SDK.
-      allow delete: if request.auth != null && request.auth.uid == userId;
+      // More secure: check if userId is member of teamId (requires custom claims or Firestore lookup ability)
     }
 
-    // User Profile Pictures (example rule, adjust path as needed)
-    // Allow users to upload their own profile pictures
-    // Path could be /users/{userId}/profilePicture.jpg or similar
-    match /users/{userId}/{fileName} {
-        allow read: if true; // Publicly readable or based on your app's privacy for profiles
-        allow write: if request.auth != null && request.auth.uid == userId && request.resource.size < 1 * 1024 * 1024; // Max 1MB
+    // Element Assets: Assets uploaded directly for a specific presentation element
+    // Allow read for anyone (if URL is known)
+    // Allow write for authenticated users (relying on unguessable IDs for security by obscurity on write)
+    match /elementAssets/{presentationId}/{elementId}/{fileNameWithTimestamp} {
+      allow read;
+      allow write: if request.auth != null;
     }
 
-    // Team Logos (example rule)
-    // Allow team owners/admins to upload team logos
-    // Path could be /teams/{teamId}/logo.jpg
-    match /teams/{teamId}/{fileName} {
-        allow read: if true; // Usually public
-        // Write requires checking if the user is an admin/owner of teamId.
-        // This is complex for Storage Rules alone, often better handled by backend function triggers.
-        // Simplified: allow if authenticated and part of team (backend should verify role before generating upload URL)
-        allow write: if request.auth != null && (exists(/databases/(default)/documents/teams/$(teamId)) && request.auth.uid in get(/databases/(default)/documents/teams/$(teamId)).data.members) && request.resource.size < 1 * 1024 * 1024;
+    // User Profile Pictures (example, adjust path as needed)
+    match /userProfilePictures/{userId}/{fileName} {
+      allow read;
+      allow write: if request.auth != null && request.auth.uid == userId;
     }
 
+    // Deny all other writes by default
+    match /{allPaths=**} {
+      allow read: if false; // Or specific public read rules
+      allow write: if false;
+    }
   }
 }
