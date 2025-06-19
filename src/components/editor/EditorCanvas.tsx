@@ -4,7 +4,7 @@
 import type { Slide, SlideElement, SlideElementStyle, ActiveCollaboratorInfo, User, ChartContent, IconContent } from '@/types';
 import { useEffect, useState, useRef } from 'react';
 import Image from 'next/image';
-import { Lock, BarChart3 as BarChartIcon, Smile } from 'lucide-react'; // Import Smile
+import { Lock, BarChart3 as BarChartIcon, Smile } from 'lucide-react'; 
 
 interface EditorCanvasProps {
   slide: Slide | null;
@@ -42,7 +42,7 @@ const renderElement = (
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if (disabled || !isSelected || !elementRef.current || isLockedByOther) return;
-    e.stopPropagation(); // Prevent canvas click from deselecting
+    e.stopPropagation(); 
     setIsDragging(true);
     setDragStart({ x: e.clientX, y: e.clientY, initialX: element.position.x, initialY: element.position.y });
     document.body.style.cursor = 'grabbing';
@@ -122,15 +122,14 @@ const renderElement = (
   const selectAndPrepareDrag = (e: React.MouseEvent) => {
     if (disabled || isLockedByOther) return;
     onSelect(e);
-    // Dragging will be initiated on mouse down if already selected
   };
 
   const commonProps = {
     key: element.id,
     ref: elementRef,
     style: baseStyle,
-    onClick: selectAndPrepareDrag, // Select on click
-    onMouseDown: (isSelected && !disabled && !isLockedByOther) ? handleMouseDown : undefined, // Start drag if already selected
+    onClick: selectAndPrepareDrag, 
+    onMouseDown: (isSelected && !disabled && !isLockedByOther) ? handleMouseDown : undefined, 
   };
 
   const lockIcon = isLockedByOther && (
@@ -194,14 +193,13 @@ const renderElement = (
       );
      case 'icon':
       const iconData = element.content as IconContent;
-      // For now, we render a generic icon placeholder. Dynamic icon rendering would be more complex.
       return (
          <div
           {...commonProps}
           className="flex flex-col items-center justify-center border border-dashed border-muted-foreground/50 p-2 bg-muted/20"
-          style={{ ...baseStyle, fontSize: style.fontSize, color: style.color }} // Apply color and size to the container for the icon
+          style={{ ...baseStyle, fontSize: style.fontSize, color: style.color }} 
         >
-          <Smile className="h-1/2 w-1/2 opacity-70"/> {/* Generic placeholder, or try to render iconData.name if library allows */}
+          <Smile className="h-1/2 w-1/2 opacity-70"/> 
           <p className="text-muted-foreground text-xs mt-1 capitalize" style={{fontSize: '10px'}}>Icon: {iconData?.name || 'Placeholder'}</p>
           {lockIcon}
         </div>
@@ -246,8 +244,6 @@ export function EditorCanvas({
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (disabled) return;
-    // Check if the click target is the canvas itself or one of its direct children that isn't an element.
-    // Elements have their own click handlers that stop propagation.
     if (e.target === canvasRef.current) {
       if (selectedTool) {
         const rect = canvasRef.current.getBoundingClientRect();
@@ -255,7 +251,7 @@ export function EditorCanvas({
         const y = e.clientY - rect.top;
         onCanvasClickToAddElement({ x: x / zoom, y: y / zoom });
       } else {
-        onElementSelect(null); // Deselect if no tool is active
+        onElementSelect(null); 
       }
     }
   };
@@ -269,6 +265,19 @@ export function EditorCanvas({
     );
   }
 
+  const canvasStyle: React.CSSProperties = {
+    width: `${canvasBaseWidth * zoom}px`,
+    height: `${canvasBaseHeight * zoom}px`,
+    backgroundColor: slide.backgroundColor || '#FFFFFF',
+  };
+
+  if (slide.backgroundImageUrl) {
+    canvasStyle.backgroundImage = `url(${slide.backgroundImageUrl})`;
+    canvasStyle.backgroundSize = 'cover';
+    canvasStyle.backgroundPosition = 'center';
+  }
+
+
   return (
     <div
         className="flex-grow flex items-center justify-center p-4 bg-gray-200 dark:bg-gray-800 overflow-auto"
@@ -278,15 +287,11 @@ export function EditorCanvas({
     >
       <div
         ref={canvasRef}
-        className="relative bg-white shadow-2xl overflow-hidden"
-        style={{
-          width: `${canvasBaseWidth * zoom}px`,
-          height: `${canvasBaseHeight * zoom}px`,
-          backgroundColor: slide.backgroundColor || '#FFFFFF',
-        }}
+        className="relative shadow-2xl overflow-hidden"
+        style={canvasStyle}
         onClick={handleCanvasClick}
       >
-        {(slide.elements || []).sort((a,b) => (a.zIndex || 0) - (b.zIndex || 0)).map(element => // Sort by zIndex
+        {(slide.elements || []).sort((a,b) => (a.zIndex || 0) - (b.zIndex || 0)).map(element => 
           renderElement(
             element,
             selectedElementId === element.id,
@@ -313,7 +318,7 @@ export function EditorCanvas({
                     left: `${(collaborator.cursorPosition?.x || 0) * zoom}px`,
                     top: `${(collaborator.cursorPosition?.y || 0) * zoom}px`,
                     transform: 'translate(-2px, -2px)',
-                    zIndex: 99999, // Ensure cursors are on top
+                    zIndex: 99999, 
                     pointerEvents: 'none',
                 }}
             >

@@ -139,6 +139,7 @@ export interface Slide {
   comments: SlideComment[];
   thumbnailUrl?: string;
   backgroundColor?: string;
+  backgroundImageUrl?: string; // New field for AI-generated or user-provided background images
 }
 
 export interface ActiveCollaboratorInfo {

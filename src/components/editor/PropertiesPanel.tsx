@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import type { SlideElement, Slide, SlideComment, SlideElementStyle, ChartContent, IconContent, ChartType } from '@/types';
-import { Text, Image as ImageIcon, Shapes, MessageSquare, Send, Palette, UserCircleIcon, Lock, CaseSensitive, AlignCenter, AlignLeft, AlignRight, Bold, Italic, Underline, Trash2, BarChart3, Smile as SmileIcon, Info } from 'lucide-react';
+import { Text, Image as ImageIconLucide, Shapes, MessageSquare, Send, Palette, UserCircleIcon, Lock, CaseSensitive, AlignCenter, AlignLeft, AlignRight, Bold, Italic, Underline, Trash2, BarChart3, Smile as SmileIcon, Info, ImageOff } from 'lucide-react';
 import { useState, ChangeEvent, useEffect } from 'react';
 import { Textarea } from '../ui/textarea';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
@@ -20,7 +20,7 @@ interface PropertiesPanelProps {
   onDeleteElement: (elementId: string) => void;
   onAddComment: (text: string) => void;
   onResolveComment: (commentId: string) => void;
-  onUpdateSlideBackgroundColor: (color: string) => void;
+  onUpdateSlideProperties: (updates: { backgroundColor?: string; backgroundImageUrl?: string | null }) => void;
   disabled?: boolean;
   currentUserId: string;
 }
@@ -32,7 +32,7 @@ export function PropertiesPanel({
   onDeleteElement,
   onAddComment,
   onResolveComment,
-  onUpdateSlideBackgroundColor,
+  onUpdateSlideProperties,
   disabled,
   currentUserId,
 }: PropertiesPanelProps) {
@@ -67,7 +67,7 @@ export function PropertiesPanel({
 
   const handleContentChange = (value: string | ChartContent | IconContent | any) => {
     if (!selectedElement || effectiveDisabled) return;
-    setLocalContent(value); // Update local state for controlled components
+    setLocalContent(value); 
     onUpdateElement({ id: selectedElement.id, content: value });
   };
 
@@ -111,16 +111,39 @@ export function PropertiesPanel({
                         <AccordionTrigger className="text-base">Appearance</AccordionTrigger>
                         <AccordionContent className="space-y-3 pt-2">
                             <div>
-                                <Label htmlFor="slideBackgroundColor">Slide Background Color</Label>
+                                <Label htmlFor="slideBackgroundColor">Solid Background Color</Label>
                                 <Input
                                     id="slideBackgroundColor"
                                     type="color"
                                     value={currentSlide?.backgroundColor || '#FFFFFF'}
-                                    onChange={(e) => currentSlide && onUpdateSlideBackgroundColor(e.target.value)}
+                                    onChange={(e) => currentSlide && onUpdateSlideProperties({ backgroundColor: e.target.value })}
                                     className="mt-1 h-10 p-1"
                                     disabled={disabled || !currentSlide}
                                 />
                             </div>
+                            <div>
+                                <Label htmlFor="slideBackgroundImageUrl">Background Image URL</Label>
+                                <Input
+                                    id="slideBackgroundImageUrl"
+                                    type="text"
+                                    placeholder="Enter image URL or use AI"
+                                    value={currentSlide?.backgroundImageUrl || ''}
+                                    onChange={(e) => currentSlide && onUpdateSlideProperties({ backgroundImageUrl: e.target.value || null })}
+                                    className="mt-1"
+                                    disabled={disabled || !currentSlide}
+                                />
+                            </div>
+                            {currentSlide?.backgroundImageUrl && (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => currentSlide && onUpdateSlideProperties({ backgroundImageUrl: null })}
+                                    disabled={disabled || !currentSlide}
+                                    className="w-full"
+                                >
+                                   <ImageOff className="mr-2 h-4 w-4" /> Clear Background Image
+                                </Button>
+                            )}
                         </AccordionContent>
                     </AccordionItem>
                  </Accordion>
@@ -139,7 +162,7 @@ export function PropertiesPanel({
         <div className="flex items-center justify-between">
             <h3 className="font-semibold text-lg flex items-center">
             {selectedElement.type === 'text' && <Text className="mr-2 h-5 w-5" />}
-            {selectedElement.type === 'image' && <ImageIcon className="mr-2 h-5 w-5" />}
+            {selectedElement.type === 'image' && <ImageIconLucide className="mr-2 h-5 w-5" />}
             {selectedElement.type === 'shape' && <Shapes className="mr-2 h-5 w-5" />}
             {selectedElement.type === 'chart' && <BarChart3 className="mr-2 h-5 w-5" />}
             {selectedElement.type === 'icon' && <SmileIcon className="mr-2 h-5 w-5" />}
@@ -251,7 +274,6 @@ export function PropertiesPanel({
                                     const parsedData = JSON.parse(e.target.value);
                                     handleChartContentChange('data', parsedData);
                                 } catch (err) {
-                                    // Handle invalid JSON, maybe show an error
                                     console.warn("Invalid JSON for chart data");
                                 }
                             }}
@@ -435,16 +457,39 @@ export function PropertiesPanel({
             <AccordionTrigger className="text-base">Slide Background</AccordionTrigger>
             <AccordionContent className="space-y-3 pt-2">
                 <div>
-                    <Label htmlFor="slideBackgroundColorPanel">Color</Label>
+                    <Label htmlFor="slideBackgroundColorPanel">Solid Color</Label>
                     <Input
                         id="slideBackgroundColorPanel"
                         type="color"
                         value={currentSlide?.backgroundColor || '#FFFFFF'}
-                        onChange={(e) => currentSlide && onUpdateSlideBackgroundColor(e.target.value)}
+                        onChange={(e) => currentSlide && onUpdateSlideProperties({ backgroundColor: e.target.value })}
                         className="mt-1 h-10 p-1"
                         disabled={disabled || !currentSlide}
                     />
                 </div>
+                 <div>
+                    <Label htmlFor="slideBackgroundImageUrlPanel">Image URL</Label>
+                    <Input
+                        id="slideBackgroundImageUrlPanel"
+                        type="text"
+                        placeholder="Enter image URL or use AI"
+                        value={currentSlide?.backgroundImageUrl || ''}
+                        onChange={(e) => currentSlide && onUpdateSlideProperties({ backgroundImageUrl: e.target.value || null })}
+                        className="mt-1"
+                        disabled={disabled || !currentSlide}
+                    />
+                </div>
+                {currentSlide?.backgroundImageUrl && (
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => currentSlide && onUpdateSlideProperties({ backgroundImageUrl: null })}
+                        disabled={disabled || !currentSlide}
+                        className="w-full"
+                    >
+                        <ImageOff className="mr-2 h-4 w-4" /> Clear Background Image
+                    </Button>
+                )}
             </AccordionContent>
           </AccordionItem>
         </Accordion>

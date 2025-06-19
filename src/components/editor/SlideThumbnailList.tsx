@@ -62,15 +62,25 @@ export function SlideThumbnailList({
               <div className="absolute top-1 left-1 bg-black/50 text-white text-xs px-1.5 py-0.5 rounded-full z-10">
                 {slide.slideNumber || index + 1}
               </div>
-              <div className="aspect-[16/9] bg-muted relative">
-                <Image
-                  src={slide.thumbnailUrl || "https://placehold.co/160x90.png?text=No+Preview"}
-                  alt={`Slide ${slide.slideNumber || index + 1}`}
-                  layout="fill"
-                  objectFit="cover"
-                  className="transition-transform group-hover:scale-105"
-                  data-ai-hint="slide thumbnail"
-                />
+              <div 
+                className="aspect-[16/9] bg-muted relative"
+                style={{ 
+                  backgroundColor: slide.backgroundColor || '#FFFFFF',
+                  backgroundImage: slide.backgroundImageUrl ? `url(${slide.backgroundImageUrl})` : undefined,
+                  backgroundSize: 'cover',
+                  backgroundPosition: 'center',
+                }}
+              >
+                {!slide.backgroundImageUrl && ( // Only show placeholder image if no background image
+                  <Image
+                    src={slide.thumbnailUrl || "https://placehold.co/160x90.png?text=No+Preview"}
+                    alt={`Slide ${slide.slideNumber || index + 1}`}
+                    layout="fill"
+                    objectFit="cover"
+                    className="transition-transform group-hover:scale-105"
+                    data-ai-hint="slide thumbnail"
+                  />
+                )}
                  {currentSlideId === slide.id && (
                   <div className="absolute inset-0 bg-primary/20" />
                 )}

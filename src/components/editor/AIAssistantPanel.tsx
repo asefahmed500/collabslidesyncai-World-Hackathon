@@ -12,7 +12,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import { Lightbulb, Palette, Sparkles, Wand2, Edit, FileText, Type, AlignLeft, Loader2, LayoutDashboard, BarChart3, ImagePlus, PlusCircle } from 'lucide-react';
+import { Lightbulb, Palette, Sparkles, Wand2, Edit, FileText, Type, AlignLeft, Loader2, LayoutDashboard, BarChart3, ImagePlus, PlusCircle, Image as ImageIconLucide } from 'lucide-react';
 
 import { suggestDesignLayout, SuggestDesignLayoutInput, SuggestDesignLayoutOutput } from '@/ai/flows/design-assistant';
 import { getSmartSuggestions, SmartSuggestionsInput, SmartSuggestionsOutput } from '@/ai/flows/smart-suggestions';
@@ -22,6 +22,7 @@ import { adjustTone, AdjustToneInput, AdjustToneOutput } from '@/ai/flows/tone-a
 import { generateSpeakerNotes, GenerateSpeakerNotesInput, GenerateSpeakerNotesOutput } from '@/ai/flows/speaker-notes-flow';
 import { generateIcon, GenerateIconInput, GenerateIconOutput } from '@/ai/flows/generate-icon-flow';
 import { suggestChart, SuggestChartInput, SuggestChartOutput, SuggestedChartConfig } from '@/ai/flows/generate-chart-flow';
+import { generateBackground, GenerateBackgroundInput, GenerateBackgroundOutput } from '@/ai/flows/generate-background-flow';
 
 
 import type { Slide, Presentation as PresentationType, SlideElement } from '@/types';
@@ -36,6 +37,7 @@ interface AIAssistantPanelProps {
   onApplyAISpeakerNotes?: (notes: string) => void;
   onAddImageElementFromAI?: (iconDataUri: string, description: string) => void;
   onAddChartElementFromAI?: (suggestedConfig: SuggestedChartConfig) => void;
+  onApplyAIBackgroundToSlide?: (imageUrl: string) => void;
 }
 
 export function AIAssistantPanel({ 
@@ -46,6 +48,7 @@ export function AIAssistantPanel({
     onApplyAISpeakerNotes,
     onAddImageElementFromAI,
     onAddChartElementFromAI,
+    onApplyAIBackgroundToSlide,
 }: AIAssistantPanelProps) {
   const { toast } = useToast();
 
@@ -83,6 +86,11 @@ export function AIAssistantPanel({
   const [chartGoal, setChartGoal] = useState('');
   const [generatedChartSuggestions, setGeneratedChartSuggestions] = useState<SuggestChartOutput | null>(null);
   const [isLoadingChart, setIsLoadingChart] = useState(false);
+
+  const [backgroundDescription, setBackgroundDescription] = useState('');
+  const [backgroundStylePrompt, setBackgroundStylePrompt] = useState('');
+  const [generatedBackground, setGeneratedBackground] = useState<GenerateBackgroundOutput | null>(null);
+  const [isLoadingBackground, setIsLoadingBackground] = useState(false);
   
   useEffect(() => {
     if (selectedElement && selectedElement.type === 'text') {
@@ -104,7 +112,7 @@ export function AIAssistantPanel({
     }
     setIsLoadingDesign(true); setDesignSuggestions(null);
     try {
-      let slideContentForAI = `Slide Number: ${currentSlide.slideNumber}\n`;
+      let slideContentForAI = `Slide Number: ${currentSlide.slideNumber || 'N/A'}\n`;
       if (currentSlide.elements.length === 0) {
         slideContentForAI += "This slide is currently empty.";
       } else {
@@ -136,11 +144,11 @@ export function AIAssistantPanel({
     setIsLoadingTips(true); setSmartTips(null);
     try {
       const presentationContent = currentPresentation.slides.map((s, idx) => 
-        `Slide ${idx + 1} (ID: ${s.id}):\n${s.elements.map(el => el.type === 'text' ? `  - TEXT: "${el.content}"` : `  - [${el.type.toUpperCase()}]`).join('\n')}`
+        `Slide ${s.slideNumber || idx + 1} (ID: ${s.id}):\n${s.elements.map(el => el.type === 'text' ? `  - TEXT: "${el.content}"` : `  - [${el.type.toUpperCase()}]`).join('\n')}`
       ).join('\n\n');
       const input: SmartSuggestionsInput = {
         presentationContent: presentationContent || "Empty presentation",
-        teamBrandGuidelines: `Colors: ${currentPresentation.branding?.primaryColor || 'default'}, Fonts: ${currentPresentation.branding?.fontPrimary || 'default'}`
+        teamBrandGuidelines: `Colors: Primary ${currentPresentation.branding?.primaryColor || 'default blue'}, Accent: ${currentPresentation.branding?.accentColor || 'default purple'}. Fonts: Headline ${currentPresentation.branding?.fontPrimary || 'default Space Grotesk'}, Body: ${currentPresentation.branding?.fontSecondary || 'default PT Sans'}`
       };
       const result = await getSmartSuggestions(input);
       setSmartTips(result);
@@ -258,6 +266,30 @@ export function AIAssistantPanel({
     }
   };
 
+  const handleGenerateBackground = async () => {
+    if (!backgroundDescription.trim()) { toast({ title: "Input Missing", description: "Please enter a background description.", variant: "destructive" }); return; }
+    setIsLoadingBackground(true); setGeneratedBackground(null);
+    try {
+      const result = await generateBackground({ description: backgroundDescription, stylePrompt: backgroundStylePrompt });
+      setGeneratedBackground(result);
+      if (result.imageDataUri) {
+        toast({ title: "Background Generated", description: "AI has generated a background image." });
+      } else {
+        toast({ title: "Background Generation Failed", description: result.feedback || "Could not generate background.", variant: "destructive" });
+      }
+    } catch (e: any) { toast({ title: "AI Background Error", description: e.message || "Could not generate background.", variant: "destructive" });}
+    finally { setIsLoadingBackground(false); }
+  };
+
+  const handleApplyBackgroundToSlide = () => {
+    if (generatedBackground?.imageDataUri && onApplyAIBackgroundToSlide && currentSlide) {
+        onApplyAIBackgroundToSlide(generatedBackground.imageDataUri);
+        toast({ title: "Background Applied", description: "Generated background applied to the current slide." });
+    } else {
+        toast({ title: "Error", description: "No background available to apply, slide not selected, or action not configured.", variant: "destructive" });
+    }
+  };
+
 
   const renderLoadingSkeletons = (count: number = 2, itemHeight: string = "h-10") => (
     <div className="space-y-3 mt-2">
@@ -278,7 +310,7 @@ export function AIAssistantPanel({
         </h2>
       </div>
       <ScrollArea className="flex-grow">
-        <Accordion type="multiple" defaultValue={['content-tools', 'visual-tools']} className="w-full">
+        <Accordion type="multiple" defaultValue={['design-layout', 'content-tools', 'visual-tools', 'slide-tools']} className="w-full">
           
           <AccordionItem value="design-layout">
             <AccordionTrigger className="px-4 py-3 text-base font-medium">
@@ -441,9 +473,10 @@ export function AIAssistantPanel({
             </AccordionTrigger>
             <AccordionContent className="px-4 pb-4 space-y-4">
               <Tabs defaultValue="icon-gen" className="w-full">
-                <TabsList className="grid w-full grid-cols-2 mb-3">
-                  <TabsTrigger value="icon-gen"><Sparkles className="mr-1 h-4 w-4" />Generate Icon</TabsTrigger>
-                  <TabsTrigger value="chart-gen"><BarChart3 className="mr-1 h-4 w-4" />Suggest Chart</TabsTrigger>
+                <TabsList className="grid w-full grid-cols-3 mb-3"> {/* Changed to 3 cols */}
+                  <TabsTrigger value="icon-gen"><Sparkles className="mr-1 h-4 w-4" />Icon</TabsTrigger>
+                  <TabsTrigger value="background-gen"><ImageIconLucide className="mr-1 h-4 w-4" />Background</TabsTrigger>
+                  <TabsTrigger value="chart-gen"><BarChart3 className="mr-1 h-4 w-4" />Chart</TabsTrigger>
                 </TabsList>
                 <TabsContent value="icon-gen" className="space-y-3">
                   <Input placeholder="Describe the icon (e.g., 'red apple icon')" value={iconDescription} onChange={(e) => setIconDescription(e.target.value)} />
@@ -466,6 +499,30 @@ export function AIAssistantPanel({
                   )}
                   {generatedIcon && !generatedIcon.iconDataUri && generatedIcon.feedback && (
                      <p className="text-sm text-destructive text-center pt-2">{generatedIcon.feedback}</p>
+                  )}
+                </TabsContent>
+                <TabsContent value="background-gen" className="space-y-3">
+                  <Input placeholder="Describe the background (e.g., 'abstract blue waves')" value={backgroundDescription} onChange={(e) => setBackgroundDescription(e.target.value)} />
+                  <Input placeholder="Optional style (e.g., 'watercolor', 'geometric')" value={backgroundStylePrompt} onChange={(e) => setBackgroundStylePrompt(e.target.value)} />
+                  <Button onClick={handleGenerateBackground} disabled={isLoadingBackground || !backgroundDescription.trim()} className="w-full">
+                    {isLoadingBackground ? <Loader2 className="animate-spin mr-2" /> : <Wand2 className="mr-2 h-4 w-4" />} Generate Background
+                  </Button>
+                  {isLoadingBackground && <div className="flex justify-center py-4"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>}
+                  {generatedBackground && generatedBackground.imageDataUri && (
+                    <Card className="mt-2 bg-muted/50">
+                      <CardHeader className="p-2"><CardTitle className="text-sm">Generated Background:</CardTitle></CardHeader>
+                      <CardContent className="p-2 flex flex-col items-center gap-2">
+                        <Image src={generatedBackground.imageDataUri} alt={backgroundDescription || "Generated background"} width={160} height={90} className="border rounded object-cover" data-ai-hint="generated background" />
+                        {onApplyAIBackgroundToSlide && currentSlide && (
+                            <Button size="sm" variant="outline" onClick={handleApplyBackgroundToSlide} className="w-full">
+                                <PlusCircle className="mr-2 h-4 w-4" /> Apply as Slide Background
+                            </Button>
+                        )}
+                      </CardContent>
+                    </Card>
+                  )}
+                  {generatedBackground && !generatedBackground.imageDataUri && generatedBackground.feedback && (
+                     <p className="text-sm text-destructive text-center pt-2">{generatedBackground.feedback}</p>
                   )}
                 </TabsContent>
                 <TabsContent value="chart-gen" className="space-y-3">

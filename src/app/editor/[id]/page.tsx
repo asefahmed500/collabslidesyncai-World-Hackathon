@@ -62,8 +62,8 @@ import { db } from '@/lib/firebaseConfig';
 import { throttle } from 'lodash';
 import { ShareDialog } from '@/components/editor/ShareDialog';
 import { PasswordPromptDialog } from '@/components/editor/PasswordPromptDialog';
-import { TemplateSelectionDialog } from '@/components/editor/TemplateSelectionDialog'; // New import
-import { slideTemplates } from '@/lib/slideTemplates'; // New import
+import { TemplateSelectionDialog } from '@/components/editor/TemplateSelectionDialog'; 
+import { slideTemplates } from '@/lib/slideTemplates'; 
 
 const LOCK_CHECK_INTERVAL = 15000; 
 const PRESENCE_UPDATE_INTERVAL = 30000; 
@@ -91,7 +91,7 @@ export default function EditorPage() {
   const [isTakenDown, setIsTakenDown] = useState(false);
   const [passwordVerifiedInSession, setPasswordVerifiedInSession] = useState(false);
   const [slideToDelete, setSlideToDelete] = useState<Slide | null>(null);
-  const [showTemplatesDialog, setShowTemplatesDialog] = useState(false); // State for template dialog
+  const [showTemplatesDialog, setShowTemplatesDialog] = useState(false); 
 
   const unsubscribePresentationListener = useRef<(() => void) | null>(null);
   const presenceIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -187,6 +187,7 @@ export default function EditorPage() {
             slides: (data.slides || []).map(slide => ({
               ...slide,
               backgroundColor: slide.backgroundColor || '#FFFFFF',
+              backgroundImageUrl: slide.backgroundImageUrl || undefined,
               elements: (slide.elements || []).map(el => ({
                 ...el,
                 zIndex: el.zIndex === undefined ? 0 : el.zIndex,
@@ -298,8 +299,8 @@ export default function EditorPage() {
     setSelectedTool(tool);
     if (tool === 'ai-design' || tool === 'ai-content' || (tool && tool.startsWith('ai-'))) {
       setIsRightPanelOpen('ai');
-    } else if (tool === 'templates') { // Changed from 'templates' directly calling function to using selectedTool state
-      handleShowSlideTemplates(); // Open dialog when template tool is selected
+    } else if (tool === 'templates') { 
+      handleShowSlideTemplates(); 
     } else if (tool !== null) {
       setIsRightPanelOpen('properties'); 
     }
@@ -377,7 +378,7 @@ export default function EditorPage() {
     } else {
       toast({title: "Error", description: "Template not found.", variant: "destructive"});
     }
-    setShowTemplatesDialog(false); // Close dialog after selection or if template not found
+    setShowTemplatesDialog(false); 
   };
 
   const handleDeleteSlide = (slideIdToDelete: string) => {
@@ -458,12 +459,12 @@ export default function EditorPage() {
 
   const handleShowSlideTemplates = () => {
     setShowTemplatesDialog(true);
-    setSelectedTool(null); // Deselect the template tool itself
+    setSelectedTool(null); 
   };
 
   const handleAddElement = async (position: {x: number, y: number}) => {
     if (!presentation || !currentSlideId || !selectedTool || !currentUser) return;
-    if (selectedTool.startsWith('ai-') || selectedTool === 'templates') return; // Don't add element for these pseudo-tools
+    if (selectedTool.startsWith('ai-') || selectedTool === 'templates') return;
 
     let newElementPartial: Omit<SlideElement, 'id'> = {
         type: 'text' as SlideElementType,
@@ -612,17 +613,29 @@ export default function EditorPage() {
     }
   };
 
-  const handleUpdateSlideBackgroundColor = async (color: string) => {
+  const handleUpdateSlideProperties = async (updates: { backgroundColor?: string; backgroundImageUrl?: string | null }) => {
     if (!presentation || !currentSlideId || !currentUser) return;
-    const updatedSlides = presentation.slides.map(s =>
-        s.id === currentSlideId ? { ...s, backgroundColor: color } : s
-    );
+    const updatedSlides = presentation.slides.map(s => {
+        if (s.id === currentSlideId) {
+            const newProps: Partial<Slide> = {};
+            if (updates.hasOwnProperty('backgroundColor')) newProps.backgroundColor = updates.backgroundColor;
+            if (updates.hasOwnProperty('backgroundImageUrl')) {
+                newProps.backgroundImageUrl = updates.backgroundImageUrl === null ? undefined : updates.backgroundImageUrl;
+            }
+            return { ...s, ...newProps };
+        }
+        return s;
+    });
     try {
         await apiUpdatePresentation(presentation.id, { slides: updatedSlides });
-        logPresentationActivity(presentation.id, currentUser.id, 'slide_background_updated', { slideId: currentSlideId, newColor: color });
+        logPresentationActivity(presentation.id, currentUser.id, 'slide_background_updated', { 
+            slideId: currentSlideId, 
+            newColor: updates.backgroundColor,
+            newImage: updates.backgroundImageUrl
+        });
     } catch (e: any) {
-        console.error("Error updating slide background:", e);
-        toast({title: "Error", description: e.message || "Could not update slide background.", variant: "destructive"})
+        console.error("Error updating slide properties:", e);
+        toast({title: "Error", description: e.message || "Could not update slide properties.", variant: "destructive"})
     }
   };
 
@@ -703,6 +716,12 @@ export default function EditorPage() {
     } catch (error: any) {
         console.error("Error adding AI suggested chart:", error);
         toast({ title: "Error Adding Chart", description: error.message || "Could not add the chart.", variant: "destructive" });
+    }
+  };
+  
+  const handleApplyAIBackgroundToSlide = (imageUrl: string) => {
+    if (currentSlideId) {
+        handleUpdateSlideProperties({ backgroundImageUrl: imageUrl });
     }
   };
 
@@ -877,7 +896,7 @@ export default function EditorPage() {
           slides={presentation?.slides || []}
           currentSlideId={currentSlideId}
           onSlideSelect={handleSlideSelect}
-          onAddSlide={() => handleAddSlide()} // Default add slide (blank)
+          onAddSlide={() => handleAddSlide()} 
           onDeleteSlide={handleDeleteSlide}
           onDuplicateSlide={handleDuplicateSlide}
           onMoveSlide={handleMoveSlide}
@@ -906,7 +925,7 @@ export default function EditorPage() {
               onDeleteElement={handleDeleteElement}
               onAddComment={handleAddComment}
               onResolveComment={handleResolveComment}
-              onUpdateSlideBackgroundColor={handleUpdateSlideBackgroundColor}
+              onUpdateSlideProperties={handleUpdateSlideProperties}
               disabled={isSaving || !isOnline || (presentation?.creatorId !== currentUser.id && presentation?.access[currentUser.id] !== 'owner' && presentation?.access[currentUser.id] !== 'editor')}
               currentUserId={currentUser.id}
             />
@@ -920,6 +939,7 @@ export default function EditorPage() {
             onApplyAISpeakerNotes={handleApplyAISpeakerNotes}
             onAddImageElementFromAI={handleAddImageElementFromAI}
             onAddChartElementFromAI={handleAddChartElementFromAI}
+            onApplyAIBackgroundToSlide={handleApplyAIBackgroundToSlide}
           />
         )}
       </div>
@@ -944,7 +964,7 @@ export default function EditorPage() {
         <AlertDialog open={!!slideToDelete} onOpenChange={(open) => !open && setSlideToDelete(null)}>
             <AlertDialogContent>
                 <AlertDialogHeader>
-                <AlertDialogTitle className="flex items-center"><Trash2 className="mr-2 h-5 w-5 text-destructive"/>Delete Slide {slideToDelete.slideNumber}?</AlertDialogTitle>
+                <AlertDialogTitle className="flex items-center"><Trash2 className="mr-2 h-5 w-5 text-destructive"/>Delete Slide {slideToDelete.slideNumber || ''}?</AlertDialogTitle>
                 <AlertDialogDescription>
                     This action cannot be undone. This will permanently delete the slide and its content.
                 </AlertDialogDescription>
@@ -982,6 +1002,7 @@ export default function EditorPage() {
                     onApplyAISpeakerNotes={handleApplyAISpeakerNotes}
                     onAddImageElementFromAI={handleAddImageElementFromAI}
                     onAddChartElementFromAI={handleAddChartElementFromAI}
+                    onApplyAIBackgroundToSlide={handleApplyAIBackgroundToSlide}
                   />
               </div>
             </SheetContent>
@@ -990,3 +1011,4 @@ export default function EditorPage() {
     </div>
   );
 }
+
