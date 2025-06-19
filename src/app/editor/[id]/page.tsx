@@ -12,9 +12,9 @@ import { PropertiesPanel } from '@/components/editor/PropertiesPanel';
 import { AIAssistantPanel } from '@/components/editor/AIAssistantPanel';
 import { CollaborationBar } from '@/components/editor/CollaborationBar';
 import { Button } from '@/components/ui/button';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import type { Presentation, Slide, SlideElement, SlideComment, ActiveCollaboratorInfo, User as AppUser, SlideElementType, PresentationActivity, ChartContent, IconContent, SuggestedChartConfig } from '@/types';
-import { AlertTriangle, Home, RotateCcw, Save, Share2, Users, FileText, Loader2, Zap, WifiOff, ShieldAlert, Sparkles, LayoutTemplate, Trash2, Copy, ShieldX } from 'lucide-react';
+import { AlertTriangle, Home, RotateCcw, Save, Share2, Users, FileText, Loader2, Zap, WifiOff, ShieldAlert, Sparkles, LayoutTemplate, Trash2, Copy, ShieldX, Settings, MessageSquare } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
   AlertDialog,
@@ -64,6 +64,7 @@ import { ShareDialog } from '@/components/editor/ShareDialog';
 import { PasswordPromptDialog } from '@/components/editor/PasswordPromptDialog';
 import { TemplateSelectionDialog } from '@/components/editor/TemplateSelectionDialog'; 
 import { slideTemplates } from '@/lib/slideTemplates'; 
+import { useIsMobile } from '@/hooks/use-mobile';
 
 const LOCK_CHECK_INTERVAL = 15000; 
 const PRESENCE_UPDATE_INTERVAL = 30000; 
@@ -78,7 +79,7 @@ export default function EditorPage() {
   const [presentation, setPresentation] = useState<Presentation | null>(null);
   const [currentSlideId, setCurrentSlideId] = useState<string | null>(null);
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
-  const [isRightPanelOpen, setIsRightPanelOpen] = useState<'properties' | 'ai' | null>('properties');
+  const [isRightPanelOpen, setIsRightPanelOpen] = useState<'properties' | 'ai' | null>(null); // Can be 'properties', 'ai', or null
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isOnline, setIsOnline] = useState(true);
@@ -92,6 +93,8 @@ export default function EditorPage() {
   const [passwordVerifiedInSession, setPasswordVerifiedInSession] = useState(false);
   const [slideToDelete, setSlideToDelete] = useState<Slide | null>(null);
   const [showTemplatesDialog, setShowTemplatesDialog] = useState(false); 
+
+  const isMobile = useIsMobile();
 
   const unsubscribePresentationListener = useRef<(() => void) | null>(null);
   const presenceIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -301,16 +304,18 @@ export default function EditorPage() {
       setIsRightPanelOpen('ai');
     } else if (tool === 'templates') { 
       handleShowSlideTemplates(); 
-    } else if (tool !== null) {
-      setIsRightPanelOpen('properties'); 
+    } else if (tool !== null && !selectedElement) { // If a creation tool is selected and no element is selected
+      setIsRightPanelOpen(null); // Close panels to make space for potential canvas click
+    } else if (selectedElement) {
+       setIsRightPanelOpen('properties');
     }
   };
 
   const handleAction = (action: string) => {
      if (action === 'comments') {
-       setIsRightPanelOpen(isRightPanelOpen === 'properties' ? null : 'properties'); 
+       setIsRightPanelOpen(prev => prev === 'properties' && selectedElement === null ? null : 'properties'); 
     } else if (action === 'ai-panel') {
-       setIsRightPanelOpen(prev => prev === 'ai' ? (selectedElement ? 'properties' : null) : 'ai');
+       setIsRightPanelOpen(prev => prev === 'ai' ? null : 'ai');
     } else if (action === 'share') {
       setIsShareDialogOpen(true);
     } else if (action === 'undo' || action === 'redo') {
@@ -325,6 +330,7 @@ export default function EditorPage() {
     setCurrentSlideId(slideId);
     setSelectedElementId(null);
     setSelectedTool(null);
+    setIsRightPanelOpen('properties'); // Default to properties (slide properties) when a slide is selected
   }, [presentationId, currentSlideId, selectedElementId, currentUser]);
 
  const handleElementSelect = useCallback(async (elementId: string | null) => {
@@ -339,7 +345,7 @@ export default function EditorPage() {
 
     setSelectedElementId(elementId);
     setSelectedTool(null); 
-    setIsRightPanelOpen('properties');
+    setIsRightPanelOpen(elementId ? 'properties' : null); // Show properties if element selected, else close panel
 
     if (elementId) {
         try {
@@ -360,8 +366,9 @@ export default function EditorPage() {
     try {
       const newSlideId = await apiAddSlide(presentation.id, { elements: elements?.length ? elements : undefined });
       toast({ title: "Slide Added", description: elements?.length ? "New slide from template created." : "New blank slide created." });
-      setCurrentSlideId(newSlideId);
+      setCurrentSlideId(newSlideId); // Switch to new slide
       setSelectedElementId(null);
+      setIsRightPanelOpen('properties'); // Show slide properties for the new slide
       logPresentationActivity(presentation.id, currentUser.id, 'element_added', { elementType: 'slide', elementId: newSlideId });
     } catch (error: any) {
       console.error("Error adding slide:", error);
@@ -405,6 +412,7 @@ export default function EditorPage() {
             setCurrentSlideId(null);
           }
           setSelectedElementId(null);
+          setIsRightPanelOpen(null); // Close panel if current slide was deleted
         }
       } else {
          toast({ title: "Error", description: "Slide not found or could not be deleted.", variant: "destructive" });
@@ -427,6 +435,7 @@ export default function EditorPage() {
         toast({ title: "Slide Duplicated", description: "Slide has been duplicated." });
         setCurrentSlideId(result.newSlideId);
         setSelectedElementId(null);
+        setIsRightPanelOpen('properties'); // Show properties for new duplicated slide
         logPresentationActivity(presentation.id, currentUser.id, 'element_added', { elementType: 'slide', elementId: result.newSlideId, duplicatedFrom: slideIdToDuplicate });
       } else {
         toast({ title: "Error", description: "Could not duplicate slide.", variant: "destructive" });
@@ -460,6 +469,7 @@ export default function EditorPage() {
   const handleShowSlideTemplates = () => {
     setShowTemplatesDialog(true);
     setSelectedTool(null); 
+    setIsRightPanelOpen(null); // Close other panels when template dialog opens
   };
 
   const handleAddElement = async (position: {x: number, y: number}) => {
@@ -535,6 +545,7 @@ export default function EditorPage() {
         logPresentationActivity(presentation.id, currentUser.id, 'element_deleted', { elementType: elementToDelete.type, elementId });
         if (selectedElementId === elementId) {
             setSelectedElementId(null); 
+            setIsRightPanelOpen(null); // Close properties panel
         }
     } catch (error: any) {
         console.error("Error deleting element:", error);
@@ -743,6 +754,10 @@ export default function EditorPage() {
     setIsLoading(false); 
   };
 
+  const mobileSheetOpen = isMobile && isRightPanelOpen !== null;
+  const mobileSheetContentKey = isRightPanelOpen === 'ai' ? 'ai-panel' : (selectedElementId ? 'properties-panel' : 'slide-properties-panel');
+
+
   if (authLoading || isLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen">
@@ -917,7 +932,8 @@ export default function EditorPage() {
             selectedTool={selectedTool}
         />
 
-        {isRightPanelOpen === 'properties' && currentSlide && currentUser && (
+        {/* Desktop Right Panels */}
+        {!isMobile && isRightPanelOpen === 'properties' && currentSlide && currentUser && (
            <PropertiesPanel
               selectedElement={selectedElement}
               currentSlide={currentSlide}
@@ -930,7 +946,7 @@ export default function EditorPage() {
               currentUserId={currentUser.id}
             />
         )}
-        {isRightPanelOpen === 'ai' && (
+        {!isMobile && isRightPanelOpen === 'ai' && (
           <AIAssistantPanel
             currentSlide={currentSlide}
             currentPresentation={presentation}
@@ -943,6 +959,57 @@ export default function EditorPage() {
           />
         )}
       </div>
+
+      {/* Mobile Panels as Bottom Sheet */}
+      {isMobile && (
+        <Sheet open={mobileSheetOpen} onOpenChange={(open) => { if (!open) setIsRightPanelOpen(null); }}>
+          <SheetContent side="bottom" className="h-[75vh] flex flex-col p-0" key={mobileSheetContentKey}>
+            {isRightPanelOpen === 'ai' && (
+              <>
+                <SheetHeader className="p-4 border-b">
+                  <SheetTitle className="flex items-center"><Sparkles className="mr-2 h-5 w-5 text-primary" /> AI Assistant</SheetTitle>
+                </SheetHeader>
+                <div className="flex-grow overflow-auto">
+                  <AIAssistantPanel
+                    currentSlide={currentSlide}
+                    currentPresentation={presentation}
+                    selectedElement={selectedElement}
+                    onApplyAITextUpdate={handleApplyAITextUpdate}
+                    onApplyAISpeakerNotes={handleApplyAISpeakerNotes}
+                    onAddImageElementFromAI={handleAddImageElementFromAI}
+                    onAddChartElementFromAI={handleAddChartElementFromAI}
+                    onApplyAIBackgroundToSlide={handleApplyAIBackgroundToSlide}
+                  />
+                </div>
+              </>
+            )}
+            {isRightPanelOpen === 'properties' && currentSlide && currentUser && (
+              <>
+                <SheetHeader className="p-4 border-b">
+                  <SheetTitle className="flex items-center">
+                    {selectedElement ? <Settings className="mr-2 h-5 w-5 text-primary" /> : <MessageSquare className="mr-2 h-5 w-5 text-primary" />}
+                    {selectedElement ? 'Element Properties' : 'Slide Properties & Comments'}
+                  </SheetTitle>
+                </SheetHeader>
+                <div className="flex-grow overflow-auto">
+                   <PropertiesPanel
+                      selectedElement={selectedElement}
+                      currentSlide={currentSlide}
+                      onUpdateElement={handleUpdateElement}
+                      onDeleteElement={handleDeleteElement}
+                      onAddComment={handleAddComment}
+                      onResolveComment={handleResolveComment}
+                      onUpdateSlideProperties={handleUpdateSlideProperties}
+                      disabled={isSaving || !isOnline || (presentation?.creatorId !== currentUser.id && presentation?.access[currentUser.id] !== 'owner' && presentation?.access[currentUser.id] !== 'editor')}
+                      currentUserId={currentUser.id}
+                    />
+                </div>
+              </>
+            )}
+          </SheetContent>
+        </Sheet>
+      )}
+      
       {presentation && currentUser && (
         <ShareDialog
             presentation={presentation}
@@ -983,32 +1050,8 @@ export default function EditorPage() {
         onOpenChange={setShowTemplatesDialog}
         onSelectTemplate={handleAddSlideFromTemplate}
       />
-
-        <div className="md:hidden fixed bottom-4 right-4 z-50">
-          <Sheet>
-            <SheetTrigger asChild>
-              <Button variant="outline" className="shadow-lg rounded-full p-3 h-auto">
-                <Sparkles className="h-6 w-6 text-primary" />
-                 <span className="sr-only">Toggle AI Assistant Panel</span>
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="bottom" className="h-[75vh] flex flex-col p-0">
-              <div className="flex-grow overflow-hidden">
-                 <AIAssistantPanel
-                    currentSlide={currentSlide}
-                    currentPresentation={presentation}
-                    selectedElement={selectedElement}
-                    onApplyAITextUpdate={handleApplyAITextUpdate}
-                    onApplyAISpeakerNotes={handleApplyAISpeakerNotes}
-                    onAddImageElementFromAI={handleAddImageElementFromAI}
-                    onAddChartElementFromAI={handleAddChartElementFromAI}
-                    onApplyAIBackgroundToSlide={handleApplyAIBackgroundToSlide}
-                  />
-              </div>
-            </SheetContent>
-          </Sheet>
-        </div>
     </div>
   );
 }
 
+    
