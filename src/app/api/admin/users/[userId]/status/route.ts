@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import { getUserFromMongoDB, updateUserInMongoDB } from '@/lib/mongoUserService';
-// import { auth as adminAuth } from '@/lib/firebaseAdmin'; // For Firebase Auth disable/enable
+import admin from '@/lib/firebaseAdmin'; // Import Firebase Admin SDK
 
 async function verifyAdmin(actorUserId: string): Promise<boolean> {
   if (!actorUserId) return false;
@@ -27,7 +27,7 @@ export async function PUT(request: NextRequest, { params }: { params: { userId: 
   if (typeof disabled !== 'boolean') {
     return NextResponse.json({ success: false, message: 'Disabled status (boolean) is required in the body.' }, { status: 400 });
   }
-   if (userId === actorUserId && disabled) { // Current admin trying to disable themselves
+   if (userId === actorUserId && disabled) {
     return NextResponse.json({ success: false, message: 'Platform admins cannot disable their own accounts.' }, { status: 403 });
   }
 
@@ -43,23 +43,29 @@ export async function PUT(request: NextRequest, { params }: { params: { userId: 
       return NextResponse.json({ success: false, message: 'Target user not found.' }, { status: 404 });
     }
 
-    // Placeholder for Firebase Auth disable/enable
-    // try {
-    //   // await adminAuth.updateUser(userId, { disabled });
-    //   console.log(`(Placeholder) Firebase Auth user ${userId} status would be set to disabled: ${disabled}`);
-    // } catch (fbError: any) {
-    //   console.error(`Firebase Auth user status update failed for ${userId}:`, fbError);
-    //   return NextResponse.json({ success: false, message: `Firebase Auth update failed: ${fbError.message}. Database not updated.` }, { status: 500 });
-    // }
+    // Update Firebase Auth user status
+    try {
+      if (!admin.apps.length) throw new Error("Firebase Admin SDK not initialized. User status not changed in Firebase Auth.");
+      await admin.auth().updateUser(userId, { disabled });
+      console.log(`Firebase Auth user ${userId} status updated to disabled: ${disabled}`);
+    } catch (fbError: any) {
+      console.error(`Firebase Auth user status update failed for ${userId}:`, fbError);
+      // Decide if this should be a hard fail or just a warning
+      // For now, we'll return an error if Firebase Auth update fails, as it's critical.
+      return NextResponse.json({ success: false, message: `Firebase Auth update failed: ${fbError.message}. Database not updated.` }, { status: 500 });
+    }
 
+    // Update MongoDB user status
     const updatedUser = await updateUserInMongoDB(userId, { disabled });
     if (!updatedUser) {
-      return NextResponse.json({ success: false, message: 'Failed to update user status in database.' }, { status: 500 });
+      // This case might indicate a desync if Firebase succeeded but Mongo failed.
+      // Consider rollback or more complex error handling if needed.
+      return NextResponse.json({ success: false, message: 'Failed to update user status in database after Firebase Auth update.' }, { status: 500 });
     }
 
     return NextResponse.json({ 
         success: true, 
-        message: `User account ${disabled ? 'disabled' : 'enabled'} successfully. (Firebase Auth status is placeholder).`, 
+        message: `User account ${disabled ? 'disabled' : 'enabled'} successfully in both Firebase Auth and database.`, 
         user: updatedUser 
     });
   } catch (error: any) {
