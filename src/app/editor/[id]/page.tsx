@@ -53,8 +53,8 @@ import {
   releaseExpiredLocks,
   getNextUserColor,
   logPresentationActivity,
-  getPresentationById, // Using this for normal user access
-  getPresentationByIdAdmin, // Admins might need to see full data even if taken down
+  getPresentationById, 
+  getPresentationByIdAdmin, 
   uuidv4,
 } from '@/lib/firestoreService';
 import { doc, onSnapshot, Timestamp } from 'firebase/firestore';
@@ -62,9 +62,11 @@ import { db } from '@/lib/firebaseConfig';
 import { throttle } from 'lodash';
 import { ShareDialog } from '@/components/editor/ShareDialog';
 import { PasswordPromptDialog } from '@/components/editor/PasswordPromptDialog';
+import { TemplateSelectionDialog } from '@/components/editor/TemplateSelectionDialog'; // New import
+import { slideTemplates } from '@/lib/slideTemplates'; // New import
 
-const LOCK_CHECK_INTERVAL = 15000; // Check for expired locks every 15 seconds
-const PRESENCE_UPDATE_INTERVAL = 30000; // Update user's lastSeen every 30 seconds
+const LOCK_CHECK_INTERVAL = 15000; 
+const PRESENCE_UPDATE_INTERVAL = 30000; 
 
 export default function EditorPage() {
   const router = useRouter();
@@ -89,7 +91,7 @@ export default function EditorPage() {
   const [isTakenDown, setIsTakenDown] = useState(false);
   const [passwordVerifiedInSession, setPasswordVerifiedInSession] = useState(false);
   const [slideToDelete, setSlideToDelete] = useState<Slide | null>(null);
-  const [showTemplatesDialog, setShowTemplatesDialog] = useState(false);
+  const [showTemplatesDialog, setShowTemplatesDialog] = useState(false); // State for template dialog
 
   const unsubscribePresentationListener = useRef<(() => void) | null>(null);
   const presenceIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -118,7 +120,7 @@ export default function EditorPage() {
   const checkAccessAndLoad = useCallback(async (presData: Presentation, user: AppUser | null) => {
     if (presData.moderationStatus === 'taken_down' && (!user || !user.isAppAdmin)) {
         setIsTakenDown(true);
-        setAccessDenied(true); // Access denied if taken down for non-admins
+        setAccessDenied(true); 
         toast({ title: "Presentation Unavailable", description: "This presentation is currently unavailable.", variant: "destructive" });
         return false;
     }
@@ -149,11 +151,11 @@ export default function EditorPage() {
       }
     }
 
-    if (hasAccess || (user && user.isAppAdmin)) { // Platform Admins can always access (unless taken down and they are not admin)
+    if (hasAccess || (user && user.isAppAdmin)) { 
       setAccessDenied(false);
-      if (user && !(user.isAppAdmin && presData.creatorId !== user.id)) { // Don't log admin views as 'presentation_viewed' by default unless they are a collaborator
+      if (user && !(user.isAppAdmin && presData.creatorId !== user.id)) { 
          logPresentationActivity(presData.id, user.id, 'presentation_viewed', { accessMethod });
-      } else if (presData.settings.isPublic && !presData.settings.passwordProtected && !user) { // Log anonymous public views
+      } else if (presData.settings.isPublic && !presData.settings.passwordProtected && !user) { 
          logPresentationActivity(presData.id, 'guest', 'presentation_viewed', { accessMethod: 'public_link_anonymous' });
       }
       return true;
@@ -296,25 +298,22 @@ export default function EditorPage() {
     setSelectedTool(tool);
     if (tool === 'ai-design' || tool === 'ai-content' || (tool && tool.startsWith('ai-'))) {
       setIsRightPanelOpen('ai');
-    } else if (tool === 'templates') {
-      handleShowSlideTemplates();
+    } else if (tool === 'templates') { // Changed from 'templates' directly calling function to using selectedTool state
+      handleShowSlideTemplates(); // Open dialog when template tool is selected
     } else if (tool !== null) {
-      setIsRightPanelOpen('properties'); // Default to properties panel if a drawing tool is selected
+      setIsRightPanelOpen('properties'); 
     }
   };
 
   const handleAction = (action: string) => {
      if (action === 'comments') {
-       setIsRightPanelOpen(isRightPanelOpen === 'properties' ? null : 'properties'); // Toggle for comments within properties
+       setIsRightPanelOpen(isRightPanelOpen === 'properties' ? null : 'properties'); 
     } else if (action === 'ai-panel') {
        setIsRightPanelOpen(prev => prev === 'ai' ? (selectedElement ? 'properties' : null) : 'ai');
     } else if (action === 'share') {
       setIsShareDialogOpen(true);
     } else if (action === 'undo' || action === 'redo') {
         toast({ title: "Coming Soon!", description: `${action.charAt(0).toUpperCase() + action.slice(1)} functionality is under development.`, duration: 2000 });
-    } else {
-      // Present action handled by EditorToolbar's navigation
-      // toast({ title: "Action Triggered", description: `Action '${action}' functionality pending implementation.`, duration: 2000 });
     }
   };
 
@@ -354,12 +353,12 @@ export default function EditorPage() {
 }, [currentUser, currentSlideId, presentation, selectedElementId, presentationId, toast]);
 
 
-  const handleAddSlide = async () => {
+  const handleAddSlide = async (elements?: Omit<SlideElement, 'id' | 'lockedBy' | 'lockTimestamp'>[]) => {
     if (!presentation || !currentUser) return;
     setIsSaving(true);
     try {
-      const newSlideId = await apiAddSlide(presentation.id);
-      toast({ title: "Slide Added", description: "New slide created." });
+      const newSlideId = await apiAddSlide(presentation.id, { elements: elements?.length ? elements : undefined });
+      toast({ title: "Slide Added", description: elements?.length ? "New slide from template created." : "New blank slide created." });
       setCurrentSlideId(newSlideId);
       setSelectedElementId(null);
       logPresentationActivity(presentation.id, currentUser.id, 'element_added', { elementType: 'slide', elementId: newSlideId });
@@ -369,6 +368,16 @@ export default function EditorPage() {
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleAddSlideFromTemplate = async (templateKey: string) => {
+    const template = slideTemplates.find(t => t.key === templateKey);
+    if (template) {
+      await handleAddSlide(template.elements);
+    } else {
+      toast({title: "Error", description: "Template not found.", variant: "destructive"});
+    }
+    setShowTemplatesDialog(false); // Close dialog after selection or if template not found
   };
 
   const handleDeleteSlide = (slideIdToDelete: string) => {
@@ -389,7 +398,7 @@ export default function EditorPage() {
         if (currentSlideId === slideToDelete.id) {
           if (updatedSlides.length > 0) {
             const currentIndex = presentation.slides.findIndex(s => s.id === slideToDelete.id);
-            const nextSlideIndex = Math.max(0, Math.min(currentIndex -1, updatedSlides.length - 1)); // try previous, else next if possible
+            const nextSlideIndex = Math.max(0, Math.min(currentIndex -1, updatedSlides.length - 1)); 
             setCurrentSlideId(updatedSlides[nextSlideIndex]?.id || (updatedSlides[0]?.id || null));
           } else {
             setCurrentSlideId(null);
@@ -436,7 +445,6 @@ export default function EditorPage() {
       const updatedSlides = await apiMoveSlide(presentation.id, slideId, direction);
       if (updatedSlides) {
         toast({ title: "Slide Moved", description: "Slide order updated."});
-        // No specific activity log for move yet, could be added.
       } else {
         toast({ title: "Error", description: "Could not move slide or no change made.", variant: "default" });
       }
@@ -450,15 +458,16 @@ export default function EditorPage() {
 
   const handleShowSlideTemplates = () => {
     setShowTemplatesDialog(true);
+    setSelectedTool(null); // Deselect the template tool itself
   };
 
   const handleAddElement = async (position: {x: number, y: number}) => {
     if (!presentation || !currentSlideId || !selectedTool || !currentUser) return;
-    if (selectedTool.startsWith('ai-')) return;
+    if (selectedTool.startsWith('ai-') || selectedTool === 'templates') return; // Don't add element for these pseudo-tools
 
     let newElementPartial: Omit<SlideElement, 'id'> = {
         type: 'text' as SlideElementType,
-        content: '', // Default, will be overridden by specific types
+        content: '', 
         position,
         size: { width: 150, height: 50 },
         style: { fontFamily: 'PT Sans', fontSize: '16px', color: '#333333', backgroundColor: 'transparent', textAlign: 'left', opacity: 1 },
@@ -474,7 +483,7 @@ export default function EditorPage() {
         newElementPartial.size = { width: 200, height: 40 };
     } else if (selectedTool === 'image') {
         newElementPartial.type = 'image';
-        newElementPartial.content = 'https://placehold.co/300x200.png?text=New+Image'; // Placeholder URL
+        newElementPartial.content = 'https://placehold.co/300x200.png?text=New+Image'; 
         (newElementPartial.style as any)['data-ai-hint'] = 'abstract image';
         newElementPartial.size = { width: 300, height: 200 };
     } else if (selectedTool === 'shape-rectangle') {
@@ -491,21 +500,21 @@ export default function EditorPage() {
     } else if (selectedTool === 'icon') {
         newElementPartial.type = 'icon';
         newElementPartial.content = { name: 'smile' } as IconContent;
-        newElementPartial.style = { ...newElementPartial.style, color: '#333333', fontSize: '48px' }; // Icon size controlled by fontSize
+        newElementPartial.style = { ...newElementPartial.style, color: '#333333', fontSize: '48px' }; 
         newElementPartial.size = { width: 60, height: 60 };
     } else {
-        return; // Unknown tool
+        return; 
     }
 
     try {
         const newElementId = await apiAddElementToSlide(presentation.id, currentSlideId, newElementPartial);
-        await handleElementSelect(newElementId); // Acquire lock on the new element
+        await handleElementSelect(newElementId); 
         logPresentationActivity(presentation.id, currentUser.id, 'element_added', { elementType: newElementPartial.type, elementId: newElementId });
     } catch (error: any) {
         console.error("Error adding element:", error);
         toast({ title: "Error Adding Element", description: error.message || "Could not add the element.", variant: "destructive" });
     }
-    setSelectedTool(null); // Deselect tool after adding element
+    setSelectedTool(null); 
   };
 
   const handleDeleteElement = async (elementId: string) => {
@@ -513,7 +522,6 @@ export default function EditorPage() {
      const elementToDelete = currentSlide?.elements.find(el => el.id === elementId);
     if (!elementToDelete) return;
 
-    // Check lock before deleting
     if (elementToDelete.lockedBy && elementToDelete.lockedBy !== currentUser.id) {
         const lockerName = presentation.activeCollaborators?.[elementToDelete.lockedBy!]?.name || "another user";
         toast({ title: "Delete Failed", description: `Element is locked by ${lockerName}.`, variant: "destructive" });
@@ -525,7 +533,7 @@ export default function EditorPage() {
         toast({ title: "Element Deleted" });
         logPresentationActivity(presentation.id, currentUser.id, 'element_deleted', { elementType: elementToDelete.type, elementId });
         if (selectedElementId === elementId) {
-            setSelectedElementId(null); // Deselect
+            setSelectedElementId(null); 
         }
     } catch (error: any) {
         console.error("Error deleting element:", error);
@@ -622,7 +630,7 @@ export default function EditorPage() {
     if (presentationId && currentUser && isOnline) {
       updateUserCursorPosition(presentationId, currentUser.id, slideId, position);
     }
-  }, 100), [presentationId, currentUser, isOnline]); // Dependencies for throttle
+  }, 100), [presentationId, currentUser, isOnline]); 
 
   const handleMouseMoveOnCanvas = (position: { x: number; y: number } | null) => {
     if (currentSlideId && position && currentUser) {
@@ -652,8 +660,8 @@ export default function EditorPage() {
     const newElementPartial: Omit<SlideElement, 'id'> = {
         type: 'image',
         content: iconDataUri,
-        position: { x: 50, y: 50 }, // Default position
-        size: { width: 60, height: 60 }, // Default size for an icon
+        position: { x: 50, y: 50 }, 
+        size: { width: 60, height: 60 }, 
         style: { (('data-ai-hint' as any)): description, opacity: 1, backgroundColor: 'transparent' },
         zIndex: (currentSlide?.elements.length || 0) + 1,
         rotation: 0,
@@ -676,12 +684,12 @@ export default function EditorPage() {
         type: 'chart',
         content: { 
             type: suggestedConfig.chartType, 
-            data: {}, // User will fill this based on suggestion
+            data: {}, 
             label: suggestedConfig.titleSuggestion || 'New Chart',
             aiSuggestionNotes: `Data Mapping: ${suggestedConfig.dataMapping}\nAdditional Notes: ${suggestedConfig.additionalNotes || 'None'}`,
         } as ChartContent,
-        position: { x: 100, y: 100 }, // Default position
-        size: { width: 400, height: 300 }, // Default size
+        position: { x: 100, y: 100 }, 
+        size: { width: 400, height: 300 }, 
         style: { opacity: 1 },
         zIndex: (currentSlide?.elements.length || 0) + 1,
         rotation: 0,
@@ -703,9 +711,9 @@ export default function EditorPage() {
     setPasswordVerifiedInSession(true);
     sessionStorage.setItem(`passwordVerified_${presentationId}`, 'true');
     setIsPasswordPromptOpen(false);
-    setIsLoading(true); // Trigger re-evaluation of access and data loading
+    setIsLoading(true); 
     
-    const presDataToLog = presentation || await getPresentationByIdAdmin(presentationId); // Ensure we have presentation data
+    const presDataToLog = presentation || await getPresentationByIdAdmin(presentationId); 
 
     if (presDataToLog && currentUser) { 
         logPresentationActivity(presDataToLog.id, currentUser.id, 'presentation_viewed', { accessMethod: 'public_link_password' });
@@ -713,9 +721,7 @@ export default function EditorPage() {
         logPresentationActivity(presDataToLog.id, 'guest_password_verified', 'presentation_viewed', { accessMethod: 'public_link_password' });
     }
     
-    // Re-fetch or re-evaluate access based on presentation data already loaded or to be reloaded by listener
-    // No explicit fetch needed here as the listener should pick up.
-    setIsLoading(false); // Allow UI to proceed
+    setIsLoading(false); 
   };
 
   if (authLoading || isLoading) {
@@ -871,7 +877,7 @@ export default function EditorPage() {
           slides={presentation?.slides || []}
           currentSlideId={currentSlideId}
           onSlideSelect={handleSlideSelect}
-          onAddSlide={handleAddSlide}
+          onAddSlide={() => handleAddSlide()} // Default add slide (blank)
           onDeleteSlide={handleDeleteSlide}
           onDuplicateSlide={handleDuplicateSlide}
           onMoveSlide={handleMoveSlide}
@@ -952,19 +958,11 @@ export default function EditorPage() {
             </AlertDialogContent>
         </AlertDialog>
       )}
-       <AlertDialog open={showTemplatesDialog} onOpenChange={setShowTemplatesDialog}>
-            <AlertDialogContent>
-                <AlertDialogHeader>
-                    <AlertDialogTitle className="flex items-center"><LayoutTemplate className="mr-2 h-5 w-5" />Slide Templates</AlertDialogTitle>
-                    <AlertDialogDescription>
-                        This feature is coming soon! You'll be able to choose from a variety of pre-designed slide templates to kickstart your content.
-                    </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                    <AlertDialogAction onClick={() => setShowTemplatesDialog(false)}>Got it!</AlertDialogAction>
-                </AlertDialogFooter>
-            </AlertDialogContent>
-        </AlertDialog>
+      <TemplateSelectionDialog
+        isOpen={showTemplatesDialog}
+        onOpenChange={setShowTemplatesDialog}
+        onSelectTemplate={handleAddSlideFromTemplate}
+      />
 
         <div className="md:hidden fixed bottom-4 right-4 z-50">
           <Sheet>

@@ -18,9 +18,9 @@ import {
   Lightbulb, 
   MessageSquare, 
   LayoutTemplate,
-  Sparkles, // For toggling AI Panel
+  Sparkles, 
 } from "lucide-react";
-import { useRouter } from 'next/navigation'; // Import useRouter
+import { useRouter } from 'next/navigation'; 
 
 const editorTools = [
   { id: "text", label: "Text", icon: Type },
@@ -36,14 +36,14 @@ const actionTools = [
   { id: "redo", label: "Redo (Soon)", icon: Redo },
 ];
 
-const aiToolTriggers = [ // These select a tool that also opens the AI panel
+const aiToolTriggers = [ 
   { id: "ai-design", label: "AI Design Assist", icon: Palette },
   { id: "ai-content", label: "AI Content Writer", icon: Lightbulb },
 ];
 
 
 interface EditorToolbarProps {
-  presentationId: string; // Add presentationId prop
+  presentationId: string; 
   onToolSelect: (tool: string | null) => void; 
   onAction: (action: string) => void;
   onShowSlideTemplates: () => void;
@@ -51,7 +51,7 @@ interface EditorToolbarProps {
 }
 
 export function EditorToolbar({ presentationId, onToolSelect, onAction, onShowSlideTemplates, selectedTool }: EditorToolbarProps) {
-  const router = useRouter(); // Initialize useRouter
+  const router = useRouter(); 
 
   const handlePresent = () => {
     router.push(`/present/${presentationId}`);
@@ -69,7 +69,6 @@ export function EditorToolbar({ presentationId, onToolSelect, onAction, onShowSl
                 onClick={() => onToolSelect(selectedTool === tool.id ? null : tool.id)}
                 aria-label={tool.label}
                 aria-pressed={selectedTool === tool.id}
-                 // Enable chart and icon tools
               >
                 <tool.icon className="h-5 w-5" />
               </Button>
@@ -116,7 +115,7 @@ export function EditorToolbar({ presentationId, onToolSelect, onAction, onShowSl
               <Button 
                 variant={selectedTool === tool.id ? "secondary" : "ghost"} 
                 size="icon" 
-                onClick={() => onToolSelect(tool.id)} // Selects the tool which also opens AI panel
+                onClick={() => onToolSelect(tool.id)} 
                 aria-label={tool.label} 
                 className="text-accent hover:text-accent/90"
                 aria-pressed={selectedTool === tool.id}

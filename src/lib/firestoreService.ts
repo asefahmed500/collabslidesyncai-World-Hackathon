@@ -27,7 +27,7 @@ import type { Presentation, Slide, SlideElement, SlideComment, User as AppUserTy
 import { logTeamActivityInMongoDB } from './mongoTeamService'; 
 import { getUserByEmailFromMongoDB, getUserFromMongoDB as getUserProfileFromMongoDB } from './mongoUserService'; 
 import { v4 as uuidv4 } from 'uuid';
-import { sendEmail, createNewCommentEmail } from './emailService'; // Import email service
+import { sendEmail, createNewCommentEmail } from './emailService'; 
 
 const USER_COLORS = [
   '#FF6B6B', '#4ECDC4', '#45B7D1', '#FED766', '#2AB7CA',
@@ -263,9 +263,6 @@ export async function updatePresentation(presentationId: string, data: Partial<P
           }))
         }));
       } else if (typedKey === 'favoritedBy') {
-        // Handled by specific toggleFavoriteStatus function
-        // For direct updates, one might iterate through `data.favoritedBy`
-        // and set/delete fields: updatePayload[`favoritedBy.${userId}`] = data.favoritedBy[userId];
       } else if (typedKey !== 'id' && typedKey !== 'lastUpdatedAt' && typedKey !== 'createdAt') {
         updatePayload[typedKey] = data[typedKey];
       }
@@ -371,18 +368,28 @@ export async function addSlideToPresentation(presentationId: string, newSlideDat
 
     const slideId = uuidv4();
     const slideNumber = currentSlides.length + 1;
-    const defaultElementId = uuidv4();
+    
+    let finalElements: SlideElement[] = [];
+    if (newSlideData.elements && newSlideData.elements.length > 0) {
+      finalElements = newSlideData.elements.map(el => ({
+        ...el,
+        id: uuidv4(), // Ensure new ID for each element from template
+        lockedBy: null,
+        lockTimestamp: null,
+      }));
+    } else {
+       finalElements.push({
+        id: uuidv4(), type: 'text', content: `Slide ${slideNumber}`,
+        position: { x: 50, y: 50 }, size: { width: 400, height: 50 },
+        style: { fontFamily: 'Space Grotesk', fontSize: '24px', color: '#333333', backgroundColor: 'transparent', textAlign: 'left', fontWeight: 'normal', fontStyle: 'normal', textDecoration: 'none', opacity: 1 }, zIndex: 1, rotation: 0,
+        lockedBy: null, lockTimestamp: null,
+      });
+    }
 
-    const defaultElement: SlideElement = {
-      id: defaultElementId, type: 'text', content: `Slide ${slideNumber}`,
-      position: { x: 50, y: 50 }, size: { width: 400, height: 50 },
-      style: { fontFamily: 'Space Grotesk', fontSize: '24px', color: '#333333', backgroundColor: 'transparent', textAlign: 'left', fontWeight: 'normal', fontStyle: 'normal', textDecoration: 'none', opacity: 1 }, zIndex: 1, rotation: 0,
-      lockedBy: null, lockTimestamp: null,
-    };
 
     const newSlide: Slide = {
       id: slideId, presentationId: presentationId, slideNumber: slideNumber,
-      elements: newSlideData.elements || [defaultElement],
+      elements: finalElements,
       speakerNotes: newSlideData.speakerNotes || "", comments: newSlideData.comments || [],
       thumbnailUrl: newSlideData.thumbnailUrl || `https://placehold.co/160x90.png?text=S${slideNumber}`,
       backgroundColor: newSlideData.backgroundColor || '#FFFFFF',
@@ -626,9 +633,8 @@ export async function addCommentToSlide(presentationId: string, slideId: string,
         updatedSlides[slideIndex] = targetSlide;
         transaction.update(presRef, { slides: updatedSlides, lastUpdatedAt: serverTimestamp() });
         
-        // In-app notification
         const createdNotification = await createNotification(
-          presentationData.creatorId, // Notify presentation owner
+          presentationData.creatorId, 
           'comment_new',
           `New Comment on "${presentationData.title}"`,
           `${comment.userName} commented on slide ${targetSlide.slideNumber || slideIndex + 1}: "${comment.text.substring(0, 50)}${comment.text.length > 50 ? '...' : ''}"`,
@@ -638,7 +644,6 @@ export async function addCommentToSlide(presentationId: string, slideId: string,
           comment.userAvatarUrl
         );
 
-        // Email notification for presentation owner if comment is by someone else
         if (presentationData.creatorId !== comment.userId) {
           const ownerProfile = await getUserProfileFromMongoDB(presentationData.creatorId);
           if (ownerProfile && ownerProfile.email) {
@@ -662,7 +667,6 @@ export async function addCommentToSlide(presentationId: string, slideId: string,
             }
           }
         }
-        // TODO: Add logic for @mentions if implemented (would involve parsing comment.text)
     } else console.warn(`Slide ${slideId} not found in presentation ${presentationId}`);
   });
 }
@@ -891,10 +895,10 @@ export async function createNotification(
   actorId?: string, 
   actorName?: string,
   actorProfilePictureUrl?: string,
-  teamIdForAction?: string, // New parameter
-  roleForAction?: TeamRole   // New parameter
+  teamIdForAction?: string, 
+  roleForAction?: TeamRole   
 ): Promise<string> {
-  const notificationData: Partial<Omit<Notification, 'id'>> = { // Use Partial for flexibility
+  const notificationData: Partial<Omit<Notification, 'id'>> = { 
     userId,
     type,
     title,
@@ -972,8 +976,8 @@ export async function getPresentationsForModerationReview(): Promise<Presentatio
   const q = query(
     presentationsCollection,
     where('moderationStatus', '==', 'under_review'),
-    where('deleted', '==', false), // Typically, you'd only review active, non-deleted presentations
-    orderBy('lastUpdatedAt', 'desc') // Or a specific 'flaggedAt' timestamp if you add one
+    where('deleted', '==', false), 
+    orderBy('lastUpdatedAt', 'desc') 
   );
   const snapshot = await getDocs(q);
   return snapshot.docs.map(docSnap => ({ id: docSnap.id, ...convertTimestamps(docSnap.data()) } as Presentation));
@@ -1016,7 +1020,7 @@ export async function duplicatePresentation(originalPresentationId: string, newO
       lockedBy: null,
       lockTimestamp: null,
     })),
-    comments: [], // Comments are not typically duplicated
+    comments: [], 
   }));
 
   const newPresentationData: Omit<Presentation, 'id' | 'activeCollaborators'> = {
@@ -1026,11 +1030,11 @@ export async function duplicatePresentation(originalPresentationId: string, newO
     teamId: newOwnerTeamId || undefined,
     access: { [newOwnerId]: 'owner' },
     settings: {
-      isPublic: false, // Reset sharing settings
+      isPublic: false, 
       passwordProtected: false,
       commentsAllowed: true,
     },
-    branding: originalData.branding, // Keep original branding, or team branding if teamId is set
+    branding: originalData.branding, 
     thumbnailUrl: originalData.thumbnailUrl || `https://placehold.co/320x180.png?text=Copy`,
     version: 1,
     slides: renumberSlides(newSlides),
@@ -1039,7 +1043,7 @@ export async function duplicatePresentation(originalPresentationId: string, newO
     deleted: false,
     deletedAt: null,
     moderationStatus: 'active',
-    favoritedBy: {}, // Favorites are not copied
+    favoritedBy: {}, 
   };
 
   const newPresRef = await addDoc(presentationsCollection, newPresentationData);
@@ -1074,11 +1078,9 @@ export async function toggleFavoriteStatus(presentationId: string, userId: strin
     const currentFavoritedBy = presentation.favoritedBy || {};
     
     if (currentFavoritedBy[userId]) {
-      // Unfavorite: remove the field
       transaction.update(presRef, { [`favoritedBy.${userId}`]: deleteField(), lastUpdatedAt: serverTimestamp() });
       isNowFavorite = false;
     } else {
-      // Favorite: add the field
       transaction.update(presRef, { [`favoritedBy.${userId}`]: true, lastUpdatedAt: serverTimestamp() });
       isNowFavorite = true;
     }
@@ -1096,5 +1098,3 @@ export async function toggleFavoriteStatus(presentationId: string, userId: strin
 
 
 export { uuidv4 };
-
-
