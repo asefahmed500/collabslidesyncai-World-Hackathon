@@ -7,7 +7,7 @@ import { Zap, Menu, Home, Lightbulb, Tag, LayoutDashboard, Info, MessageSquare, 
 import { useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { ScrollArea } from '@/components/ui/scroll-area'; // Import ScrollArea
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 const publicNavLinks = [
   { href: "/", label: "Home", icon: Home },
@@ -45,9 +45,7 @@ export function LandingHeader() {
         </nav>
 
         <div className="hidden md:flex items-center space-x-2">
-          <Button variant="ghost" asChild>
-            <Link href="/login">Login</Link>
-          </Button>
+          {/* Login button removed from here */}
           <Button asChild>
             <Link href="/signup">Sign Up</Link>
           </Button>
@@ -88,10 +86,8 @@ export function LandingHeader() {
                     </Button>
                   ))}
                   <hr className="my-3"/>
-                  <Button asChild onClick={() => setIsMobileMenuOpen(false)}>
-                    <Link href="/login">Login</Link>
-                  </Button>
-                  <Button variant="outline" asChild onClick={() => setIsMobileMenuOpen(false)}>
+                  {/* Login button removed from mobile menu */}
+                  <Button variant="default" asChild onClick={() => setIsMobileMenuOpen(false)}>
                     <Link href="/signup">Sign Up</Link>
                   </Button>
                 </nav>

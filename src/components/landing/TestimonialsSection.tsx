@@ -26,6 +26,14 @@ const testimonials = [
   },
 ];
 
+const companyLogos = [
+  { src: "https://placehold.co/120x50.png?text=InnovateCorp", alt: "InnovateCorp Logo", dataAiHint:"company logo grey" },
+  { src: "https://placehold.co/110x45.png?text=SolutionsIO", alt: "SolutionsIO Logo", dataAiHint:"company logo tech" },
+  { src: "https://placehold.co/130x55.png?text=AlphaEnterprises", alt: "AlphaEnterprises Logo", dataAiHint:"company logo business" },
+  { src: "https://placehold.co/100x60.png?text=SynergySys", alt: "SynergySys Logo", dataAiHint:"company logo modern" },
+  { src: "https://placehold.co/125x50.png?text=NextGenLLC", alt: "NextGenLLC Logo", dataAiHint:"company logo finance" },
+];
+
 export function TestimonialsSection() {
   return (
     <section id="testimonials" className="py-16 md:py-24 bg-muted/30">
@@ -54,8 +62,8 @@ export function TestimonialsSection() {
         <div className="mt-16 text-center">
           <h3 className="text-xl font-semibold text-foreground/90 mb-8">Trusted by innovative companies of all sizes:</h3>
           <div className="flex flex-wrap justify-center items-center gap-x-12 gap-y-8">
-            {[...Array(5)].map((_, i) => (
-              <Image key={i} src={`https://placehold.co/120x60.png?text=Logo${i+1}`} alt={`Client Logo ${i+1}`} width={120} height={60} className="opacity-70 hover:opacity-100 transition-opacity" data-ai-hint="company logo grey" />
+            {companyLogos.map((logo, i) => (
+              <Image key={i} src={logo.src} alt={logo.alt} width={parseInt(logo.src.match(/(\d+)x(\d+)/)?.[1] || '120')} height={parseInt(logo.src.match(/(\d+)x(\d+)/)?.[2] || '60')} className="opacity-70 hover:opacity-100 transition-opacity" data-ai-hint={logo.dataAiHint} />
             ))}
           </div>
         </div>

@@ -3,7 +3,7 @@ import { LandingHeader } from '@/components/landing/LandingHeader';
 import { HeroSection } from '@/components/landing/HeroSection';
 import { FeaturesSection } from '@/components/landing/FeaturesSection';
 import { HowItWorksSection } from '@/components/landing/HowItWorksSection';
-import { DemoSection } from '@/components/landing/DemoSection';
+// DemoSection import removed
 import { PricingSection } from '@/components/landing/PricingSection';
 import { TestimonialsSection } from '@/components/landing/TestimonialsSection';
 import { FaqSection } from '@/components/landing/FaqSection';
@@ -17,7 +17,7 @@ export default function LandingPage() {
         <HeroSection />
         <FeaturesSection />
         <HowItWorksSection />
-        <DemoSection />
+        {/* DemoSection component removed from rendering */}
         <PricingSection />
         <TestimonialsSection />
         <FaqSection />
