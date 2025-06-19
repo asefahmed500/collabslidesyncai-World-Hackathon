@@ -4,8 +4,10 @@
 import { useState, useEffect } from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form"; // Controller is imported from here implicitly by FormField
+import { useForm } from "react-hook-form";
 import * as z from "zod";
+import PptxGenJS from "pptxgenjs";
+import { useRouter } from 'next/navigation';
 
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -13,9 +15,9 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import type { Presentation, PresentationAccessRole, User as AppUser } from "@/types";
+import type { Presentation, PresentationAccessRole, User as AppUser, SlideElement, Slide as SlideType } from "@/types";
 import { updatePresentationShareSettingsAction } from '@/app/editor/actions';
-import { Globe, Lock, Link as LinkIcon, UserPlus, Users, Trash2, Edit, Loader2, Copy, FileText, Image as ImageIconSvg, Film } from 'lucide-react';
+import { Globe, Lock, Link as LinkIcon, UserPlus, Users, Trash2, Edit, Loader2, Copy, FileText as FileTextIcon, Image as ImageIconSvg, Film } from 'lucide-react';
 import { Separator } from '../ui/separator';
 import { ScrollArea } from '../ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
@@ -51,6 +53,8 @@ function SubmitButton() {
 
 export function ShareDialog({ presentation, isOpen, onOpenChange, onPresentationUpdated, currentUser }: ShareDialogProps) {
   const { toast } = useToast();
+  const router = useRouter();
+  const [isExporting, setIsExporting] = useState(false);
   
   const [initialState, formAction] = useFormState(updatePresentationShareSettingsAction, {
     success: false,
@@ -113,6 +117,106 @@ export function ShareDialog({ presentation, isOpen, onOpenChange, onPresentation
         email: presentation.activeCollaborators?.[userId]?.email || 'Email not available',
         profilePictureUrl: presentation.activeCollaborators?.[userId]?.profilePictureUrl
     })) : [];
+
+  const handleExportPDF = () => {
+    if (!presentation) return;
+    setIsExporting(true);
+    toast({ title: "Preparing PDF Export...", description: "Your browser's print dialog will open. Please select 'Save as PDF'." });
+    const printWindow = window.open(`/present/${presentation.id}?print=true`, '_blank');
+    if (printWindow) {
+        printWindow.onload = () => {
+            setTimeout(() => { // Ensure content is loaded
+                printWindow.print();
+                setIsExporting(false);
+                // printWindow.close(); // Optional: close the window after print dialog
+            }, 1000); // Adjust delay if needed
+        };
+    } else {
+        toast({ title: "Popup Blocked?", description: "Please allow popups for this site to export as PDF.", variant: "destructive"});
+        setIsExporting(false);
+    }
+  };
+
+  const handleExportPPT = async () => {
+    if (!presentation) return;
+    setIsExporting(true);
+    toast({ title: "Generating PPTX...", description: "This might take a moment for larger presentations." });
+
+    try {
+        const pptx = new PptxGenJS();
+        pptx.layout = "LAYOUT_16X9";
+        pptx.author = currentUser?.name || "CollabSlideSyncAI User";
+        pptx.company = "CollabSlideSyncAI";
+        pptx.title = presentation.title;
+
+        for (const slideData of presentation.slides) {
+            const slide = pptx.addSlide();
+            slide.background = { color: slideData.backgroundColor?.replace('#', '') || "FFFFFF" };
+
+            for (const element of slideData.elements) {
+                const elX = (element.position.x / 960) * 100; // Base width 960 for editor
+                const elY = (element.position.y / 540) * 100; // Base height 540 for editor
+                const elW = (element.size.width / 960) * 100;
+                const elH = (element.size.height / 540) * 100;
+
+                const options: any = {
+                    x: `${elX}%`, y: `${elY}%`, w: `${elW}%`, h: `${elH}%`,
+                    rotate: element.rotation || 0,
+                };
+
+                if (element.type === 'text') {
+                    options.color = element.style.color?.replace('#', '') || '000000';
+                    options.fontFace = element.style.fontFamily || 'Arial';
+                    options.fontSize = parseFloat(element.style.fontSize || '18');
+                    options.align = element.style.textAlign || 'left';
+                    options.bold = element.style.fontWeight === 'bold';
+                    options.italic = element.style.fontStyle === 'italic';
+                    options.underline = element.style.textDecoration === 'underline';
+                    // Opacity is not directly supported per element in pptxgenjs easily
+                    slide.addText(element.content, options);
+                } else if (element.type === 'image' && typeof element.content === 'string') {
+                    // PptxGenJS can handle base64 data URIs and http(s) URLs for images
+                    slide.addImage({ ...options, path: element.content });
+                } else if (element.type === 'shape') {
+                    const shapeOptions: any = {
+                        ...options,
+                        fill: { color: element.style.backgroundColor?.replace('#', '') || 'CCCCCC' },
+                    };
+                    if (element.style.borderWidth && element.style.borderColor) {
+                        shapeOptions.line = {
+                            color: element.style.borderColor.replace('#', ''),
+                            width: element.style.borderWidth,
+                        };
+                    }
+                    if (element.style.shapeType === 'rectangle') {
+                        slide.addShape(pptx.shapes.RECTANGLE, shapeOptions);
+                    } else if (element.style.shapeType === 'circle') {
+                        slide.addShape(pptx.shapes.OVAL, shapeOptions);
+                    }
+                }
+            }
+        }
+        await pptx.writeFile({ fileName: `${presentation.title || 'presentation'}.pptx` });
+        toast({ title: "PPTX Exported", description: "Presentation downloaded successfully." });
+    } catch (error: any) {
+        console.error("PPTX Export Error:", error);
+        toast({ title: "PPTX Export Failed", description: error.message || "Could not generate PPTX.", variant: "destructive" });
+    } finally {
+        setIsExporting(false);
+    }
+  };
+
+  const handleExportImages = () => {
+    if (!presentation) return;
+    setIsExporting(true); // Indicate that an export process is starting
+    // The actual export will happen on the presentation page
+    router.push(`/present/${presentation.id}?exportAllImages=true`);
+    // Close the dialog after initiating navigation. User feedback will be on the presentation page.
+    onOpenChange(false);
+    // setIsExporting will be reset when component unmounts or if user navigates back
+    // For now, we just set it and let navigation handle the rest.
+    // If ShareDialog remains mounted, it might need a way to reset isExporting, but usually it unmounts.
+  };
 
 
   return (
@@ -284,16 +388,16 @@ export function ShareDialog({ presentation, isOpen, onOpenChange, onPresentation
             <Separator />
 
             <div className="space-y-4 p-4 border rounded-lg shadow-sm bg-muted/30">
-                <h3 className="text-lg font-semibold flex items-center"><FileText className="mr-2 h-5 w-5 text-primary"/> Export Presentation</h3>
+                <h3 className="text-lg font-semibold flex items-center"><FileTextIcon className="mr-2 h-5 w-5 text-primary"/> Export Presentation</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                    <Button type="button" variant="outline" disabled>
-                        <FileText className="mr-2 h-4 w-4" /> Export as PDF (Soon)
+                    <Button type="button" variant="outline" onClick={handleExportPDF} disabled={isExporting}>
+                        {isExporting ? <Loader2 className="animate-spin mr-2"/> : <FileTextIcon className="mr-2 h-4 w-4" />} Export as PDF
                     </Button>
-                    <Button type="button" variant="outline" disabled>
-                        <Film className="mr-2 h-4 w-4" /> Export as PPT (Soon)
+                    <Button type="button" variant="outline" onClick={handleExportPPT} disabled={isExporting}>
+                        {isExporting ? <Loader2 className="animate-spin mr-2"/> : <Film className="mr-2 h-4 w-4" />} Export as PPTX
                     </Button>
-                    <Button type="button" variant="outline" disabled>
-                        <ImageIconSvg className="mr-2 h-4 w-4" /> Export Images (Soon)
+                    <Button type="button" variant="outline" onClick={handleExportImages} disabled={isExporting}>
+                         {isExporting ? <Loader2 className="animate-spin mr-2"/> : <ImageIconSvg className="mr-2 h-4 w-4" />} Export Images (ZIP)
                     </Button>
                 </div>
             </div>
@@ -322,7 +426,7 @@ export function ShareDialog({ presentation, isOpen, onOpenChange, onPresentation
 
 
           <DialogFooter className="pt-4 border-t sticky bottom-0 bg-background py-3">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isExporting}>Cancel</Button>
             {isCurrentUserOwner && <SubmitButton />}
           </DialogFooter>
         </form>
