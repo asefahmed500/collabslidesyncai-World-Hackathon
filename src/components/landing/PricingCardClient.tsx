@@ -5,8 +5,8 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { CheckCircle, Loader2 } from 'lucide-react';
-import { cn } from "@/lib/utils";
-import { useToast } from '@/hooks/use-toast'; 
+import { cn } from "@/lib/utils"; // Added this import
+import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -27,17 +27,17 @@ interface PricingCardClientProps {
 }
 
 export function PricingCardClient({ plan }: PricingCardClientProps) {
-  const { toast } = useToast(); 
+  const { toast } = useToast();
   const { currentUser } = useAuth();
   const router = useRouter();
   const [isRedirecting, setIsRedirecting] = useState(false);
 
   const handleCtaClick = async (e: React.MouseEvent<HTMLButtonElement>) => {
-    e.preventDefault(); 
+    e.preventDefault();
 
     if (plan.name.toLowerCase() === "free") {
       router.push(plan.href); // Typically /signup or /dashboard
-      return; 
+      return;
     }
 
     if (!currentUser) {
@@ -49,7 +49,7 @@ export function PricingCardClient({ plan }: PricingCardClientProps) {
       router.push(`/login?redirect=/pricing&plan=${plan.href}`); // Redirect to login, then to pricing, then plan
       return;
     }
-    
+
     setIsRedirecting(true);
     try {
       const response = await fetch('/api/stripe/checkout-sessions', {
