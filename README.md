@@ -1,5 +1,4 @@
 
-
 # CollabDeck
 
 CollabDeck is a powerful, collaborative presentation editor built with Next.js, React, Tailwind CSS, ShadCN UI components, Firebase, MongoDB, and Genkit for AI-powered assistance. It enables users to create, share, and present dynamic slideshows with ease, leveraging real-time collaboration and intelligent features.
@@ -9,10 +8,11 @@ CollabDeck is a powerful, collaborative presentation editor built with Next.js, 
 *   **Frontend:** Next.js (App Router), React, TypeScript
 *   **UI:** ShadCN UI, Tailwind CSS
 *   **Backend/Database:**
-    *   **Firebase:** Authentication, Firestore (for presentation content, real-time collaboration, assets, notifications), Storage (for file uploads)
+    *   **Firebase:** Authentication, Firestore (for presentation content, real-time collaboration, asset metadata, notifications, user feedback), Storage (for file uploads)
     *   **MongoDB (Mongoose):** User profiles, Team information, Team activity logs
 *   **Generative AI:** Genkit (for AI flows like content generation, design suggestions, etc.)
-*   **Deployment:** Firebase App Hosting (configured)
+*   **Payment Processing:** Stripe (for subscriptions)
+*   **Deployment:** Firebase App Hosting (configured for basic Next.js export)
 
 ## How It Works
 
@@ -22,12 +22,12 @@ This section details the architecture and flow for key User and Admin features.
 
 #### 1. Authentication & Account Management
 *   **Authentication (Sign Up, Login, Social Login):**
-    *   Firebase Authentication handles the core auth process (email/password, Google).
+    *   Firebase Authentication handles the core auth process (email/password, Google, GitHub).
     *   Next.js Server Actions (`src/app/(auth)/actions.ts`) interface with Firebase Auth SDK.
     *   Upon successful Firebase authentication:
-        *   A user profile is created or retrieved in **MongoDB** via `mongoUserService.ts`. This profile stores user details like name, team associations, roles (within their team), and the `isAppAdmin` flag (defaulting to `false` for new users, making them standard platform users).
-        *   During email/password signup, a new team is also created in MongoDB for the user, and they are set as the owner of that team.
-    *   The `useAuth` hook (`src/hooks/useAuth.tsx`) provides client-side access to the current user's Firebase Auth state and their MongoDB profile.
+        *   A user profile is created or retrieved in **MongoDB** via `mongoUserService.ts` (called by `getOrCreateAppUserFromMongoDB` server action). This profile stores user details like name, team associations, roles (within their team), and the `isAppAdmin` flag (defaulting to `false`).
+        *   During email/password signup, a new team is also created in MongoDB for the user via `createTeamInMongoDB`, and they are set as the owner of that team.
+    *   The `useAuth` hook (`src/hooks/useAuth.tsx`) provides client-side access to the current user's Firebase Auth state and their MongoDB profile. It includes a `refreshCurrentUser` function to sync client-side state with backend updates.
 *   **Password Management (Forgot/Reset, Change):**
     *   Server Actions call Firebase Auth functions for sending reset emails or updating passwords.
     *   Password changes require re-authentication for security.
@@ -44,148 +44,137 @@ This section details the architecture and flow for key User and Admin features.
 *   **Data Source:** Presentation metadata (title, creator, team, last updated, etc.) is primarily fetched from **Firestore** (`presentations` collection).
 *   **Dashboard Page (`src/app/dashboard/page.tsx`):**
     *   Fetches presentations relevant to the logged-in user (created by them, shared with them, or accessible via their team) using `firestoreService.getPresentationsForUser()`.
-    *   Client-side filtering, sorting, and search are applied to the fetched data. View mode can be toggled between grid and list.
+    *   If user is not in a team, displays options to create a team (using `createTeamForExistingUser` Server Action) or accept pending team invitations (using `/api/teams/invitations/respond` API route).
+    *   Client-side filtering, sorting, and search are applied. View mode can be toggled between grid and list.
 *   **Create Presentation:**
-    *   A button click triggers `firestoreService.createPresentation()`, which adds a new presentation document to Firestore with an initial slide. The creator is automatically set as the owner.
+    *   Handled by `createPresentationAction` Server Action, which calls `firestoreService.originalCreatePresentation` and logs activity.
+*   **Duplicate, Delete, Favorite Presentation:**
+    *   Handled by Server Actions (`duplicatePresentationAction`, `deletePresentationAction`, `toggleFavoriteStatusAction`) which call respective `firestoreService` functions and log activity.
 *   **User Analytics (Presentations Created, Slides Created):**
     *   Calculated client-side on the dashboard based on the fetched presentation data for the current user.
 
 #### 3. Presentation Editor
-*   **Core Data & Real-time Sync:** All slide content (elements, styles, positions, comments, speaker notes) is stored in **Firestore** within the specific presentation document.
-    *   **Real-time updates:** The editor page (`src/app/editor/[id]/page.tsx`) establishes a real-time listener (using `onSnapshot`) to the presentation document in Firestore. Any changes made by any collaborator are pushed to all connected clients.
+*   **Core Data & Real-time Sync:** All slide content (elements, styles, positions, comments, speaker notes, background) is stored in **Firestore** within the specific presentation document.
+    *   **Real-time updates:** The editor page (`src/app/editor/[id]/page.tsx`) establishes a real-time listener (`onSnapshot`) to the presentation document in Firestore. Changes made by any collaborator are reflected for all connected clients. Data from Firestore Timestamps is converted to JS Dates.
 *   **Element Manipulation:**
-    *   Adding, deleting, or modifying elements (text, images, shapes) triggers updates to the `slides` array within the presentation document in Firestore via functions in `firestoreService.ts` (e.g., `addElementToSlide`, `updateElementInSlide`). Text elements support rich styling (font, color, alignment, z-index, opacity, rotation). Background colors can be customized for slides and elements. Placeholders for charts and icons are present.
+    *   Adding, deleting, or modifying elements (text, images, shapes, charts, icons) triggers updates to the `slides` array within the presentation document in Firestore via functions in `firestoreService.ts` (e.g., `addElementToSlide`, `updateElementInSlide`).
 *   **Slide Management:**
-    *   Users can add, delete, duplicate, and reorder slides through the `SlideThumbnailList` component, which interacts with `firestoreService` functions.
+    *   Users can add (blank or from template), delete, duplicate, and reorder slides through the `SlideThumbnailList` component, which interacts with `firestoreService` functions.
 
 #### 4. Real-Time Collaboration
-*   **Presence:** Each active user in the editor updates their presence (name, cursor color) in the `activeCollaborators` map within the presentation document in Firestore. This is handled by `firestoreService.updateUserPresence` and `removeUserPresence`.
-*   **Live Cursors:** Mouse movements are throttled and sent to Firestore to update the `cursorPosition` for the user in the `activeCollaborators` map. Other clients read this to display cursors.
-*   **Element Locking:** When a user selects an element, `firestoreService.acquireLock` attempts to set `lockedBy` (user ID) and `lockTimestamp` on that element in Firestore. Other users see the lock. Locks expire and are periodically checked/released by `releaseExpiredLocks`.
-*   **Comments:** Added to a `comments` array on the specific slide object within Firestore. Users can add, view, and resolve comments.
+*   **Presence:** Each active user in the editor updates their presence (name, cursor color, lastSeen) in the `activeCollaborators` map within the presentation document in Firestore. Handled by `firestoreService.updateUserPresence` and `removeUserPresence`.
+*   **Live Cursors:** Mouse movements are throttled and sent to Firestore to update `cursorPosition`.
+*   **Element Locking:** When a user selects an element, `firestoreService.acquireLock` attempts to set `lockedBy` and `lockTimestamp` on that element. Locks expire and are periodically checked/released by `releaseExpiredLocks`.
 
 #### 5. Sharing & Publishing
 *   **Share Dialog (`src/components/editor/ShareDialog.tsx`):**
-    *   Allows users to manage:
-        *   **Public Access & Password Protection:** Modifies `settings.isPublic` and `settings.passwordProtected` (and `settings.password`) in the presentation document (Firestore).
-        *   **Collaborator Invites:** Invites users by email. The system looks up the user in **MongoDB** (via `firestoreService.getUserByEmail`, which calls `mongoUserService`). If found, their ID and role are added to the `access` map in the presentation document (Firestore).
+    *   Uses `updatePresentationShareSettingsAction` Server Action to manage:
+        *   **Public Access & Password Protection:** Modifies `settings.isPublic`, `settings.passwordProtected`, `settings.password` in the presentation document (Firestore).
+        *   **Collaborator Invites:** Invites users by email. The system looks up the user in **MongoDB** (via `getUserByEmailFromMongoDB`). If found, their ID and role are added to the `access` map in the presentation document (Firestore). Notifications and emails are sent.
 *   **Access Control (Editor & Presentation View):**
-    *   When accessing `/editor/[id]` or `/present/[id]`, the system checks:
-        *   If the presentation is public (and if password-protected, prompts for password if not verified in session).
-        *   If the user is the creator.
-        *   If the user is listed in the `access` map.
-        *   If the presentation belongs to the user's team.
-        *   Platform Admins have override access (unless content is taken down).
-*   **Embed/Export:**
-    *   **Embed:** An iframe embed code is provided in the Share Dialog for view-only embedding.
-    *   **Export:** Placeholders in the UI for PDF, PPT, and Image export. Full implementation would require server-side rendering/conversion.
+    *   Determined by: public status, password (if set), direct user access grants, team membership, and platform admin override. Presentations marked `taken_down` are inaccessible.
+*   **Export Options:**
+    *   **PDF:** Opens a print-friendly view `/present/[id]?print=true`.
+    *   **PPTX:** Client-side generation using `PptxGenJS`.
+    *   **Images (ZIP):** Client-side generation using `html2canvas` and `jszip` via `/present/[id]?exportAllImages=true`.
+*   **Embed Code:** Provided for view-only embedding.
 
 #### 6. Presentation Viewing Mode (`/present/[id]`)
-*   **Data Source:** Fetches the presentation from Firestore, including a real-time listener for live updates if collaborators are editing.
-*   **Navigation & Display:** Client-side logic handles slide transitions (keyboard, click, on-screen buttons) and rendering. A toggleable speaker notes view is available. Full-screen mode is supported.
+*   **Data Source:** Fetches the presentation from Firestore, including real-time listener for live updates.
+*   **Navigation & Display:** Client-side logic for slide transitions, speaker notes, and fullscreen mode.
 
 #### 7. Team & Asset Management
 *   **Team Creation & Management:**
-    *   Teams are created in **MongoDB** during user signup (user becomes owner) or via a dedicated interface (if built).
+    *   Teams are created in **MongoDB** during user signup or via the "Manage Team" page if the user has no team.
     *   The "Manage Team" page (`src/app/dashboard/manage-team/page.tsx`) uses **API Routes** (`/api/teams/...`) to:
-        *   Update team name, branding (logo, colors, fonts) - (MongoDB - `mongoTeamService.updateTeamInMongoDB`).
-        *   Add/remove members, change roles (editor, viewer, admin) - (MongoDB - `mongoTeamService.addMemberToTeamInMongoDB`, etc.).
+        *   Fetch team data and activities (via Server Actions `getTeamDataAction`, `getTeamActivitiesAction`).
+        *   Update team name, branding, and settings (MongoDB - `mongoTeamService.updateTeamInMongoDB` via `PUT /api/teams/[teamId]`).
+        *   Add/remove members, change roles (MongoDB - `mongoTeamService` functions via `POST /api/teams/[teamId]/members` and `PUT/DELETE /api/teams/[teamId]/members/[memberId]`).
 *   **Team Asset Library:**
-    *   Asset metadata (filename, URLs, uploader, teamId) is stored in **Firestore** (`assets` collection).
-    *   Actual asset files (images) are uploaded to **Firebase Storage**.
-    *   The "Asset Library" page (`src/app/dashboard/assets/page.tsx`) fetches assets for the user's team from Firestore and allows uploads/deletions. Deletion also removes the file from Firebase Storage.
+    *   Asset metadata (filename, URLs, uploader, teamId) stored in **Firestore** (`assets` collection).
+    *   Actual asset files (images) uploaded to **Firebase Storage**.
+    *   "Asset Library" page (`src/app/dashboard/assets/page.tsx`) fetches assets for the user's team from Firestore and uses Server Actions (`createAssetMetadataAction`, `deleteAssetAction`) for uploads/deletions.
 *   **Team Activity Logs:**
-    *   Team-related activities (member changes, profile updates, etc.) are logged to the `teamActivities` collection in **MongoDB**.
-    *   These are viewable on the "Manage Team" page.
+    *   Team-related activities logged to `teamActivities` collection in **MongoDB**. Viewable on "Manage Team" page.
 
 #### 8. Notifications & Communication
-*   **In-App Notifications:**
-    *   Notifications are stored in a `notifications` collection in **Firestore**.
-    *   When an event occurs (e.g., team invite, presentation shared, new comment), a server action or API route calls `firestoreService.createNotification` to add a document for the recipient.
-    *   The `NotificationBell` component in the `SiteHeader` uses a real-time listener (`onSnapshot`) to fetch and display notifications for the current user, including an unread count. Users can mark all as read.
-*   **Email Notifications:** Backend support is stubbed for future implementation (e.g., via Firebase Functions).
+*   **In-App Notifications (`NotificationBell.tsx`):**
+    *   Notifications (team invites, shares, role changes, comments) stored in **Firestore** (`notifications` collection).
+    *   `NotificationBell` uses a real-time listener (`onSnapshot`) to fetch/display notifications. Users can mark all as read.
+    *   Actionable team invite notifications use API route `/api/teams/invitations/respond`.
+*   **Email Notifications (Placeholder):**
+    *   Basic email sending via `src/lib/emailService.ts` (currently logs to console). Templates for invites, role changes.
 
 #### 9. AI-Powered Assistance (Genkit)
-*   **AI Flows (`src/ai/flows/...`):** Implemented as Genkit flows, which are server-side functions.
-*   **Invocation:** The client-side AI Assistant Panel (`src/components/editor/AIAssistantPanel.tsx`) makes calls to these Genkit flows.
-*   **Functionality:** Genkit interacts with LLMs to provide:
-    *   Design suggestions (layout, color schemes).
-    *   Smart tips for presentation improvement.
-    *   Text improvement (clarity, grammar, professionalism, conciseness).
-    *   Content generation (rewrite, summarize, bullet points).
-    *   Tone adjustment.
-    *   Speaker notes generation.
-    *   Icon generation (from text).
-    *   Chart suggestions (from data description).
+*   **AI Flows (`src/ai/flows/...`):** Implemented as Genkit flows (server-side functions).
+*   **Invocation:** Client-side `AIAssistantPanel.tsx` calls these flows.
+*   **Functionality:** Design suggestions, smart tips, text improvement, content generation (rewrite, summarize, bullets), tone adjustment, speaker notes generation, icon generation (image), chart suggestions, background image generation.
 
 #### 10. Support & Help
-*   **Help Center Page (`/dashboard/help`):**
-    *   Displays FAQs using an accordion.
-    *   Provides links/placeholders for tutorials and contact methods.
-*   **Feedback/Bug Reporting:** A dialog (`FeedbackDialog`) collects user input. Currently, it logs to the console; a real system would send this to a backend or ticketing service.
-*   **AI Chatbot:** A UI (`AIChatbotWidget`) is present as a placeholder; a functional version would require a Genkit flow and an LLM backend.
-*   **Tutorials & Live Chat:** Marked as "Coming Soon" features.
+*   **Help Center Page (`/dashboard/help`):** FAQs, tutorial placeholders.
+*   **Feedback/Bug Reporting:** `FeedbackDialog` submits to `feedbackSubmissions` collection in Firestore via `submitFeedbackAction` Server Action.
+*   **AI Chatbot:** `AIChatbotWidget` uses `chatbotAssistantFlow` Genkit flow.
 
 ### Admin Features - How They Work
 
-Platform Admins (users with `isAppAdmin: true` in their MongoDB profile) have access to a separate `/admin` dashboard.
+Platform Admins (users with `isAppAdmin: true` in MongoDB) access `/admin`.
 
 #### 1. Admin Dashboard Layout & Access Control
-*   The layout `src/app/admin/layout.tsx` acts as a gatekeeper. It checks `currentUser.isAppAdmin` from the `useAuth` hook. If false, the user is redirected or shown an access denied message.
+*   Layout `src/app/admin/layout.tsx` verifies `currentUser.isAppAdmin`.
 
 #### 2. User Management (`/admin/users`)
-*   **Data Source:** Fetches all user documents directly from **MongoDB** using `mongoUserService.getAllUsersFromMongoDB()`.
+*   **Data Source:** Fetches all users from **MongoDB** via `mongoUserService.getAllUsersFromMongoDB()`.
 *   **Actions (Enable/Disable, Promote/Demote Admin, Reset Password, Delete):**
     *   Performed via **API Routes** (`/api/admin/users/[userId]/...`).
-    *   These API routes first verify the `actorUserId` (passed as a query param or in the body) is indeed a platform admin by checking their MongoDB profile.
-    *   Then, they call functions in `mongoUserService.ts` to modify user data in MongoDB.
-    *   Firebase Auth modifications (like actual password reset or disabling Firebase Auth user) are noted as placeholders requiring Firebase Admin SDK for full server-side execution.
+    *   APIs verify `actorUserId` is a platform admin.
+    *   Call `mongoUserService.ts` for MongoDB updates and Firebase Admin SDK (`src/lib/firebaseAdmin.ts`) for Firebase Auth changes (disable, delete user, generate reset link).
 
 #### 3. Team Oversight (`/admin/teams`)
-*   **Data Source:** Fetches all team documents directly from **MongoDB** using `mongoTeamService.getAllTeamsFromMongoDB()`.
+*   **Data Source:** Fetches all teams from **MongoDB** via `mongoTeamService.getAllTeamsFromMongoDB()`.
 *   **Delete Team:**
-    *   Performed via the API Route `DELETE /api/admin/teams/[teamId]`.
-    *   Verifies admin status of the caller.
-    *   Calls `mongoTeamService.deleteTeamFromMongoDB` which:
-        *   Removes the team document from MongoDB.
-        *   Updates all member user documents in MongoDB to remove `teamId` and set their role to 'guest'.
-        *   Logs team activities.
-    *   Calls `firestoreService.removeTeamIdFromPresentations` to clear the `teamId` field from any presentations in Firestore that were associated with the deleted team.
+    *   Performed via `DELETE /api/admin/teams/[teamId]`.
+    *   Verifies admin status. Calls `mongoTeamService.deleteTeamFromMongoDB` (updates members in MongoDB) and `firestoreService.removeTeamIdFromPresentations` (clears `teamId` in Firestore).
 
 #### 4. Presentation Oversight (`/admin/presentations`)
-*   **Data Source:** Fetches all presentation documents from **Firestore** using `firestoreService.getAllPresentationsForAdmin()`. This function can fetch active or soft-deleted presentations.
+*   **Data Source:** Fetches all presentations from **Firestore** via `firestoreService.getAllPresentationsForAdmin()`.
 *   **Actions (Soft Delete, Restore, Permanent Delete, Change Moderation Status):**
-    *   Performed via **API Routes** (`/api/admin/presentations/[presentationId]/...`).
-    *   These API routes verify the admin status of the caller.
-    *   They call functions in `firestoreService.ts` (e.g., `deletePresentation` (soft), `restorePresentation`, `permanentlyDeletePresentation`, `updatePresentationModerationStatus`) to modify the presentation document in Firestore.
-    *   Activity logging is done via `logPresentationActivity` and `logTeamActivityInMongoDB` (if applicable).
+    *   Via **API Routes** (`/api/admin/presentations/[presentationId]/...`).
+    *   Verify admin status. Call `firestoreService.ts` functions.
 
-#### 5. Content Moderation (`/admin/moderation`)
-*   **Manual Moderation:** Platform Admins use the "All Presentations" page to change a presentation's `moderationStatus` (active, under_review, taken_down) via the `/api/admin/presentations/[presentationId]/status` API route.
-*   **Content Access:** Presentations marked `taken_down` are not accessible to regular users in the editor or presentation view mode (logic in `src/app/editor/[id]/page.tsx` and `src/app/present/[id]/page.tsx`).
-*   **Automated Scanning/Review Queue:** Placeholder page; full implementation would involve AI services and a more complex backend.
+#### 5. Content Moderation Queue (`/admin/moderation`)
+*   **Review Queue:** Displays presentations from Firestore with `moderationStatus: 'under_review'`.
+*   **Actions:** Approve or take down presentations via API route, updating `moderationStatus` and `moderationNotes`.
 
-#### 6. System Management (Billing, Security Logs, Stats, Global Activity)
-*   These are primarily placeholder pages in the admin dashboard (`/admin/billing`, `/admin/security`, etc.).
-*   A full **Billing** system would require deep Stripe integration, webhook handling, and MongoDB schemas for subscriptions, plans, etc. The Stripe SDKs have been added to `package.json`.
-*   **Security Logs, Usage Statistics, and Global Activity** would require dedicated logging and data aggregation pipelines, likely involving both Firebase and MongoDB data, and potentially specialized analytics services.
+#### 6. User Feedback Management (`/admin/feedback`)
+*   **View Submissions:** Displays feedback from `feedbackSubmissions` collection in Firestore via `getFeedbackSubmissions`.
+*   **Manage Status:** Admins update feedback item status via `updateFeedbackStatus`.
 
-This detailed breakdown should clarify how the different parts of the application interact to deliver the user and admin features. The combination of Next.js (frontend and API routes), MongoDB (user/team data), and Firebase (auth, real-time presentation data, storage, notifications) creates a powerful and scalable architecture.
+#### 7. System Management (Billing, Security, Stats, Global Activity, Platform Settings)
+*   These are primarily placeholder pages in `/admin/...` (e.g., `/admin/billing`).
+*   **Stripe Billing:** `package.json` includes Stripe SDKs. API routes `/api/stripe/checkout-sessions`, `/api/stripe/create-portal-link`, and `/api/stripe/webhooks` are set up for subscription management. Webhooks update user premium status in MongoDB.
 
 ## Getting Started
 
 1.  **Prerequisites:**
     *   Node.js (version specified in `.nvmrc` or latest LTS)
     *   npm or yarn
-    *   Firebase Project: Set up a Firebase project with Authentication, Firestore, and Storage enabled.
-    *   MongoDB Instance: Set up a MongoDB Atlas cluster or a local instance.
-    *   Google Cloud Project: For Genkit AI features, ensure you have a Google Cloud project with the Vertex AI API enabled.
+    *   Firebase Project: Authentication, Firestore, Storage enabled.
+    *   MongoDB Instance: MongoDB Atlas cluster or local instance.
+    *   Google Cloud Project: For Genkit AI features, Vertex AI API enabled.
+    *   Stripe Account: For payment processing, with products and prices configured.
 
 2.  **Environment Variables:**
-    *   Copy `.env.example` to a new file named `.env` (or `.env.local`).
-    *   Fill in your Firebase project configuration details (API Key, Auth Domain, Project ID, etc.).
-    *   Add your `MONGODB_URI`.
-    *   Add your `GOOGLE_API_KEY` for Genkit if using Google AI models.
+    *   Copy `.env.example` to `.env` or `.env.local` (recommended, overrides `.env`).
+    *   Fill in:
+        *   Firebase config (e.g., `NEXT_PUBLIC_FIREBASE_API_KEY`)
+        *   `MONGODB_URI`
+        *   `GEMINI_API_KEY` (for Genkit/Google AI models, or `GOOGLE_API_KEY` if you named it that)
+        *   `STRIPE_SECRET_KEY`
+        *   `STRIPE_WEBHOOK_SECRET`
+        *   `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`
+        *   Stripe Price IDs (e.g., `NEXT_PUBLIC_STRIPE_PREMIUM_MONTHLY_PRICE_ID`, `NEXT_PUBLIC_STRIPE_PREMIUM_YEARLY_PRICE_ID`)
+        *   `NEXT_PUBLIC_APP_URL` (e.g., `http://localhost:9002` for dev)
+    *   Ensure `GOOGLE_APPLICATION_CREDENTIALS` environment variable is set to the path of your Firebase service account key JSON file for Firebase Admin SDK functionality (e.g., in admin user management).
 
 3.  **Installation:**
     ```bash
@@ -195,8 +184,8 @@ This detailed breakdown should clarify how the different parts of the applicatio
     ```
 
 4.  **Firestore Setup (if starting fresh):**
-    *   Ensure your Firestore security rules (`firestore.rules`) are deployed. A basic set of rules is provided.
-    *   No specific indexes (`firestore.indexes.json`) are strictly required for initial setup beyond default Firestore behavior, but you may add them for query optimization as your app scales.
+    *   Deploy Firestore security rules (`firestore.rules`).
+    *   Create necessary composite indexes in Firebase Console as prompted by errors or define them in `firestore.indexes.json` and deploy. The `notifications` index is pre-defined.
 
 5.  **Running the Development Server:**
     *   For Next.js app:
@@ -211,28 +200,19 @@ This detailed breakdown should clarify how the different parts of the applicatio
         # or
         yarn genkit:watch
         ```
-    Open [http://localhost:9002](http://localhost:9002) (or your configured port) to view the Next.js app.
-    The Genkit UI will typically be available at [http://localhost:4000](http://localhost:4000).
+    Open your configured port for Next.js (e.g., `http://localhost:9002`). Genkit UI is often at `http://localhost:4000`.
 
-6.  **Building for Production:**
+6.  **MongoDB Database Drop (Use with Caution):**
+    *   Ensure `tsx` is installed (`npm install -D tsx`).
+    *   Run: `npm run db:drop -- <databaseName>` (e.g., `npm run db:drop -- collabdb`)
+    *   This script requires confirmation.
+
+7.  **Building for Production:**
     ```bash
     npm run build
     # or
     yarn build
     ```
 
-## Important Notes for Firebase Studio Environment
-
-*   **Firebase Configuration:** Ensure `NEXT_PUBLIC_FIREBASE_API_KEY`, `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`, etc., are correctly set in the environment configuration for the Firebase Studio.
-*   **MongoDB URI:** The `MONGODB_URI` must also be configured in the environment where the Next.js backend runs.
-*   **Genkit:** If AI features are used, the necessary Google Cloud credentials/API keys for Genkit must be available in the runtime environment.
-
-This README provides a detailed overview of CollabDeck's features and setup.
-```
-# collabdeck-World-Hackathon
-This README now provides a good overview of the user features and how they are implemented within the CollabDeck application.
-
-    
-```
-    
+This README provides a detailed overview of CollabDeck.
 ```
