@@ -1,12 +1,11 @@
 
 "use client";
 
-import { useState, useEffect, useContext, createContext, ReactNode } from 'react';
+import { useState, useEffect, useContext, createContext, ReactNode, useCallback } from 'react';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { auth } from '@/lib/firebaseConfig';
 import type { User as AppUser } from '@/types';
-// Removed direct imports from mongoUserService
-import { getOrCreateAppUserFromMongoDB } from '@/app/(auth)/actions'; // Import the new server action
+import { getOrCreateAppUserFromMongoDB } from '@/app/(auth)/actions';
 import { GoogleAuthProvider, GithubAuthProvider } from 'firebase/auth';
 
 
@@ -14,6 +13,7 @@ interface AuthContextType {
   currentUser: AppUser | null;
   loading: boolean;
   firebaseUser: FirebaseUser | null;
+  refreshCurrentUser: () => Promise<void>; // New function
 }
 
 // Helper type for passing minimal Firebase user data to server actions
@@ -26,56 +26,73 @@ interface FirebaseUserMinimal {
   providerData: { providerId: string; uid?: string | undefined }[];
 }
 
-const AuthContext = createContext<AuthContextType>({ currentUser: null, loading: true, firebaseUser: null });
+const AuthContext = createContext<AuthContextType>({ 
+    currentUser: null, 
+    loading: true, 
+    firebaseUser: null,
+    refreshCurrentUser: async () => {}, // Default empty async function
+});
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
-      setFirebaseUser(fbUser);
-      if (fbUser) {
-        setLoading(true);
-        try {
-          // Prepare minimal data for server action
-          const fbUserMinimal: FirebaseUserMinimal = {
-            uid: fbUser.uid,
-            displayName: fbUser.displayName,
-            email: fbUser.email,
-            photoURL: fbUser.photoURL,
-            emailVerified: fbUser.emailVerified,
-            providerData: fbUser.providerData.map(pd => ({ // Ensure providerData is mapped correctly
-                providerId: pd.providerId,
-                uid: pd.uid // Make sure uid is included from providerData if it exists
-            }))
-          };
-          
-          // Call the server action to get or create the AppUser from MongoDB
-          const appUserFromMongo = await getOrCreateAppUserFromMongoDB(fbUserMinimal);
-          setCurrentUser(appUserFromMongo);
-
-        } catch (error) {
-            console.error("Error fetching or creating user profile via server action:", error);
-            setCurrentUser(null);
-        } finally {
-            setLoading(false);
-        }
-      } else {
+  const fetchAndSetAppUser = useCallback(async (fbUser: FirebaseUser | null) => {
+    if (fbUser) {
+      setLoading(true);
+      try {
+        const fbUserMinimal: FirebaseUserMinimal = {
+          uid: fbUser.uid,
+          displayName: fbUser.displayName,
+          email: fbUser.email,
+          photoURL: fbUser.photoURL,
+          emailVerified: fbUser.emailVerified,
+          providerData: fbUser.providerData.map(pd => ({
+            providerId: pd.providerId,
+            uid: pd.uid
+          }))
+        };
+        const appUserFromMongo = await getOrCreateAppUserFromMongoDB(fbUserMinimal);
+        setCurrentUser(appUserFromMongo);
+      } catch (error) {
+        console.error("Error fetching or creating user profile via server action:", error);
         setCurrentUser(null);
+      } finally {
         setLoading(false);
       }
-    });
-
-    return () => unsubscribe();
+    } else {
+      setCurrentUser(null);
+      setLoading(false);
+    }
   }, []);
 
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (fbUserInstance) => {
+      setFirebaseUser(fbUserInstance);
+      fetchAndSetAppUser(fbUserInstance);
+    });
+    return () => unsubscribe();
+  }, [fetchAndSetAppUser]);
+
+  const refreshCurrentUser = useCallback(async () => {
+    const currentFbUser = auth.currentUser; // Get the most recent Firebase user
+    if (currentFbUser) {
+      await fetchAndSetAppUser(currentFbUser);
+    } else {
+      // If Firebase user is null (e.g., after logout), ensure app user is also null
+      setCurrentUser(null);
+    }
+  }, [fetchAndSetAppUser]);
+
+
   return (
-    <AuthContext.Provider value={{ currentUser, firebaseUser, loading }}>
+    <AuthContext.Provider value={{ currentUser, firebaseUser, loading, refreshCurrentUser }}>
       {children}
     </AuthContext.Provider>
   );
 }
 
 export const useAuth = () => useContext(AuthContext);
+

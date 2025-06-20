@@ -57,7 +57,7 @@ function PasswordSubmitButton() {
 
 
 export default function ProfilePage() {
-  const { currentUser, firebaseUser, loading: authLoading } = useAuth();
+  const { currentUser, firebaseUser, loading: authLoading, refreshCurrentUser } = useAuth(); // Added refreshCurrentUser
   const router = useRouter();
   const { toast } = useToast();
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -96,9 +96,12 @@ export default function ProfilePage() {
   useEffect(() => {
     if (profileFormState.message) {
       toast({ title: profileFormState.success ? "Success" : "Error", description: profileFormState.message, variant: profileFormState.success ? "default" : "destructive" });
-      if (profileFormState.success) router.refresh(); 
+      if (profileFormState.success) {
+        refreshCurrentUser(); // Refresh context
+        router.refresh(); // Refresh server components
+      }
     }
-  }, [profileFormState, toast, router]);
+  }, [profileFormState, toast, router, refreshCurrentUser]);
 
   useEffect(() => {
     if (passwordFormState.message) {
@@ -113,6 +116,7 @@ export default function ProfilePage() {
     const result = await deleteUserAccountServer(currentUser.id);
     if (result.success) {
       toast({ title: "Account Deleted", description: "Your account has been successfully deleted." });
+      await refreshCurrentUser(); // Ensure auth state is cleared
       router.push('/'); 
     } else {
       toast({ title: "Deletion Failed", description: result.message, variant: "destructive" });
@@ -131,7 +135,7 @@ export default function ProfilePage() {
         const response = await fetch('/api/stripe/create-portal-link', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ customerId: currentUser.stripeCustomerId }), // Ensure body is passed if API expects it
+            body: JSON.stringify({ customerId: currentUser.stripeCustomerId }), 
         });
         const data = await response.json();
         if (data.success && data.url) {
@@ -161,7 +165,7 @@ export default function ProfilePage() {
       });
       const sessionData = await response.json();
       if (response.ok && sessionData.success && sessionData.url) {
-        router.push(sessionData.url); // Redirect to Stripe Checkout
+        router.push(sessionData.url); 
       } else {
         throw new Error(sessionData.message || "Failed to create Stripe Checkout session.");
       }
@@ -356,3 +360,4 @@ export default function ProfilePage() {
     </div>
   );
 }
+

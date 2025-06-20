@@ -62,7 +62,7 @@ function CreateTeamSubmitButton() {
 }
 
 export default function DashboardPage() {
-  const { currentUser, loading: authLoading } = useAuth();
+  const { currentUser, loading: authLoading, refreshCurrentUser } = useAuth(); // Added refreshCurrentUser
   const router = useRouter();
   const { toast } = useToast();
 
@@ -132,13 +132,15 @@ export default function DashboardPage() {
         toast({ title: "Team Created!", description: createTeamFormState.message });
         createTeamForm.reset();
         
-        router.refresh();
-        fetchData(); 
+        refreshCurrentUser().then(() => { // Refresh current user context
+            router.refresh(); // Then refresh server components
+            fetchData(); // Then re-fetch client-side data
+        });
       } else {
         toast({ title: "Error", description: createTeamFormState.message, variant: "destructive" });
       }
     }
-  }, [createTeamFormState, toast, createTeamForm, router, fetchData]);
+  }, [createTeamFormState, toast, createTeamForm, router, fetchData, refreshCurrentUser]);
 
 
   const handleCreateNewPresentation = async () => {
@@ -210,8 +212,9 @@ export default function DashboardPage() {
         if (result.success) {
             toast({ title: `Invitation ${action === 'accept' ? 'Accepted' : 'Declined'}`, description: result.message });
             
-            router.refresh();
-            fetchData(); 
+            await refreshCurrentUser(); // Refresh current user context
+            router.refresh(); // Then refresh server components
+            fetchData(); // Then re-fetch client-side data
         } else {
             toast({ title: 'Error', description: result.message, variant: 'destructive' });
         }
