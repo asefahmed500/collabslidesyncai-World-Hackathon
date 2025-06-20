@@ -4,57 +4,70 @@ import TeamModel, { type TeamDocument, type TeamMemberDocument } from '@/models/
 import UserModel from '@/models/User'; 
 import TeamActivityModel from '@/models/TeamActivity';
 import type { Team, TeamMember, TeamRole, TeamActivity, TeamActivityType, User as AppUser } from '@/types';
-import mongoose, { Types } from 'mongoose'; // Import mongoose for session
+import mongoose, { Types } from 'mongoose';
 import { updateUserTeamAndRoleInMongoDB } from './mongoUserService';
 import { createNotification } from './firestoreService'; 
 import { sendEmail, createTeamInviteEmail } from './emailService'; 
 
+const ensureDate = (dateInput: any): Date => {
+  if (!dateInput) return new Date(); // Fallback or throw error based on requirements
+  if (dateInput instanceof Date) return dateInput;
+  if (typeof dateInput === 'object' && dateInput.toDate && typeof dateInput.toDate === 'function') {
+    return dateInput.toDate(); // Firestore Timestamp
+  }
+  return new Date(dateInput); // String or number
+};
+
 function mongoTeamDocToTeam(doc: TeamDocument | null): Team | null {
   if (!doc) return null;
-  const teamObject = doc.toObject({ virtuals: true }) as any; 
+  const teamObject = doc.toObject({ virtuals: true, versionKey: false }); 
   
-  if (teamObject.members && teamObject.members instanceof Map) {
-    const newMembersObj: { [key: string]: any } = {};
-    teamObject.members.forEach((value: any, key: string) => {
-      const memberPlain = typeof value.toObject === 'function' ? value.toObject() : value;
-      newMembersObj[key] = { ...memberPlain, joinedAt: new Date(memberPlain.joinedAt) };
-    });
-    teamObject.members = newMembersObj;
-  } else if (teamObject.members && typeof teamObject.members === 'object' && !(teamObject.members instanceof Map)) {
-     const newMembersObj: { [key: string]: any } = {};
-     Object.entries(teamObject.members).forEach(([key, value]: [string, any]) => {
-        newMembersObj[key] = { ...value, joinedAt: new Date(value.joinedAt) };
-     });
-     teamObject.members = newMembersObj;
+  const members: { [key: string]: TeamMember } = {};
+  if (teamObject.members && (teamObject.members instanceof Map || typeof teamObject.members === 'object')) {
+    const memberEntries = teamObject.members instanceof Map ? Array.from(teamObject.members.entries()) : Object.entries(teamObject.members);
+    for (const [key, value] of memberEntries) {
+      members[key] = {
+        ...(typeof value === 'object' && value !== null ? value : {}), // Ensure value is an object
+        joinedAt: ensureDate((value as any)?.joinedAt),
+      } as TeamMember;
+    }
   }
   
-  // Handle pendingInvitations if it exists
-  if (teamObject.pendingInvitations && teamObject.pendingInvitations instanceof Map) {
-    const newPendingInvitesObj: { [key: string]: any } = {};
-    teamObject.pendingInvitations.forEach((value: any, key: string) => {
-        const invitePlain = typeof value.toObject === 'function' ? value.toObject() : value;
-        newPendingInvitesObj[key] = { ...invitePlain, invitedAt: new Date(invitePlain.invitedAt) };
-    });
-    teamObject.pendingInvitations = newPendingInvitesObj;
+  const pendingInvitations: Team['pendingInvitations'] = {};
+  if (teamObject.pendingInvitations && (teamObject.pendingInvitations instanceof Map || typeof teamObject.pendingInvitations === 'object')) {
+    const inviteEntries = teamObject.pendingInvitations instanceof Map ? Array.from(teamObject.pendingInvitations.entries()) : Object.entries(teamObject.pendingInvitations);
+    for (const [key, value] of inviteEntries) {
+      if (pendingInvitations) { // Type guard
+        pendingInvitations[key] = {
+          ...(typeof value === 'object' && value !== null ? value : {}),
+          invitedAt: ensureDate((value as any)?.invitedAt),
+        } as Team['pendingInvitations'] extends infer P | undefined ? P extends object ? P[string] : never : never;
+      }
+    }
   }
 
-
-  delete teamObject._id; 
-  delete teamObject.__v;
-  return {
-    ...teamObject,
-    id: teamObject.id, 
-    createdAt: teamObject.createdAt instanceof Date ? teamObject.createdAt : new Date(teamObject.createdAt),
-    lastUpdatedAt: teamObject.lastUpdatedAt instanceof Date ? teamObject.lastUpdatedAt : new Date(teamObject.lastUpdatedAt),
-  } as Team;
+  const team: Team = {
+    id: teamObject.id || doc._id.toString(),
+    name: teamObject.name,
+    ownerId: teamObject.ownerId,
+    members,
+    pendingInvitations: Object.keys(pendingInvitations || {}).length > 0 ? pendingInvitations : undefined,
+    branding: teamObject.branding || { primaryColor: '#3F51B5', secondaryColor: '#E8EAF6', accentColor: '#9C27B0', fontPrimary: 'Space Grotesk', fontSecondary: 'PT Sans' },
+    settings: teamObject.settings || { allowGuestEdits: false, aiFeaturesEnabled: true },
+    createdAt: teamObject.createdAt ? ensureDate(teamObject.createdAt) : undefined,
+    lastUpdatedAt: teamObject.lastUpdatedAt ? ensureDate(teamObject.lastUpdatedAt) : undefined,
+  };
+  return team;
 }
 
 function mongoActivityDocToActivity(doc: any): TeamActivity {
-    const activityObject = doc.toObject({ virtuals: true });
+    const activityObject = typeof doc.toObject === 'function' ? doc.toObject({ virtuals: true, versionKey: false }) : doc;
+
     return {
         ...activityObject,
-        id: activityObject._id.toString(), 
-        createdAt: new Date(activityObject.createdAt),
+        id: activityObject.id || activityObject._id?.toString(),
+        createdAt: ensureDate(activityObject.createdAt),
+        details: activityObject.details || {},
     } as TeamActivity;
 }
 
@@ -93,7 +106,7 @@ export async function createTeamInMongoDB(teamName: string, ownerUser: AppUser):
       },
     });
     const savedTeam = await newTeam.save();
-    await logTeamActivityInMongoDB(savedTeam.id, ownerUser.id, 'team_created', { teamName: savedTeam.name });
+    await logTeamActivityInMongoDB(savedTeam.id.toString(), ownerUser.id, 'team_created', { teamName: savedTeam.name });
     return mongoTeamDocToTeam(savedTeam);
   } catch (error) {
     console.error('Error creating team in MongoDB:', error);
@@ -132,7 +145,7 @@ export async function updateTeamInMongoDB(teamId: string, updates: Partial<Omit<
         }
     }
 
-    const updatedTeamDoc = await TeamModel.findByIdAndUpdate(teamId, updatePayload, { new: true }).exec();
+    const updatedTeamDoc = await TeamModel.findByIdAndUpdate(teamId, { $set: updatePayload, $currentDate: { lastUpdatedAt: true } }, { new: true }).exec();
     return mongoTeamDocToTeam(updatedTeamDoc);
   } catch (error) {
     console.error('Error updating team in MongoDB:', error);
@@ -164,7 +177,7 @@ export async function addMemberToTeamInMongoDB(teamId: string, userToInvite: App
       invitedByUserId,
       inviter?.name || undefined,
       inviter?.profilePictureUrl || undefined,
-      team.id, 
+      team.id.toString(), 
       role      
     );
 
@@ -177,7 +190,7 @@ export async function addMemberToTeamInMongoDB(teamId: string, userToInvite: App
         invitedAt: new Date(),
         token: '', 
     });
-
+    team.lastUpdatedAt = new Date();
     const savedTeam = await team.save();
 
     if (userToInvite.email && inviter) {
@@ -269,7 +282,6 @@ export async function processTeamInvitation(
       };
       team.members.set(invitedUserId, newMember as TeamMemberDocument);
       
-      // Update user document
       invitedUser.teamId = team.id.toString(); 
       invitedUser.role = roleToAssign;
       await invitedUser.save({ session });
@@ -285,7 +297,7 @@ export async function processTeamInvitation(
         'generic_info',
         `Invitation Accepted: ${invitedUser.name || invitedUser.email}`,
         `${invitedUser.name || invitedUser.email} accepted your invitation to join Team "${team.name}" as a ${roleToAssign}.`,
-        `/dashboard/manage-team?teamId=${team.id}`,
+        `/dashboard/manage-team?teamId=${team.id.toString()}`,
         invitedUserId, invitedUser.name, invitedUser.profilePictureUrl
       );
 
@@ -305,6 +317,7 @@ export async function processTeamInvitation(
     }
 
     team.pendingInvitations?.delete(invitedUserId);
+    team.lastUpdatedAt = new Date();
     const savedTeam = await team.save({ session });
     await session.commitTransaction();
     return mongoTeamDocToTeam(savedTeam);
@@ -326,11 +339,12 @@ export async function removeMemberFromTeamInMongoDB(teamId: string, memberIdToRe
   try {
     const team = await TeamModel.findById(teamId).session(session);
     if (!team) throw new Error('Team not found.');
-    const memberBeingRemoved = team.members.get(memberIdToRemove);
-    if (!memberBeingRemoved) throw new Error('Member not found in team.');
+    const memberBeingRemovedData = team.members.get(memberIdToRemove);
+    if (!memberBeingRemovedData) throw new Error('Member not found in team.');
     if (team.ownerId === memberIdToRemove) throw new Error('Cannot remove the team owner.');
 
     team.members.delete(memberIdToRemove);
+    team.lastUpdatedAt = new Date();
     const savedTeam = await team.save({ session });
 
     const user = await UserModel.findById(memberIdToRemove).session(session);
@@ -340,7 +354,7 @@ export async function removeMemberFromTeamInMongoDB(teamId: string, memberIdToRe
         await user.save({ session });
     }
     await session.commitTransaction();
-    await logTeamActivityInMongoDB(teamId, actorId, 'member_removed', { memberName: memberBeingRemoved.name || memberBeingRemoved.email }, 'user', memberIdToRemove);
+    await logTeamActivityInMongoDB(teamId, actorId, 'member_removed', { memberName: memberBeingRemovedData.name || memberBeingRemovedData.email }, 'user', memberIdToRemove);
     return mongoTeamDocToTeam(savedTeam);
   } catch (error) {
     await session.abortTransaction();
@@ -366,6 +380,7 @@ export async function updateMemberRoleInMongoDB(teamId: string, memberId: string
     const oldRole = member.role;
     member.role = newRole;
     team.members.set(memberId, member);
+    team.lastUpdatedAt = new Date();
     const savedTeam = await team.save({ session });
 
     const user = await UserModel.findById(memberId).session(session);
@@ -392,7 +407,7 @@ export async function logTeamActivityInMongoDB(
   details?: object,
   targetType?: TeamActivity['targetType'],
   targetId?: string,
-  session?: mongoose.ClientSession // Optional session for transactions
+  session?: mongoose.ClientSession
 ): Promise<string> {
   await dbConnect();
   try {
@@ -413,7 +428,7 @@ export async function logTeamActivityInMongoDB(
     }
 
 
-    const activityData: Partial<TeamActivity> = {
+    const activityData: Partial<Omit<TeamActivity, 'id'>> = { // Omit 'id' as it's auto-generated by Mongo
       teamId,
       actorId,
       actorName: actor?.name || actor?.email || actorId, 
@@ -426,7 +441,7 @@ export async function logTeamActivityInMongoDB(
 
     const activity = new TeamActivityModel(activityData);
     const savedActivity = await activity.save({ session });
-    return savedActivity.id;
+    return savedActivity.id.toString(); // Return string ID
   } catch (error) {
     console.error('Error logging team activity in MongoDB:', error);
     throw error;
@@ -440,6 +455,7 @@ export async function getTeamActivitiesFromMongoDB(teamId: string, limitCount = 
       .sort({ createdAt: -1 })
       .limit(limitCount)
       .exec();
+    // Mongoose's .map already processes documents if not using .lean()
     return activities.map(mongoActivityDocToActivity);
   } catch (error) {
     console.error('Error fetching team activities from MongoDB:', error);
@@ -518,7 +534,10 @@ export async function getPendingTeamInvitationsForUserByEmail(email: string): Pr
         const userInvites: Team[] = [];
         for (const teamDoc of teamsWithPendingInvites) {
             if (teamDoc.pendingInvitations) {
-                for (const [_inviteId, inviteDetails] of teamDoc.pendingInvitations.entries()) {
+                // Mongoose Map uses .get() to retrieve values by key
+                // but here pendingInvitations is likely already a plain object after toObject
+                const invitesMap = teamDoc.pendingInvitations;
+                for (const inviteDetails of invitesMap.values()) { // Iterate over values of the Map
                     if (inviteDetails.email === email) {
                         const team = mongoTeamDocToTeam(teamDoc);
                         if(team) userInvites.push(team);

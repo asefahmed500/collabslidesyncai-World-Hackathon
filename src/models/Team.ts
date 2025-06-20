@@ -74,16 +74,18 @@ const TeamSchema = new Schema<TeamDocument>(
     timestamps: true, 
     toJSON: {
       virtuals: true,
+      versionKey: false, // Removes __v
       transform: function(doc, ret) {
-        delete ret._id; 
-        delete ret.__v; 
+        // ret.id = ret._id.toString(); // Ensure 'id' is string from _id
+        // delete ret._id; // No longer needed if virtuals:true and versionKey:false handle it well
       }
     },
     toObject: {
       virtuals: true,
+      versionKey: false, // Removes __v
       transform: function(doc, ret) {
-        delete ret._id;
-        delete ret.__v;
+        // ret.id = ret._id.toString();
+        // delete ret._id;
       }
     },
   }

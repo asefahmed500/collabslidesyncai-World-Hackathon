@@ -4,25 +4,52 @@ import UserModel, { type UserDocument } from '@/models/User';
 import type { User as AppUser, TeamRole } from '@/types';
 import type { User as FirebaseUser } from 'firebase/auth';
 import { GoogleAuthProvider, GithubAuthProvider } from 'firebase/auth';
+import type { Timestamp as FirestoreTimestamp } from 'firebase/firestore'; // For type consistency if needed
 
 function mongoDocToAppUser(doc: UserDocument | null): AppUser | null {
   if (!doc) return null;
-  // Using .toObject() with virtuals: true should handle 'id' correctly.
-  const userObject = doc.toObject({ virtuals: true }) as AppUser & { _id?: any, __v?: any };
+  // Use toObject to get a plain JS object, virtuals: true includes 'id', versionKey: false removes '__v'
+  const userObject = doc.toObject({ virtuals: true, versionKey: false });
+
+  const ensureDate = (dateInput: any): Date => {
+    if (!dateInput) return new Date(); // Fallback, though schema has defaults
+    if (dateInput instanceof Date) return dateInput;
+    // FirestoreTimestamp check is more for Firestore data, but good for robustness if types mix
+    if (typeof dateInput === 'object' && dateInput.toDate && typeof dateInput.toDate === 'function') { // Check for Firestore Timestamp like objects
+      return dateInput.toDate();
+    }
+    return new Date(dateInput); // General case for strings or numbers
+  };
   
-  // Ensure 'id' is the Firebase UID from _id
-  userObject.id = doc._id; // Directly use _id as it's the Firebase UID
-
-  delete userObject._id; // Remove MongoDB specific _id if toObject didn't map it to id correctly
-  delete userObject.__v;
-
-  // Ensure dates are Date objects
-  return {
-    ...userObject,
-    lastActive: userObject.lastActive instanceof Date ? userObject.lastActive : new Date(userObject.lastActive),
-    createdAt: userObject.createdAt instanceof Date ? userObject.createdAt : new Date(userObject.createdAt as any),
-    updatedAt: userObject.updatedAt instanceof Date ? userObject.updatedAt : new Date(userObject.updatedAt as any),
-  } as AppUser;
+  const appUser: AppUser = {
+    // Ensure id is derived correctly (virtual 'id' should give string from _id)
+    // and that all fields match AppUser type.
+    id: userObject.id || doc._id.toString(), // doc._id is the Firebase UID string
+    name: userObject.name,
+    email: userObject.email,
+    emailVerified: userObject.emailVerified,
+    profilePictureUrl: userObject.profilePictureUrl,
+    teamId: userObject.teamId || null,
+    role: userObject.role || 'guest',
+    lastActive: ensureDate(userObject.lastActive),
+    createdAt: userObject.createdAt ? ensureDate(userObject.createdAt) : undefined,
+    updatedAt: userObject.updatedAt ? ensureDate(userObject.updatedAt) : undefined,
+    settings: userObject.settings || { darkMode: false, aiFeatures: true, notifications: true },
+    isAppAdmin: userObject.isAppAdmin || false,
+    disabled: userObject.disabled || false,
+    googleId: userObject.googleId || null,
+    githubId: userObject.githubId || null,
+    twoFactorEnabled: userObject.twoFactorEnabled || false,
+    isPremium: userObject.isPremium || false,
+    stripeCustomerId: userObject.stripeCustomerId || null,
+    stripeSubscriptionId: userObject.stripeSubscriptionId || null,
+    subscriptionPlan: userObject.subscriptionPlan || null,
+    subscriptionStartDate: userObject.subscriptionStartDate ? ensureDate(userObject.subscriptionStartDate) : null,
+    subscriptionEndDate: userObject.subscriptionEndDate ? ensureDate(userObject.subscriptionEndDate) : null,
+  };
+  // Remove any MongoDB specific _id if it's still there after toObject, though virtuals:true should handle it.
+  // delete (appUser as any)._id; 
+  return appUser;
 }
 
 export async function createUserInMongoDB(firebaseUser: FirebaseUser, additionalData: Partial<AppUser> = {}): Promise<AppUser | null> {
@@ -64,7 +91,6 @@ export async function createUserInMongoDB(firebaseUser: FirebaseUser, additional
       googleId: firebaseUser.providerData.find(p => p.providerId === GoogleAuthProvider.PROVIDER_ID)?.uid || additionalData.googleId || null,
       githubId: firebaseUser.providerData.find(p => p.providerId === GithubAuthProvider.PROVIDER_ID)?.uid || additionalData.githubId || null,
       twoFactorEnabled: additionalData.twoFactorEnabled || false,
-      // Spread additionalData last to ensure it overrides defaults if provided
       ...additionalData,
     });
     const savedUser = await newUser.save();
@@ -110,12 +136,11 @@ export async function getUserByEmailFromMongoDB(email: string): Promise<AppUser 
 export async function updateUserInMongoDB(userId: string, updates: Partial<AppUser>): Promise<AppUser | null> {
   await dbConnect();
   try {
-    // Prevent changing _id, and ensure dates like createdAt/updatedAt are handled by Mongoose
     const { id, _id, createdAt, updatedAt, ...safeUpdates } = updates;
     const updatePayload = { ...safeUpdates, lastActive: new Date() };
     
     const updatedUserDoc = await UserModel.findByIdAndUpdate(
-      userId, // Use Firebase UID as _id for querying
+      userId, 
       updatePayload,
       { new: true, runValidators: true }
     ).exec();
@@ -127,7 +152,6 @@ export async function updateUserInMongoDB(userId: string, updates: Partial<AppUs
 }
 
 export async function updateUserTeamAndRoleInMongoDB(userId: string, teamId: string | null, role: TeamRole | 'guest'): Promise<AppUser | null> {
-  // If teamId is null, role should probably default to 'guest' or be handled as per app logic
   const effectiveRole = teamId ? role : 'guest';
   return updateUserInMongoDB(userId, { teamId, role: effectiveRole });
 }
@@ -136,8 +160,6 @@ export async function updateUserTeamAndRoleInMongoDB(userId: string, teamId: str
 export async function deleteUserFromMongoDB(userId: string): Promise<boolean> {
   await dbConnect();
   try {
-    // Before deleting user, consider if they are an owner of any teams.
-    // This logic is now handled in the API route that calls this.
     const result = await UserModel.findByIdAndDelete(userId).exec();
     return !!result;
   } catch (error) {
@@ -156,4 +178,3 @@ export async function getAllUsersFromMongoDB(): Promise<AppUser[]> {
     return [];
   }
 }
-

@@ -4,7 +4,7 @@ import type { User as UserType, TeamRole } from '@/types';
 
 export interface UserDocument extends Omit<UserType, 'id' | 'lastActive' | 'createdAt' | 'updatedAt' | '_id'>, Document {
   _id: string; // Firebase UID will be used as _id
-  role: TeamRole | 'guest'; // Role within their primary team, or 'guest' if no team
+  role: TeamRole | 'guest'; 
   lastActive: Date;
   createdAt?: Date;
   updatedAt?: Date;
@@ -15,7 +15,6 @@ export interface UserDocument extends Omit<UserType, 'id' | 'lastActive' | 'crea
   disabled?: boolean; 
   teamId?: string | null;
 
-  // Stripe Subscription Fields
   isPremium?: boolean;
   stripeCustomerId?: string | null;
   stripeSubscriptionId?: string | null;
@@ -32,14 +31,14 @@ const UserSettingsSchema = new Schema({
 
 const UserSchema = new Schema<UserDocument>(
   {
-    _id: { type: String, required: true }, // Firebase UID
+    _id: { type: String, required: true }, 
     name: { type: String, trim: true, index: true },
     email: {
       type: String,
       unique: true,
       lowercase: true,
       trim: true,
-      sparse: true // Allows multiple null/undefined emails if not set, but unique if set
+      sparse: true 
     },
     emailVerified: { type: Boolean, default: false },
     profilePictureUrl: { type: String, trim: true },
@@ -49,11 +48,10 @@ const UserSchema = new Schema<UserDocument>(
     settings: { type: UserSettingsSchema, default: () => ({ darkMode: false, aiFeatures: true, notifications: true }) },
     isAppAdmin: { type: Boolean, default: false },
     disabled: { type: Boolean, default: false },
-    googleId: { type: String, sparse: true, unique: true, default: null }, // Unique if present
-    githubId: { type: String, sparse: true, unique: true, default: null }, // Unique if present
+    googleId: { type: String, sparse: true, unique: true, default: null }, 
+    githubId: { type: String, sparse: true, unique: true, default: null }, 
     twoFactorEnabled: { type: Boolean, default: false },
 
-    // Stripe Subscription Fields
     isPremium: { type: Boolean, default: false },
     stripeCustomerId: { type: String, default: null, index: true, sparse: true },
     stripeSubscriptionId: { type: String, default: null, index: true, sparse: true },
@@ -62,31 +60,27 @@ const UserSchema = new Schema<UserDocument>(
     subscriptionEndDate: { type: Date, default: null },
   },
   {
-    timestamps: true, // Adds createdAt and updatedAt
+    timestamps: true, 
     toJSON: {
       virtuals: true, 
-      // Customize toJSON to ensure 'id' (from virtual) is present and '_id' is removed
       transform: function(doc, ret) {
-        ret.id = ret._id; // Ensure 'id' virtual is included
-        delete ret._id;
-        delete ret.__v;
+        // ret.id = ret._id; // Ensure 'id' virtual is included via virtuals:true
+        delete ret._id; // _id is still present after toObject if not explicitly deleted by transform
+        // delete ret.__v; // versionKey:false in toObject below handles this
       }
     },
-    toObject: {
+    toObject: { // Ensure toObject also applies transformations
       virtuals: true, 
-      // Customize toObject similarly
+      versionKey: false, // Removes __v
       transform: function(doc, ret) {
-        ret.id = ret._id;
-        delete ret._id;
-        delete ret.__v;
+        // delete ret._id; // _id is used for the virtual 'id'
       }
     },
   }
 );
 
-// Virtual for 'id' to match Firebase UID convention (_id is already the Firebase UID)
 UserSchema.virtual('id').get(function (this: UserDocument) {
-  return this._id;
+  return this._id.toString(); // Ensure it's a string
 });
 
 

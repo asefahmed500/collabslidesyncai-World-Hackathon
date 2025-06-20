@@ -1,18 +1,18 @@
 
 import mongoose, { Schema, Document, Model, Types } from 'mongoose';
-import type { TeamActivity as TeamActivityType, TeamActivityType as ActivityTypeEnum } from '@/types'; // Removed unused Role imports
+import type { TeamActivity as TeamActivityType, TeamActivityType as ActivityTypeEnum } from '@/types';
 
 export interface TeamActivityDocument extends Omit<TeamActivityType, 'id' | 'createdAt'>, Document {
   _id: Types.ObjectId;
-  id?: string; // virtual getter for consistency if used, though _id.toString() is standard
-  createdAt: Date; // Mongoose timestamp
+  id?: string; 
+  createdAt: Date; 
 }
 
 const TeamActivitySchema = new Schema<TeamActivityDocument>(
   {
-    teamId: { type: String, required: true, index: true }, // Changed from ObjectId to String if teamId is a Mongoose ObjectId string
-    actorId: { type: String, required: true, index: true }, // Firebase UID
-    actorName: { type: String }, // Denormalized from User model
+    teamId: { type: String, required: true, index: true }, 
+    actorId: { type: String, required: true, index: true }, 
+    actorName: { type: String }, 
     actionType: {
       type: String,
       enum: [
@@ -25,24 +25,26 @@ const TeamActivitySchema = new Schema<TeamActivityDocument>(
       required: true,
     },
     targetType: { type: String, enum: ['user', 'presentation', 'team_profile', 'asset', 'invitation'] },
-    targetId: { type: String, index: true, sparse: true }, // Can be User UID, Presentation ID (Firestore), Asset ID (Firestore)
-    targetName: { type: String }, // Denormalized name of the target
+    targetId: { type: String, index: true, sparse: true }, 
+    targetName: { type: String }, 
     details: { type: Schema.Types.Mixed, default: () => ({}) },
   },
   {
-    timestamps: { createdAt: true, updatedAt: false }, // Only manage createdAt
+    timestamps: { createdAt: true, updatedAt: false }, 
     toJSON: {
       virtuals: true,
+      versionKey: false, 
       transform: function(doc, ret) {
-        delete ret._id;
-        delete ret.__v;
+        // ret.id = ret._id.toString();
+        // delete ret._id;
       }
     },
     toObject: {
       virtuals: true,
+      versionKey: false,
       transform: function(doc, ret) {
-        delete ret._id;
-        delete ret.__v;
+        // ret.id = ret._id.toString();
+        // delete ret._id;
       }
     },
   }
@@ -61,5 +63,3 @@ if (mongoose.models.TeamActivity) {
 }
 
 export default TeamActivityModel;
-
-
