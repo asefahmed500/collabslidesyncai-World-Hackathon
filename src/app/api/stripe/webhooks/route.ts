@@ -1,5 +1,5 @@
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/headers';
 import { headers } from 'next/headers';
 import Stripe from 'stripe';
 import { updateUserInMongoDB } from '@/lib/mongoUserService';
@@ -39,20 +39,27 @@ export async function POST(request: NextRequest) {
   switch (event.type) {
     case 'checkout.session.completed':
       const session = event.data.object as Stripe.Checkout.Session;
+      const clientReferenceId = session.client_reference_id; // Should be your app's userId
       const userIdFromMetadata = session.metadata?.userId;
-      const userEmail = session.customer_details?.email;
+      const userEmailFromDetails = session.customer_details?.email;
       const stripeCustomerId = session.customer as string;
       const stripeSubscriptionId = session.subscription as string;
       
       let userToUpdate;
-      if (userIdFromMetadata) {
+
+      if (clientReferenceId) {
+        userToUpdate = await UserModel.findById(clientReferenceId).exec();
+      }
+      if (!userToUpdate && userIdFromMetadata) {
         userToUpdate = await UserModel.findById(userIdFromMetadata).exec();
-      } else if (userEmail) {
-        userToUpdate = await UserModel.findOne({ email: userEmail }).exec();
+      }
+      if (!userToUpdate && userEmailFromDetails) {
+        userToUpdate = await UserModel.findOne({ email: userEmailFromDetails }).exec();
       }
 
       if (!userToUpdate) {
-        console.error(`🔴 User not found for metadata ID: ${userIdFromMetadata} or email: ${userEmail}`);
+        console.error(`🔴 User not found for client_reference_id: ${clientReferenceId}, metadata ID: ${userIdFromMetadata}, or email: ${userEmailFromDetails}. Checkout session ID: ${session.id}`);
+        // Potentially create a new user if your flow supports it, or log for manual intervention
         break; 
       }
       
@@ -92,7 +99,9 @@ export async function POST(request: NextRequest) {
             const newEndDate = new Date(subscriptionDetails.current_period_end * 1000);
             await updateUserInMongoDB(userWithPaidInvoice.id, { 
               subscriptionEndDate: newEndDate,
-              isPremium: true, 
+              isPremium: true, // Ensure premium status is active
+              // Optionally update start date if it's a new cycle after a pause
+              subscriptionStartDate: new Date(subscriptionDetails.current_period_start * 1000),
             });
             console.log(`✅ Invoice payment succeeded for subscription: ${subIdForInvoice}. User ${userWithPaidInvoice.id} subscription end date updated to ${newEndDate.toLocaleDateString()}.`);
             // TODO: Send payment receipt email (optional, Stripe can also do this)
@@ -110,10 +119,14 @@ export async function POST(request: NextRequest) {
       if (subIdForFailed) {
         const userWithFailedPayment = await UserModel.findOne({ stripeSubscriptionId: subIdForFailed }).exec();
         if (userWithFailedPayment) {
-          // Potentially update user status, e.g., to 'past_due' or trigger dunning.
-          // For now, just log and suggest email.
-          console.log(`⚠️ User ${userWithFailedPayment.id} payment failed. Consider notifying user.`);
-          // await updateUserInMongoDB(userWithFailedPayment.id, { subscriptionStatus: 'past_due' }); // Example: if you add such a field
+          // Update user status. Depending on your Stripe settings for retries,
+          // you might set `isPremium: false` here or after all retries fail.
+          // For now, let's assume Stripe handles dunning and we only act on final cancellation.
+          await updateUserInMongoDB(userWithFailedPayment.id, { 
+            // isPremium: false, // Consider if this should be immediate or after dunning.
+            // subscriptionStatus: 'past_due' // If you add such a field in your User model
+          });
+          console.log(`⚠️ User ${userWithFailedPayment.id} payment failed. Consider notifying user. Current premium status might be maintained during dunning.`);
           // TODO: Send payment failed email
         } else {
            console.error(`🔴 User not found for subscription ID: ${subIdForFailed} during invoice.payment_failed`);
@@ -123,7 +136,7 @@ export async function POST(request: NextRequest) {
       
     case 'customer.subscription.updated':
       const updatedSubscription = event.data.object as Stripe.Subscription;
-      console.log(`🔄 Subscription updated: ${updatedSubscription.id}, Status: ${updatedSubscription.status}`);
+      console.log(`🔄 Subscription updated: ${updatedSubscription.id}, Status: ${updatedSubscription.status}, Cancel at period end: ${updatedSubscription.cancel_at_period_end}`);
       const customerIdForUpdate = updatedSubscription.customer as string;
       
       const userToUpdateSubscription = await UserModel.findOne({ stripeCustomerId: customerIdForUpdate }).exec();
@@ -132,36 +145,46 @@ export async function POST(request: NextRequest) {
         break;
       }
 
-      const newIsPremiumStatus = updatedSubscription.status === 'active' || updatedSubscription.status === 'trialing';
-      const newPlanUpdated = updatedSubscription.items.data[0]?.price?.lookup_key || 'unknown_plan'; // Using lookup_key if set
+      // Determine if the subscription is effectively active
+      const isActiveStatus = updatedSubscription.status === 'active' || updatedSubscription.status === 'trialing';
+      const newIsPremiumStatus = isActiveStatus && !updatedSubscription.cancel_at_period_end;
+      
+      const newPlanUpdated = updatedSubscription.items.data[0]?.price?.lookup_key || userToUpdateSubscription.subscriptionPlan || 'unknown_plan';
       const newEndDateUpdated = updatedSubscription.current_period_end ? new Date(updatedSubscription.current_period_end * 1000) : null;
+      const newStartDateUpdated = updatedSubscription.current_period_start ? new Date(updatedSubscription.current_period_start * 1000) : null;
 
       await updateUserInMongoDB(userToUpdateSubscription.id, { 
         isPremium: newIsPremiumStatus,
         subscriptionPlan: newPlanUpdated as any,
+        subscriptionStartDate: newStartDateUpdated,
         subscriptionEndDate: newEndDateUpdated,
-        stripeSubscriptionId: updatedSubscription.id, // Ensure it's up-to-date
-        // Optionally update subscriptionStartDate if it's a new subscription from an update (e.g. trial end)
-        subscriptionStartDate: updatedSubscription.start_date ? new Date(updatedSubscription.start_date * 1000) : userToUpdateSubscription.subscriptionStartDate,
+        stripeSubscriptionId: updatedSubscription.id, 
       });
       console.log(`🔄 User ${userToUpdateSubscription.id} subscription updated. Status: ${updatedSubscription.status}, Plan: ${newPlanUpdated}, isPremium: ${newIsPremiumStatus}`);
+      
+      if (updatedSubscription.cancel_at_period_end && isActiveStatus) {
+        console.log(`User ${userToUpdateSubscription.id} subscription is set to cancel at period end (${newEndDateUpdated?.toLocaleDateString()}). Premium access remains until then.`);
+        // TODO: Send email about pending cancellation
+      }
       break;
 
-    case 'customer.subscription.deleted': 
+    case 'customer.subscription.deleted': // Handles cancellations that have taken effect (subscription ended)
       const deletedSubscription = event.data.object as Stripe.Subscription;
       console.log(`🚫 Subscription deleted/canceled: ${deletedSubscription.id}`);
       const customerIdForDelete = deletedSubscription.customer as string;
       
-      const userWithDeletedSubscription = await UserModel.findOne({ stripeCustomerId: customerIdForDelete }).exec();
+      const userWithDeletedSubscription = await UserModel.findOne({ stripeCustomerId: customerIdForDelete, stripeSubscriptionId: deletedSubscription.id }).exec();
       if (!userWithDeletedSubscription) {
-        console.error(`🔴 User not found for Stripe Customer ID: ${customerIdForDelete} during customer.subscription.deleted`);
+        console.error(`🔴 User not found for Stripe Customer ID: ${customerIdForDelete} and Subscription ID: ${deletedSubscription.id} during customer.subscription.deleted`);
         break;
       }
 
       await updateUserInMongoDB(userWithDeletedSubscription.id, { 
         isPremium: false, 
         subscriptionPlan: null,
-        stripeSubscriptionId: null, 
+        stripeSubscriptionId: null, // Clear the specific subscription ID
+        // stripeCustomerId can remain for future subscriptions
+        subscriptionStartDate: null,
         subscriptionEndDate: deletedSubscription.ended_at ? new Date(deletedSubscription.ended_at * 1000) : new Date(), 
       });
       console.log(`🚫 User ${userWithDeletedSubscription.id} premium access revoked due to subscription cancellation/deletion.`);
@@ -174,4 +197,3 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({ received: true, event_type: event.type });
 }
-
