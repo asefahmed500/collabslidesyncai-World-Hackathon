@@ -1,116 +1,78 @@
 
 import mongoose from 'mongoose';
-import * as readline from 'readline';
-import dotenv from 'dotenv';
+import { config } from 'dotenv';
+import * as readline from 'node:readline/promises';
+import { stdin as input, stdout as output } from 'node:process';
 import path from 'path';
 
-// Load environment variables from .env or .env.local at the project root
-dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
-dotenv.config({ path: path.resolve(process.cwd(), '.env') }); // .env will not override .env.local
+// Load environment variables from .env.local first, then .env at the project root
+config({ path: path.resolve(process.cwd(), '.env.local') });
+config({ path: path.resolve(process.cwd(), '.env') }); // .env will not override .env.local
 
 const MONGODB_URI = process.env.MONGODB_URI;
 
-if (!MONGODB_URI) {
-  console.error(
-    '\x1b[31m%s\x1b[0m', // Red color
-    'Error: MONGODB_URI is not defined in your .env or .env.local file.'
-  );
-  process.exit(1);
-}
-
-const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout,
-});
-
-const askQuestion = (query: string): Promise<string> => {
-  return new Promise((resolve) => rl.question(query, resolve));
-};
-
-async function dropDatabase() {
-  const dbNameFromArgs = process.argv[2];
-
-  if (!dbNameFromArgs) {
-    console.error(
-      '\x1b[31m%s\x1b[0m',
-      'Error: Please provide the database name as a command-line argument.'
-    );
-    console.log('Usage: npm run db:drop -- <databaseName>');
-    console.log('Example: npm run db:drop -- collabdb');
-    rl.close();
+async function resetDatabase() {
+  if (!MONGODB_URI) {
+    console.error('\n❌ ERROR: MONGODB_URI is not defined in your .env file.');
+    console.error('Please ensure your .env file contains a valid MONGODB_URI.');
     process.exit(1);
   }
 
-  // Extract the database name from the MONGODB_URI for comparison
-  let defaultDbName = '';
-  try {
-    const url = new URL(MONGODB_URI);
-    defaultDbName = url.pathname.substring(1).split('?')[0]; // Remove leading '/' and query params
-  } catch (e) {
-    console.error('\x1b[31m%s\x1b[0m', 'Error: Invalid MONGODB_URI format.');
-    rl.close();
+  // Safety check for production environment
+  if (process.env.NODE_ENV === 'production' && process.env.ALLOW_PROD_DB_RESET !== 'true') {
+    console.error('\n❌ ERROR: Database reset is disabled in production environment.');
+    console.error('This script is intended for development/testing purposes only.');
+    console.error('To enable reset in a production-like environment (EXTREMELY DANGEROUS),');
+    console.error('you MUST set the ALLOW_PROD_DB_RESET=true environment variable.');
     process.exit(1);
   }
 
-  console.log(
-    '\x1b[33m%s\x1b[0m', // Yellow color
-    `WARNING: You are about to drop the database named "${dbNameFromArgs}".`
-  );
-  if (dbNameFromArgs === defaultDbName) {
-    console.log(
-      '\x1b[33m%s\x1b[0m',
-      `This is the default database specified in your MONGODB_URI.`
-    );
-  }
-  console.log('\x1b[31m%s\x1b[0m', 'This action is IRREVERSIBLE and will delete all data in this database.');
+  console.warn('\n⚠️ WARNING: This script will permanently delete ALL data in the database specified by MONGODB_URI.');
+  console.warn(`   Database URI: ${MONGODB_URI}`);
+  console.warn('   This operation is IRREVERSIBLE.\n');
 
-  const confirmation = await askQuestion(
-    `Type the database name "${dbNameFromArgs}" again to confirm: `
-  );
-
-  if (confirmation !== dbNameFromArgs) {
-    console.log('\x1b[32m%s\x1b[0m', 'Database drop cancelled. Confirmation did not match.');
-    rl.close();
-    process.exit(0);
-  }
+  const rl = readline.createInterface({ input, output });
 
   try {
-    // To drop a specific database, we connect to *any* database (often 'admin' or the default one in URI)
-    // and then switch to the target database to drop it.
-    // Mongoose connect method implicitly uses the db from the URI. If target is different, need to adjust.
+    const confirmationDBName = MONGODB_URI.split('/').pop()?.split('?')[0] || 'unknown_db_name_from_uri';
+    
+    if (confirmationDBName === 'unknown_db_name_from_uri' || confirmationDBName.trim() === '') {
+        console.error('\n❌ ERROR: Could not automatically determine the database name from MONGODB_URI.');
+        console.error('   Please ensure your MONGODB_URI is correctly formatted and includes the database name.');
+        console.error('   Example: mongodb://user:pass@host:port/MY_DATABASE_NAME?options');
+        process.exit(1);
+    }
+    
+    console.log(`   ℹ️  To proceed, you MUST type the exact database name: "${confirmationDBName}"`);
+    
+    const answer = await rl.question(`Type the database name "${confirmationDBName}" to confirm dropping it, or anything else to cancel: `);
+    
+    if (answer !== confirmationDBName) {
+      console.log('\n🚫 Database reset aborted by user. The string typed did not match the required database name.');
+      process.exit(0);
+    }
 
-    let tempUri = MONGODB_URI;
-    // If dbNameFromArgs is different from defaultDbName, we need to make sure we connect to a db to issue drop command for *another* db
-    // If MONGODB_URI already specifies the target DB, Mongoose connection.db points to it.
-    // If MONGODB_URI specifies a *different* DB, we can still drop the target DB.
-    // For simplicity, we'll connect using the provided MONGODB_URI and then use the connection.db object.
+    console.log('\n🔄 Proceeding with database reset...');
+    await mongoose.connect(MONGODB_URI);
+    console.log('✅ Connected to MongoDB.');
 
-    await mongoose.connect(tempUri, {
-      // bufferCommands: false, // Optional: Mongoose specific
-    });
-    console.log(`Connected to MongoDB instance (using URI default DB for connection).`);
+    const dbName = mongoose.connection.name;
+    if (!mongoose.connection.db) {
+      throw new Error('MongoDB connection is not established or db is undefined.');
+    }
+    await mongoose.connection.db.dropDatabase();
+    console.log(`✅ Database "${dbName}" dropped successfully.`);
 
-    // Get a reference to the database to be dropped
-    const dbToDrop = mongoose.connection.client.db(dbNameFromArgs);
-
-    console.log(`Attempting to drop database "${dbNameFromArgs}"...`);
-    await dbToDrop.dropDatabase();
-
-    console.log(
-      '\x1b[32m%s\x1b[0m', // Green color
-      `Database "${dbNameFromArgs}" dropped successfully.`
-    );
   } catch (error) {
-    console.error(
-      '\x1b[31m%s\x1b[0m',
-      `Error dropping database "${dbNameFromArgs}":`,
-      error
-    );
+    console.error('\n❌ Error resetting database:', error);
+    process.exit(1);
   } finally {
-    await mongoose.disconnect();
-    console.log('Disconnected from MongoDB.');
+    if (mongoose.connection.readyState === 1) { // Check if connection is open before trying to disconnect
+      await mongoose.disconnect();
+      console.log('🔌 Disconnected from MongoDB.');
+    }
     rl.close();
   }
 }
 
-dropDatabase();
+resetDatabase();
