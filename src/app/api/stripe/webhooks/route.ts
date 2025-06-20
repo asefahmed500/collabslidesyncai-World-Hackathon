@@ -99,13 +99,14 @@ export async function POST(request: NextRequest) {
                console.error(`🔴 User not found for subscription ID: ${subIdForInvoice} during invoice.payment_succeeded`);
                break;
             }
+            const newStartDate = new Date(subscriptionDetails.current_period_start * 1000);
             const newEndDate = new Date(subscriptionDetails.current_period_end * 1000);
             await updateUserInMongoDB(userWithPaidInvoice.id, { 
+              subscriptionStartDate: newStartDate,
               subscriptionEndDate: newEndDate,
               isPremium: true, 
-              subscriptionStartDate: new Date(subscriptionDetails.current_period_start * 1000),
             });
-            console.log(`✅ Invoice payment succeeded for subscription: ${subIdForInvoice}. User ${userWithPaidInvoice.id} subscription end date updated to ${newEndDate.toLocaleDateString()}.`);
+            console.log(`✅ Invoice payment succeeded for subscription: ${subIdForInvoice}. User ${userWithPaidInvoice.id} subscription period updated: ${newStartDate.toLocaleDateString()} - ${newEndDate.toLocaleDateString()}.`);
         } catch (invError: any) {
             console.error(`🔴 Error processing invoice.payment_succeeded for subscription ${subIdForInvoice}: ${invError.message}`);
         }
@@ -121,9 +122,7 @@ export async function POST(request: NextRequest) {
         const userWithFailedPayment = await UserModel.findOne({ stripeSubscriptionId: subIdForFailed }).exec();
         if (userWithFailedPayment) {
           // Optional: Update user status to indicate payment issue, or rely on Stripe's dunning
-          // For now, just logging. `customer.subscription.deleted` will handle actual revocation if dunning fails.
-          // await updateUserInMongoDB(userWithFailedPayment.id, { isPremium: false }); // Example if immediate action is desired
-          console.log(`⚠️ User ${userWithFailedPayment.id} payment failed. Consider notifying user. Current premium status might be maintained during dunning.`);
+          console.log(`⚠️ User ${userWithFailedPayment.id} payment failed. Consider notifying user. Stripe dunning process should handle recovery or cancellation.`);
         } else {
            console.error(`🔴 User not found for subscription ID: ${subIdForFailed} during invoice.payment_failed`);
         }
@@ -142,7 +141,9 @@ export async function POST(request: NextRequest) {
       }
 
       const isActiveStatus = updatedSubscription.status === 'active' || updatedSubscription.status === 'trialing';
-      const newIsPremiumStatus = isActiveStatus && !updatedSubscription.cancel_at_period_end;
+      // isPremium reflects current access. If status is active/trialing, they are premium.
+      // `customer.subscription.deleted` handles final downgrade when period ends after cancellation.
+      const newIsPremiumStatus = isActiveStatus; 
       
       const newPlanUpdated = updatedSubscription.items.data[0]?.price?.lookup_key || userToUpdateSubscription.subscriptionPlan || 'unknown_plan';
       const newEndDateUpdated = updatedSubscription.current_period_end ? new Date(updatedSubscription.current_period_end * 1000) : null;
@@ -167,9 +168,13 @@ export async function POST(request: NextRequest) {
       console.log(`🚫 Subscription deleted/canceled: ${deletedSubscription.id}`);
       const customerIdForDelete = deletedSubscription.customer as string;
       
-      const userWithDeletedSubscription = await UserModel.findOne({ stripeCustomerId: customerIdForDelete, stripeSubscriptionId: deletedSubscription.id }).exec();
+      let userWithDeletedSubscription = await UserModel.findOne({ stripeSubscriptionId: deletedSubscription.id }).exec();
+      if (!userWithDeletedSubscription && customerIdForDelete) {
+        userWithDeletedSubscription = await UserModel.findOne({ stripeCustomerId: customerIdForDelete }).exec();
+      }
+      
       if (!userWithDeletedSubscription) {
-        console.warn(`User not found for Stripe Customer ID: ${customerIdForDelete} and Subscription ID: ${deletedSubscription.id} during customer.subscription.deleted. Might have already been processed or customer deleted.`);
+        console.warn(`User not found for Stripe Customer ID: ${customerIdForDelete} or Subscription ID: ${deletedSubscription.id} during customer.subscription.deleted. Might have already been processed or customer deleted.`);
         break;
       }
 
@@ -189,3 +194,4 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({ received: true, event_type: event.type });
 }
+
