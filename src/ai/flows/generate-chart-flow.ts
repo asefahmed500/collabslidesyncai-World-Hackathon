@@ -8,7 +8,7 @@
  * - SuggestedChartConfig - The type for a single chart suggestion configuration.
  */
 
-import {ai} from '@/ai/genkit';
+import {ai}from '@/ai/genkit';
 import {z} from 'genkit';
 
 const SuggestChartInputSchema = z.object({
@@ -59,7 +59,6 @@ Based on the input:
 4.  Suggest a concise title for each chart.
 5.  Add any brief additional notes if necessary (e.g., "A line chart is suitable if the X-axis represents time progression").
 
-The output should be in JSON format according to the SuggestChartOutputSchema.
 Ensure dataMapping clearly explains how to use the input data for the chart.
 Example dataMapping for a bar chart: "Use 'productName' for the X-axis (categories) and 'unitsSold' for the Y-axis (values)."
 Example dataMapping for a pie chart: "Each 'department' as a pie slice, with 'budgetAllocation' as the value for each slice."

@@ -79,8 +79,7 @@ Based on the above:
     *   If team brand fonts are provided, suggest **how to effectively use them for different text elements** (e.g., "Use '{{teamBrandFonts}}' (Headline) for the main slide title at a large size, and '{{teamBrandFonts}}' (Body) for bullet points and smaller text for readability.").
     *   If no brand fonts are provided, suggest standard professional font pairings (e.g., a sans-serif for headings and a legible serif or sans-serif for body).
 
-Focus on clarity, modern design principles, and ensuring the suggestions are practical for a presentation slide context. The user will manually apply these suggestions.
-Please provide the output strictly in the specified JSON format.`,
+Focus on clarity, modern design principles, and ensuring the suggestions are practical for a presentation slide context. The user will manually apply these suggestions.`,
 });
 
 const suggestDesignLayoutFlow = ai.defineFlow(
