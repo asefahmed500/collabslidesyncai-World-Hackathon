@@ -205,7 +205,7 @@ export type TeamActivityType =
   | 'member_added' // Existing: now used when invitation is accepted or admin directly adds (if bypassing invite)
   | 'member_removed'
   | 'member_role_changed'
-  | 'team_profile_updated'
+  | 'team_profile_updated' 
   | 'presentation_created'
   | 'presentation_deleted' // This could now mean soft or permanent delete depending on context
   | 'presentation_restored'

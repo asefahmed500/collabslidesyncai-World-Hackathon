@@ -639,16 +639,20 @@ export async function addCommentToSlide(presentationId: string, slideId: string,
         updatedSlides[slideIndex] = targetSlide;
         transaction.update(presRef, { slides: updatedSlides, lastUpdatedAt: serverTimestamp() });
         
-        await createNotification(
-          presentationData.creatorId, 
-          'comment_new',
-          `New Comment on "${presentationData.title}"`,
-          `${comment.userName} commented on slide ${targetSlide.slideNumber || slideIndex + 1}: "${comment.text.substring(0, 50)}${comment.text.length > 50 ? '...' : ''}"`,
-          `/editor/${presentationId}?slide=${slideId}`, 
-          comment.userId,
-          comment.userName,
-          comment.userAvatarUrl
-        );
+        // Create in-app notification for the presentation owner
+        if (presentationData.creatorId !== comment.userId) { // Don't notify user of their own comment
+            await createNotification(
+                presentationData.creatorId, 
+                'comment_new',
+                `New Comment on "${presentationData.title}"`,
+                `${comment.userName} commented on slide ${targetSlide.slideNumber || slideIndex + 1}: "${comment.text.substring(0, 50)}${comment.text.length > 50 ? '...' : ''}"`,
+                `/editor/${presentationId}?slide=${slideId}`, 
+                comment.userId,
+                comment.userName,
+                comment.userAvatarUrl
+            );
+        }
+        // TODO: Notify other collaborators or @mentioned users
     } else console.warn(`Slide ${slideId} not found in presentation ${presentationId}`);
   });
 }
@@ -946,7 +950,7 @@ export async function getUserByEmail(email: string): Promise<AppUserTypeFromFire
 export async function getAllPresentationsForAdmin(includeDeleted = false): Promise<Presentation[]> {
   let q;
   if (includeDeleted) {
-    q = query(presentationsCollection, where('deleted', '==', true), orderBy('deletedAt', 'desc'));
+    q = query(presentationsCollection, orderBy('deletedAt', 'desc'));
   } else {
     q = query(presentationsCollection, where('deleted', '==', false), orderBy('lastUpdatedAt', 'desc'));
   }
