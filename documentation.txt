@@ -7,189 +7,236 @@ This document provides an overview of the features available in the CollabDeck a
 
 ### 1. Authentication & Account Management
 
-*   **Sign Up:**
-    *   Users create an account using email/password or social providers (Google, GitHub).
-    *   Email/password signup also creates their first team, making them its owner.
-    *   User profile stored in MongoDB. Email verification sent.
-*   **Login:**
-    *   Email/password or social login (Google, GitHub).
-    *   Updates `lastActive` status in MongoDB.
+*   **Sign Up & Login:**
+    *   Users can register and log in using Email/Password, Google, or GitHub.
+    *   Email/password signup includes creating an initial team where the user becomes the owner.
+    *   User profiles are stored in MongoDB.
+*   **Email Verification:**
+    *   An email is sent upon registration with Email/Password for account verification. Full account activation may depend on this.
+*   **Onboarding:**
+    *   New users (or users without a team) are guided to create a team or can accept pending team invitations directly from their dashboard.
 *   **Password Management:**
-    *   Forgot Password: Sends reset link.
-    *   Change Password: For logged-in users, requires current password.
+    *   Forgot Password: Users can request a password reset link via email.
+    *   Change Password: Logged-in users can change their password (requires current password).
 *   **Profile Updates:**
-    *   Update display name and profile picture URL. Changes sync to Firebase Auth and MongoDB.
+    *   Users can update their display name and profile picture URL. Changes are synced to Firebase Auth and MongoDB.
 *   **Account Deletion:**
-    *   Users can delete their account. Team owners must transfer ownership or delete the team first.
-    *   Removes user from team (MongoDB), deletes MongoDB profile, then deletes from Firebase Auth.
+    *   Users can delete their account.
+    *   If a user is the owner of a team, they must first transfer ownership or delete the team.
 *   **Two-Factor Authentication (2FA):**
     *   UI placeholder for future enhancement.
 
-### 2. Dashboard & Presentation Management
+### 2. Team Management
 
-*   **Dashboard Overview:**
-    *   Summary of activity, quick access to presentations.
-    *   Onboarding for users without a team: create team or accept pending invitations.
-    *   User analytics: "Presentations Created", "Total Slides Created".
-*   **View Presentations:**
-    *   Lists user's presentations (created, shared, team-accessible) from Firestore.
-    *   Grid/list views, filtering (All, Mine, Shared/Team, Favorites), sorting (Last Updated, Title, Date Created), search.
-*   **Create New Presentation:**
-    *   Via `createPresentationAction` Server Action. Adds to Firestore, sets creator as owner. Redirects to editor.
-*   **Duplicate Presentation:**
-    *   Via `duplicatePresentationAction` Server Action. Creates a copy.
-*   **Delete Presentation (Soft Delete):**
-    *   Via `deletePresentationAction` Server Action. Marks as `deleted` in Firestore.
-*   **Favorite Presentations:**
-    *   Via `toggleFavoriteStatusAction` Server Action.
-*   **Team Invitations (Dashboard Onboarding):**
-    *   Pending invites displayed. Accept/decline via `/api/teams/invitations/respond`.
+*   **Team Creation:**
+    *   A team is created automatically upon email/password signup.
+    *   Users without a team can create one from the dashboard.
+*   **Member Invitations:**
+    *   Team owners/admins can invite new members to the team via email.
+    *   Invited users receive a notification and (placeholder) email, and can accept/decline from their dashboard or notification panel.
+*   **Team Roles:**
+    *   **Owner:** Full control, can delete team, transfer ownership (placeholder for transfer UI).
+    *   **Admin:** Manage members (add, remove, change roles below admin), edit team branding/settings.
+    *   **Editor:** Create, edit, and manage presentations within the team.
+    *   **Viewer:** View team presentations they have access to.
+*   **Team Branding:**
+    *   Owners/admins can set team logo, primary/secondary/accent colors, and primary/secondary fonts. These can be used as defaults or suggestions in presentations.
+*   **Team Settings:**
+    *   Toggle AI feature availability for the team.
+    *   Toggle whether guest edits are allowed on public presentations by default.
+*   **Team Activity Log:**
+    *   Records significant team events (member added/removed/role changed, team settings updated, presentation created/deleted by team member, asset uploaded/deleted). Stored in MongoDB. Viewable on the "Manage Team" page.
 
-### 3. Presentation Editor (`/editor/[id]`)
+### 3. User Dashboard
 
-*   **Core Data Storage:** All slide content (elements, styles, positions, comments, speaker notes, background) in Firestore.
-*   **Real-time Sync:** `onSnapshot` listener reflects changes instantly. Timestamps converted to JS Dates.
-*   **Element Manipulation:**
-    *   Add: Text, Image, Shape (Rectangle, Circle, Triangle), Chart (placeholder), Icon (Lucide name).
-    *   Modify: Resize, reposition, rotate.
-    *   Styling: Font, color, background, alignment, weight, style, decoration, opacity, shape properties (fill, border), icon properties, chart properties. Z-index.
-    *   Delete Elements.
+*   **Overview:**
+    *   Displays a summary of recent presentations.
+    *   Quick access to "Create New Presentation".
+*   **Presentation Listing:**
+    *   Lists presentations created by the user, shared directly with the user, or accessible via their team.
+    *   Filtering options: All, Mine, Shared/Team, Favorites.
+    *   Sorting options: Last Updated, Title, Date Created.
+    *   Search functionality by title or description.
+    *   Toggleable grid and list views.
+*   **Presentation Actions:**
+    *   **Create New:** Initiates a new presentation and redirects to the editor.
+    *   **Duplicate:** Creates a copy of an existing presentation.
+    *   **Delete (Soft):** Marks a presentation as deleted (hidden from normal views).
+    *   **Favorite:** Toggle favorite status for a presentation.
+*   **User Analytics (Basic):**
+    *   "Presentations Created": Count of presentations where the user is the creator.
+    *   "Total Slides Created": Sum of slides in presentations created by the user.
+    *   (AI Tokens Used, Collaboration Stats are placeholders for future detailed tracking).
+
+### 4. Presentation Builder (Editor)
+
+*   **Core Data & Real-time Sync:** All presentation content (title, slides, elements, styles, comments, speaker notes, background settings) is stored in Firestore. Real-time updates are synced across collaborators using Firestore listeners.
 *   **Slide Management:**
-    *   Add: Blank or from templates (via `TemplateSelectionDialog`).
-    *   Delete, Duplicate, Reorder slides.
-    *   Slide Background: Solid color, image URL, or gradient (linear/radial).
-*   **Toolbar & Panels:**
-    *   Editor Toolbar: Tools for adding elements, undo/redo (placeholder), AI, templates, comments, present.
-    *   Properties Panel: Contextual properties for selected element or slide.
-    *   AI Assistant Panel: Access to AI tools.
-    *   Slide Thumbnail List: Manage slides.
+    *   **Add Slide:** Create a blank slide or choose from predefined templates (e.g., Title Slide, Title and Content).
+    *   **Delete Slide.**
+    *   **Duplicate Slide.**
+    *   **Reorder Slides:** Drag-and-drop in the thumbnail list.
+*   **Canvas Editor & Element Manipulation:**
+    *   **Add Elements:** Text boxes, Images (upload or URL), Shapes (Rectangle, Circle, Triangle placeholders), Charts (placeholder, basic structure added), Icons (from Lucide library by name, or AI-generated image).
+    *   **Modify Elements:** Select, move (drag), resize, rotate.
+    *   **Styling (Properties Panel):**
+        *   **Text:** Font family, size, color, background color, alignment (left, center, right), weight (bold), style (italic), decoration (underline).
+        *   **Image:** URL source, AI Hint for future search.
+        *   **Shape:** Fill color, border color, border width, border radius (for rectangles), shape type.
+        *   **Icon:** Name (Lucide), color, size.
+        *   **Chart:** Type (bar, line, pie), data (JSON input), label.
+        *   **General:** Opacity, Z-index (stacking order).
+*   **Background Customization (per slide):**
+    *   Solid color.
+    *   Image URL.
+    *   Gradient (linear/radial with color stops and angle).
+*   **Media & Files (Asset Library Integration):**
+    *   Currently focused on image uploads to the Team Asset Library (PNG, JPG, GIF, WEBP; max 5MB).
+    *   Uploaded images can be inserted into slides.
+    *   Video, audio, PDF upload support is planned.
+    *   (Automatic compression/optimization is a future enhancement).
+*   **AI-Powered Assistance (via AI Assistant Panel):**
+    *   **Design Suggestions:** Provides ideas for layouts, color schemes, spacing, and fonts based on current slide content and team branding (if available).
+    *   **Smart Tips (Presentation Level):** Offers suggestions for improving presentation flow, clarity, and identifying content gaps based on the entire presentation.
+    *   **Text Improvement:** Suggests corrections/enhancements for grammar, clarity, professionalism, or conciseness for selected text or input text.
+    *   **Content Generation:**
+        *   Rewrite existing text.
+        *   Summarize existing text.
+        *   Generate bullet points from existing content or a given topic.
+    *   **Tone Adjustment:** Modifies selected text to be formal, casual, enthusiastic, or neutral.
+    *   **Speaker Notes Generation:** Creates speaker notes for the current slide based on its content.
+    *   **Icon Generation:** Generates an image (data URI) of a simple icon based on a text description. Can be added to the slide.
+    *   **Chart Suggestions:** Recommends chart types (bar, line, pie, etc.) and data mapping based on a textual description of data. A placeholder chart can be added.
+    *   **Background Generation:** Generates an image (data URI) suitable for a slide background based on a text description. Can be applied to the current slide.
 
-### 4. Real-Time Collaboration
+### 5. Real-Time Collaboration
 
-*   **Presence Indicators:** Avatars of active collaborators.
-*   **Live Cursors:** Real-time mouse cursor positions.
-*   **Element Locking:** Selected elements are locked; other users see lock. Locks expire.
-*   **Comments:** Add, view, resolve comments on slides. Real-time updates.
+*   **Presence Indicators:** Avatars of active collaborators are displayed in the editor header.
+*   **Live Cursors:** Mouse cursor positions of other active collaborators are shown on the canvas in real-time (throttled updates).
+*   **Element Locking:** When a user selects an element, it's temporarily locked for them. Other users see a lock icon and cannot edit it simultaneously. Locks expire automatically.
+*   **Comments:**
+    *   Users can add comments to specific slides.
+    *   View existing comments.
+    *   Resolve comments.
+    *   Comments are updated in real-time.
 
-### 5. Sharing & Publishing
+### 6. Sharing & Publishing
 
-*   **Share Dialog (`ShareDialog.tsx`):**
-    *   Uses `updatePresentationShareSettingsAction` Server Action.
-    *   Public Access & Password Protection.
-    *   Collaborator Invites: By email, assign roles (editor, viewer). Sends notifications/emails.
-    *   Shareable Link & Embed Code.
-*   **Access Control:** Based on public status, password, direct grants, team membership, admin override.
+*   **Share Dialog:**
+    *   **Public Access:** Make the presentation viewable by anyone with the link.
+    *   **Password Protection:** If public, an optional password can be set.
+    *   **Collaborator Invites:** Invite specific users by email to collaborate with 'editor' or 'viewer' roles. This updates the presentation's access list in Firestore and sends notifications/emails.
+    *   **Shareable Link:** A direct link to view the presentation.
+    *   **Embed Code:** An iframe snippet to embed the presentation (view-only) on external websites.
+*   **Access Control:** Determined by public status, password, direct user access grants (in Firestore `access` map), team membership, and platform admin override. Taken-down presentations are inaccessible except to admins.
 *   **Export Options:**
-    *   PDF: Via print-to-PDF (`/present/[id]?print=true`).
-    *   PPTX: Client-side via `PptxGenJS`.
-    *   Images (ZIP): Client-side via `html2canvas`, `jszip` (`/present/[id]?exportAllImages=true`).
+    *   **PDF:** Opens a print-friendly view (`/present/[id]?print=true`) which the user can "Print to PDF".
+    *   **PPTX:** Client-side generation using `PptxGenJS`. (Note: complex element/style fidelity can vary).
+    *   **Images (ZIP):** Client-side generation of each slide as a PNG image, packaged into a ZIP file, using `html2canvas` and `jszip` (triggered via `/present/[id]?exportAllImages=true`).
 
-### 6. Presentation Viewing Mode (`/present/[id]`)
+### 7. Presentation Viewing Mode (`/present/[id]`)
 
-*   Displays presentation. Keyboard/click navigation.
-*   Real-time updates if collaborators are editing.
-*   Toggleable speaker notes view. Fullscreen mode.
+*   Displays the presentation slides for viewing.
+*   Navigation via keyboard (arrow keys, space) or on-screen controls.
+*   Real-time updates reflect changes if collaborators are editing live.
+*   Toggleable speaker notes view (if notes exist for the current slide).
+*   Fullscreen mode.
 
-### 7. Team & Asset Management
+### 8. Mobile Experience
 
-*   **Team Creation:** During signup or from dashboard if user has no team.
-*   **Team Management (`/dashboard/manage-team`):**
-    *   Data fetched via Server Actions (`getTeamDataAction`, `getTeamActivitiesAction`).
-    *   Settings & Branding: Update name, logo, colors, fonts via `PUT /api/teams/[teamId]`.
-    *   General Settings: Toggle AI features, guest edits.
-    *   Member Management: Invite, change roles, remove members via API routes.
-*   **Team Asset Library (`/dashboard/assets`):**
-    *   Asset metadata in Firestore, files in Firebase Storage.
-    *   Upload images (PNG, JPG, GIF, WEBP; max 5MB) via `AssetUploadDropzone` and `createAssetMetadataAction` Server Action. Video/audio/PDF planned.
-    *   View, delete assets (via `deleteAssetAction` Server Action).
-*   **Team Activity Logs:** Viewable in Manage Team page, stored in MongoDB.
+*   **Responsive UI:** The application interface (dashboard, editor, etc.) is designed to be responsive for use on mobile devices.
+*   **Simplified Editor:** While the core editor is accessible, interaction on mobile (e.g., precise drag-and-drop, fine-grained styling) might be less optimal than on desktop due to screen size.
+*   **Offline Support (PWA):** Basic PWA setup might be provided by Next.js defaults, but full offline editing with sync is a complex feature and likely not fully implemented.
 
-### 8. Notifications & Communication
+### 9. Notification System
 
 *   **In-App Notifications (`NotificationBell`):**
-    *   Real-time updates from Firestore. Unread count.
-    *   Lists team invites, shares, role changes, new comments.
-    *   Mark all as read. Actionable team invites use API.
+    *   Real-time updates from Firestore (`notifications` collection).
+    *   Displays an unread count.
+    *   Lists notifications for team invites, presentation shares, role changes, new comments, etc.
+    *   Users can mark all notifications as read.
+    *   Actionable team invite notifications allow accepting/declining via an API call.
 *   **Email Notifications (Placeholder):**
-    *   Basic email sending via `src/lib/emailService.ts` (logs to console).
+    *   Basic email sending logic via `src/lib/emailService.ts` (currently logs to console). Templates exist for invites, role changes, etc. Actual email sending requires ESP integration.
 
-### 9. AI-Powered Assistance (Genkit - via AI Assistant Panel)
+### 10. User Analytics
 
-*   **Design Suggestions:** Layouts, color schemes, spacing, fonts.
-*   **Smart Tips (Presentation Level):** Flow, clarity, content gaps.
-*   **Text Improvement:** Grammar, clarity, professionalism, conciseness.
-*   **Content Generation:** Rewrite, summarize, bullet points.
-*   **Tone Adjustment:** Formal, casual, enthusiastic, neutral.
-*   **Speaker Notes Generation:** For current slide.
-*   **Icon Generation:** Image (data URI) from text.
-*   **Chart Suggestions:** Chart types and data mapping from text.
-*   **Background Generation:** Image for slide from text.
+*   **Dashboard Stats:**
+    *   "Presentations Created": Count based on presentations where `creatorId` matches the current user.
+    *   "Total Slides Created": Sum of slides in presentations created by the user.
+*   **Future/Placeholder Analytics:**
+    *   AI tokens used.
+    *   Detailed collaboration activity.
+    *   Advanced analytics for presentation views (premium feature).
 
-### 10. Support & Help (`/dashboard/help`)
+### 11. Support & Help (`/dashboard/help`)
 
-*   **FAQ Section.**
-*   **Tutorials (Placeholder).**
-*   **Contact Methods (Placeholder).**
-*   **Feedback/Bug Reporting:** `FeedbackDialog` submits to Firestore via `submitFeedbackAction` Server Action.
-*   **AI Chatbot Assistant (`AIChatbotWidget`):** Uses Genkit flow.
-*   **Live Chat (Placeholder).**
+*   **FAQ Section:** Static Q&A content.
+*   **Tutorials (Placeholder):** UI elements for future tutorial links.
+*   **Contact Methods (Placeholder):** Display for email support.
+*   **Feedback/Bug Reporting:** `FeedbackDialog` allows users to submit feedback (bugs, feature requests, questions) which is stored in Firestore (`feedbackSubmissions` collection).
+*   **AI Chatbot Assistant (`AIChatbotWidget`):** Uses a Genkit flow (`chatbotAssistantFlow`) to answer general questions about the application.
+*   **Live Chat (Placeholder):** Indication of future live chat for premium users.
 
-### 11. Subscription Management (Stripe)
-*   Users can upgrade to Premium plans (Monthly/Yearly) via `PricingCardClient`.
-*   Checkout sessions handled by `/api/stripe/checkout-sessions`.
-*   Users can manage their active subscriptions via Stripe Billing Portal, accessed through `/api/stripe/create-portal-link`.
-*   Stripe webhooks (`/api/stripe/webhooks`) update user's premium status and subscription details in MongoDB.
+### 12. Subscription Management (Stripe Integration)
+
+*   **Upgrade to Premium:** Users can choose Premium plans (Monthly/Yearly) from the dashboard or pricing page.
+*   **Stripe Checkout:** Clicking "Upgrade" redirects to a Stripe-hosted checkout session (created via `/api/stripe/checkout-sessions`).
+*   **Manage Subscription:** Authenticated users with an active Stripe subscription can access the Stripe Billing Portal to manage their subscription (change plan, update payment method, cancel). This is accessed via `/api/stripe/create-portal-link`.
+*   **Webhooks:** Stripe webhooks (`/api/stripe/webhooks`) listen for events (e.g., `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`) to update the user's premium status (`isPremium`, `stripeCustomerId`, `stripeSubscriptionId`, `subscriptionPlan`, etc.) in their MongoDB profile.
 
 ## II. Admin Features (`/admin` dashboard)
 
-Platform Admins (`isAppAdmin: true` in MongoDB) access this.
+Platform Admins (users with `isAppAdmin: true` in their MongoDB profile) can access this section.
 
 ### 1. Admin Dashboard & Layout
 
-*   Access control via `/admin/layout.tsx` verifies `currentUser.isAppAdmin`.
-*   Overview page with links to admin sections. Sidebar navigation.
+*   **Access Control:** The `/admin` layout verifies `currentUser.isAppAdmin`. Unauthorized users are redirected.
+*   **Overview Page:** Links to various admin sections.
+*   **Sidebar Navigation:** Consistent navigation for admin modules.
 
 ### 2. User Management (`/admin/users`)
 
-*   View all users from MongoDB.
-*   Actions via API routes (requiring admin actor verification):
-    *   **Enable/Disable Account:** Toggles status in Firebase Auth & MongoDB.
-    *   **Promote/Demote Platform Admin:** Toggles `isAppAdmin` in MongoDB. Admins cannot demote themselves.
-    *   **Reset Password:** Sends reset email via Firebase Admin SDK.
-    *   **Delete User:** Deletes from Firebase Auth & MongoDB. Blocks if user owns teams.
+*   **View Users:** Displays all users from MongoDB, with search and basic info.
+*   **Actions (via API Routes, requiring admin actor verification):**
+    *   **Enable/Disable Account:** Toggles user's `disabled` status in Firebase Authentication and MongoDB.
+    *   **Promote/Demote Platform Admin:** Toggles `isAppAdmin` flag in MongoDB. Admins cannot demote themselves.
+    *   **Reset Password:** Sends a password reset email to the user via Firebase Admin SDK (link provided to admin to pass on).
+    *   **Delete User:** Deletes the user from Firebase Authentication and MongoDB. Blocks deletion if the user is an owner of any teams, requiring team transfer/deletion first.
 
 ### 3. Team Oversight (`/admin/teams`)
 
-*   View all teams from MongoDB.
-*   **Delete Team (via API route):**
-    *   Verifies admin actor. Deletes team from MongoDB.
-    *   Updates members' `teamId`/`role` in MongoDB.
-    *   Clears `teamId` from associated presentations in Firestore. Logs activity.
+*   **View Teams:** Displays all teams from MongoDB with key details.
+*   **Delete Team (via API Route):**
+    *   Verifies admin actor.
+    *   Deletes the team document from MongoDB.
+    *   Updates `teamId` and `role` for all members of the deleted team in their MongoDB user profiles (setting them to `null` and 'guest' respectively).
+    *   Clears the `teamId` from any presentations in Firestore previously associated with this team.
+    *   Logs the deletion activity.
 
 ### 4. Presentation Oversight (`/admin/presentations`)
 
-*   View all presentations from Firestore (can filter by soft-deleted).
-*   Actions via API routes (requiring admin actor):
-    *   **Soft Delete/Restore.**
-    *   **Permanent Delete.**
-    *   **Change Moderation Status:** Set to `active`, `under_review`, `taken_down`. Includes moderation notes.
+*   **View Presentations:** Displays all presentations from Firestore, with options to filter (e.g., show soft-deleted).
+*   **Actions (via API Routes, requiring admin actor):**
+    *   **Soft Delete/Restore:** Toggles the `deleted` flag and `deletedAt` timestamp.
+    *   **Permanent Delete:** Permanently removes the presentation document from Firestore.
+    *   **Change Moderation Status:** Sets status to `active`, `under_review`, or `taken_down`. Can include moderation notes.
 
 ### 5. Content Moderation Queue (`/admin/moderation`)
 
-*   Displays presentations with `moderationStatus: 'under_review'`.
-*   Admins approve (to `active`) or take down presentations.
+*   **Review Queue:** Displays presentations from Firestore with `moderationStatus: 'under_review'`.
+*   **Actions:** Admins can approve (set to `active`) or take down (set to `taken_down`) presentations, with optional notes.
 
 ### 6. User Feedback Management (`/admin/feedback`)
 
-*   View all feedback submissions from Firestore.
-*   Update status of feedback items (new, seen, in_progress, resolved, wont_fix).
+*   **View Submissions:** Displays all feedback submissions from the `feedbackSubmissions` collection in Firestore.
+*   **Manage Status:** Admins can update the status of feedback items (e.g., new, seen, in_progress, resolved, wont_fix).
 
 ### 7. System Management (Placeholders)
 
-Placeholder UI for future enhancements:
-*   **Billing Management (`/admin/billing`):** Oversee Stripe subscriptions, plans.
-*   **Security & Compliance (`/admin/security`):** Logs, audit trails, data privacy.
-*   **AI Analytics (`/admin/stats`):** Monitor AI usage, token consumption.
-*   **Global Activity Feed (`/admin/activities`):** System-wide event log.
-*   **Platform Settings (`/admin/settings`):** Global defaults, legal content, email templates, 3rd-party integrations.
-```
+Placeholder UI and basic structure for future enhancements:
+*   **Billing Management (`/admin/billing`):** Placeholder for overseeing Stripe subscriptions, plans, revenue, etc.
+*   **Security & Compliance (`/admin/security`):** Placeholder for audit logs, data privacy request management, etc.
+*   **AI Analytics (`/admin/stats`):** Placeholder for monitoring AI feature usage, token consumption, etc.
+*   **Global Activity Feed (`/admin/activities`):** Placeholder for a system-wide event log.
+*   **Platform Settings (`/admin/settings`):** Placeholder for managing global defaults, legal content (ToS, Privacy), email templates, and 3rd-party integrations.

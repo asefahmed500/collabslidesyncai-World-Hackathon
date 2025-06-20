@@ -44,12 +44,12 @@ This section details the architecture and flow for key User and Admin features.
 *   **Data Source:** Presentation metadata (title, creator, team, last updated, etc.) is primarily fetched from **Firestore** (`presentations` collection).
 *   **Dashboard Page (`src/app/dashboard/page.tsx`):**
     *   Fetches presentations relevant to the logged-in user (created by them, shared with them, or accessible via their team) using `firestoreService.getPresentationsForUser()`.
-    *   If user is not in a team, displays options to create a team (using `createTeamForExistingUser` Server Action) or accept pending team invitations (using `/api/teams/invitations/respond` API route).
+    *   If user is not in a team, displays options to create a team (using `createTeamForExistingUser` Server Action) or accept pending team invitations (using Server Action `getPendingInvitationsAction` to fetch, then `/api/teams/invitations/respond` API route to respond).
     *   Client-side filtering, sorting, and search are applied. View mode can be toggled between grid and list.
 *   **Create Presentation:**
-    *   Handled by `createPresentationAction` Server Action, which calls `firestoreService.originalCreatePresentation` and logs activity.
+    *   Handled by `createPresentationAction` Server Action, which calls `firestoreService.originalCreatePresentation` and logs activity to Firestore and MongoDB.
 *   **Duplicate, Delete, Favorite Presentation:**
-    *   Handled by Server Actions (`duplicatePresentationAction`, `deletePresentationAction`, `toggleFavoriteStatusAction`) which call respective `firestoreService` functions and log activity.
+    *   Handled by Server Actions (`duplicatePresentationAction`, `deletePresentationAction`, `toggleFavoriteStatusAction`) which call respective `firestoreService` functions (e.g., `originalDuplicatePresentation`) and log activity.
 *   **User Analytics (Presentations Created, Slides Created):**
     *   Calculated client-side on the dashboard based on the fetched presentation data for the current user.
 
@@ -86,8 +86,7 @@ This section details the architecture and flow for key User and Admin features.
 #### 7. Team & Asset Management
 *   **Team Creation & Management:**
     *   Teams are created in **MongoDB** during user signup or via the "Manage Team" page if the user has no team.
-    *   The "Manage Team" page (`src/app/dashboard/manage-team/page.tsx`) uses **API Routes** (`/api/teams/...`) to:
-        *   Fetch team data and activities (via Server Actions `getTeamDataAction`, `getTeamActivitiesAction`).
+    *   The "Manage Team" page (`src/app/dashboard/manage-team/page.tsx`) uses **Server Actions** (`getTeamDataAction`, `getTeamActivitiesAction`) to fetch initial data, and **API Routes** (`/api/teams/...`) for updates:
         *   Update team name, branding, and settings (MongoDB - `mongoTeamService.updateTeamInMongoDB` via `PUT /api/teams/[teamId]`).
         *   Add/remove members, change roles (MongoDB - `mongoTeamService` functions via `POST /api/teams/[teamId]/members` and `PUT/DELETE /api/teams/[teamId]/members/[memberId]`).
 *   **Team Asset Library:**
@@ -114,6 +113,12 @@ This section details the architecture and flow for key User and Admin features.
 *   **Help Center Page (`/dashboard/help`):** FAQs, tutorial placeholders.
 *   **Feedback/Bug Reporting:** `FeedbackDialog` submits to `feedbackSubmissions` collection in Firestore via `submitFeedbackAction` Server Action.
 *   **AI Chatbot:** `AIChatbotWidget` uses `chatbotAssistantFlow` Genkit flow.
+
+#### 11. Subscription Management (Stripe)
+*   Users can upgrade to Premium plans (Monthly/Yearly) via `PricingCardClient`.
+*   Checkout sessions handled by `/api/stripe/checkout-sessions`.
+*   Users can manage their active subscriptions via Stripe Billing Portal, accessed through `/api/stripe/create-portal-link`.
+*   Stripe webhooks (`/api/stripe/webhooks`) update user's premium status and subscription details in MongoDB.
 
 ### Admin Features - How They Work
 
@@ -164,17 +169,17 @@ Platform Admins (users with `isAppAdmin: true` in MongoDB) access `/admin`.
     *   Stripe Account: For payment processing, with products and prices configured.
 
 2.  **Environment Variables:**
-    *   Copy `.env.example` to `.env` or `.env.local` (recommended, overrides `.env`).
+    *   Copy `.env.example` to `.env.local` or `.env`. **It is highly recommended to use `.env.local` which is gitignored and overrides `.env`.**
     *   Fill in:
-        *   Firebase config (e.g., `NEXT_PUBLIC_FIREBASE_API_KEY`)
-        *   `MONGODB_URI`
-        *   `GEMINI_API_KEY` (for Genkit/Google AI models, or `GOOGLE_API_KEY` if you named it that)
-        *   `STRIPE_SECRET_KEY`
-        *   `STRIPE_WEBHOOK_SECRET`
-        *   `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`
-        *   Stripe Price IDs (e.g., `NEXT_PUBLIC_STRIPE_PREMIUM_MONTHLY_PRICE_ID`, `NEXT_PUBLIC_STRIPE_PREMIUM_YEARLY_PRICE_ID`)
-        *   `NEXT_PUBLIC_APP_URL` (e.g., `http://localhost:9002` for dev)
-    *   Ensure `GOOGLE_APPLICATION_CREDENTIALS` environment variable is set to the path of your Firebase service account key JSON file for Firebase Admin SDK functionality (e.g., in admin user management).
+        *   Firebase config (e.g., `NEXT_PUBLIC_FIREBASE_API_KEY`) - Get from Firebase Console > Project Settings > Your Apps > Web App.
+        *   `MONGODB_URI` - Your MongoDB connection string.
+        *   `GEMINI_API_KEY` (or `GOOGLE_API_KEY` if you named it that) - For Genkit/Google AI models from Google AI Studio or Google Cloud Console.
+        *   `STRIPE_SECRET_KEY` - From Stripe Dashboard > Developers > API keys.
+        *   `STRIPE_WEBHOOK_SECRET` - Generated when you create a webhook endpoint in Stripe Dashboard > Developers > Webhooks.
+        *   `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` - From Stripe Dashboard > Developers > API keys.
+        *   Stripe Price IDs for your subscription plans (e.g., `NEXT_PUBLIC_STRIPE_PREMIUM_MONTHLY_PRICE_ID`, `NEXT_PUBLIC_STRIPE_PREMIUM_YEARLY_PRICE_ID`) - Get these after creating products and prices in your Stripe Dashboard.
+        *   `NEXT_PUBLIC_APP_URL` (e.g., `http://localhost:9002` for dev, or your deployed app URL).
+    *   **Crucial for Admin Features:** Ensure `GOOGLE_APPLICATION_CREDENTIALS` environment variable is set to the path of your Firebase service account key JSON file. This is required for Firebase Admin SDK functionality (e.g., in admin user management). Download this file from Firebase Console > Project Settings > Service accounts.
 
 3.  **Installation:**
     ```bash
@@ -185,7 +190,7 @@ Platform Admins (users with `isAppAdmin: true` in MongoDB) access `/admin`.
 
 4.  **Firestore Setup (if starting fresh):**
     *   Deploy Firestore security rules (`firestore.rules`).
-    *   Create necessary composite indexes in Firebase Console as prompted by errors or define them in `firestore.indexes.json` and deploy. The `notifications` index is pre-defined.
+    *   Deploy Firestore indexes (`firestore.indexes.json`) using the Firebase CLI: `firebase deploy --only firestore:indexes`. Alternatively, create them manually in the Firebase Console as prompted by errors. The `notifications`, `presentationActivities`, `assets`, and `feedbackSubmissions` indexes are pre-defined.
 
 5.  **Running the Development Server:**
     *   For Next.js app:
@@ -204,8 +209,9 @@ Platform Admins (users with `isAppAdmin: true` in MongoDB) access `/admin`.
 
 6.  **MongoDB Database Drop (Use with Caution):**
     *   Ensure `tsx` is installed (`npm install -D tsx`).
-    *   Run: `npm run db:drop -- <databaseName>` (e.g., `npm run db:drop -- collabdb`)
-    *   This script requires confirmation.
+    *   Run: `npm run db:drop`
+    *   This script will prompt you to confirm the database name derived from your `MONGODB_URI`.
+    *   **Warning:** This permanently deletes all data in the specified database.
 
 7.  **Building for Production:**
     ```bash
@@ -215,4 +221,3 @@ Platform Admins (users with `isAppAdmin: true` in MongoDB) access `/admin`.
     ```
 
 This README provides a detailed overview of CollabDeck.
-```
