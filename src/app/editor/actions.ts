@@ -2,17 +2,18 @@
 'use server';
 
 import { auth, db } from '@/lib/firebaseConfig';
-import { 
-  updatePresentation as apiUpdatePresentation, 
+import {
+  updatePresentation as apiUpdatePresentation,
   getPresentationById,
-  getUserByEmail, // This correctly uses mongoUserService via firestoreService
+  // getUserByEmail, // Removed from here
   logPresentationActivity,
-  createNotification, // Import for notifications
+  createNotification,
 } from '@/lib/firestoreService';
-import type { Presentation, PresentationAccessRole, User as AppUser, NotificationType, NotificationEnumType } from '@/types'; // Added NotificationEnumType
+import { getUserByEmailFromMongoDB } from '@/lib/mongoUserService'; // Import directly
+import type { Presentation, PresentationAccessRole, User as AppUser, NotificationType, NotificationEnumType } from '@/types';
 import { revalidatePath } from 'next/cache';
 import { deleteField } from 'firebase/firestore';
-import { sendEmail, createCollaborationInviteEmail, createRoleChangeEmail, createCollaboratorRemovedEmail } from '@/lib/emailService'; // Import email service
+import { sendEmail, createCollaborationInviteEmail, createRoleChangeEmail, createCollaboratorRemovedEmail } from '@/lib/emailService';
 
 interface ShareSettingsActionResponse {
   success: boolean;
@@ -29,7 +30,7 @@ export async function updatePresentationShareSettingsAction(
   prevState: any,
   formData: FormData
 ): Promise<ShareSettingsActionResponse> {
-  const currentFirebaseUser = auth.currentUser; // Get current Firebase User
+  const currentFirebaseUser = auth.currentUser;
   if (!currentFirebaseUser) {
     return { success: false, message: 'Authentication required.' };
   }
@@ -48,35 +49,32 @@ export async function updatePresentationShareSettingsAction(
     return { success: false, message: 'Presentation not found.' };
   }
 
-  // Permission check: Only creator or those with 'owner' role in access map can change settings
   const isCreator = presentation.creatorId === currentUserId;
   const isOwnerInAccessMap = presentation.access && presentation.access[currentUserId] === 'owner';
   if (!isCreator && !isOwnerInAccessMap) {
     return { success: false, message: 'You do not have permission to change sharing settings for this presentation.' };
   }
-  
-  const updates: Partial<Presentation> = { 
-    settings: { ...(presentation.settings || { isPublic: false, passwordProtected: false, commentsAllowed: true }) }, // Ensure settings object exists
-    access: { ...(presentation.access || {}) } // Ensure access object exists
+
+  const updates: Partial<Presentation> = {
+    settings: { ...(presentation.settings || { isPublic: false, passwordProtected: false, commentsAllowed: true }) },
+    access: { ...(presentation.access || {}) }
   };
   let activityDetails: any = {};
   let mainActionType: 'sharing_settings_updated' | 'password_set' | 'password_removed' | 'collaborator_update' = 'sharing_settings_updated';
 
 
-  // Handle isPublic toggle
   const isPublic = formData.get('isPublic') === 'on';
   if (isPublic !== presentation.settings.isPublic) {
     updates.settings!.isPublic = isPublic;
     activityDetails.changedSetting = 'isPublic';
     activityDetails.oldValue = presentation.settings.isPublic;
     activityDetails.newValue = isPublic;
-    if (!isPublic) { // If making private, also turn off password protection
+    if (!isPublic) {
       updates.settings!.passwordProtected = false;
-      updates.settings!.password = deleteField() as any; // Remove password if making private
+      updates.settings!.password = deleteField() as any;
     }
   }
 
-  // Handle password protection (only if public)
   if (updates.settings!.isPublic) {
     const passwordProtected = formData.get('passwordProtected') === 'on';
     const password = formData.get('password') as string | null;
@@ -89,28 +87,26 @@ export async function updatePresentationShareSettingsAction(
     }
 
     if (passwordProtected) {
-      if (password && password.length > 0) { // Only update password if a new one is provided
-        updates.settings!.password = password; // Firestore will hash this if rules are set up for it (not by default)
+      if (password && password.length > 0) {
+        updates.settings!.password = password;
         mainActionType = 'password_set';
-      } else if (!presentation.settings.password) { // If enabling protection and no password existed and none provided
+      } else if (!presentation.settings.password) {
          return { success: false, message: 'Please provide a password when enabling password protection.' };
       }
-      // If passwordProtected is true but no new password is provided, existing password remains.
     } else {
-      updates.settings!.password = deleteField() as any; // Remove password if protection is disabled
+      updates.settings!.password = deleteField() as any;
       if (presentation.settings.passwordProtected) mainActionType = 'password_removed';
     }
-  } else { // Not public, so ensure password protection is off
+  } else {
       updates.settings!.passwordProtected = false;
       updates.settings!.password = deleteField() as any;
   }
-  
-  // Handle collaborator invitations
+
   const inviteEmail = formData.get('inviteEmail') as string;
   const inviteRole = formData.get('inviteRole') as PresentationAccessRole;
 
   if (inviteEmail && inviteRole) {
-    const userToInvite = await getUserByEmail(inviteEmail); // This calls mongoUserService via firestoreService
+    const userToInvite = await getUserByEmailFromMongoDB(inviteEmail); // Use direct import
     if (!userToInvite) {
       return { success: false, message: `User with email ${inviteEmail} not found.` };
     }
@@ -120,15 +116,15 @@ export async function updatePresentationShareSettingsAction(
     if (presentation.access && presentation.access[userToInvite.id] === inviteRole) {
         return { success: false, message: `User ${inviteEmail} already has the role of ${inviteRole}.` };
     }
-    
+
     updates.access![userToInvite.id] = inviteRole;
-    
+
     await logPresentationActivity(presentationId, currentUserId, 'collaborator_added', {
         targetUserId: userToInvite.id,
         targetUserName: userToInvite.name || userToInvite.email,
         newRole: inviteRole,
     });
-    
+
     await createNotification(
       userToInvite.id,
       'presentation_shared',
@@ -139,8 +135,7 @@ export async function updatePresentationShareSettingsAction(
       currentUserName || undefined,
       currentUserProfilePic || undefined
     );
-    
-    // Send email notification for invite
+
     if (userToInvite.email) {
       const presentationLink = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:9002'}/editor/${presentationId}`;
       const emailContent = createCollaborationInviteEmail(
@@ -158,22 +153,20 @@ export async function updatePresentationShareSettingsAction(
         });
       } catch (emailError) {
         console.warn("Failed to send collaboration invite email (placeholder service):", emailError);
-        // Non-critical, so don't fail the whole action
       }
     }
     mainActionType = 'collaborator_update';
   }
 
-  // Handle changes to existing collaborators (roles, removals)
   let collaboratorChanged = false;
   for (const key of formData.keys()) {
-    if (key.startsWith('accessRole[')) { 
+    if (key.startsWith('accessRole[')) {
       const userId = key.substring(key.indexOf('[') + 1, key.indexOf(']'));
       const newRoleOrAction = formData.get(key) as string;
 
-      if (userId === presentation.creatorId) continue; 
+      if (userId === presentation.creatorId) continue;
 
-      const collaboratorUser = await getUserByEmail(presentation.activeCollaborators?.[userId]?.email || ''); // Fetch by email to get full user profile
+      const collaboratorUser = await getUserByEmailFromMongoDB(presentation.activeCollaborators?.[userId]?.email || ''); // Use direct import
 
       if (newRoleOrAction === 'remove') {
         if (updates.access![userId]) {
@@ -185,7 +178,7 @@ export async function updatePresentationShareSettingsAction(
                 oldRole: oldRole
             });
             collaboratorChanged = true;
-            
+
             if (collaboratorUser && collaboratorUser.email) {
               const emailContent = createCollaboratorRemovedEmail(
                 collaboratorUser.name || collaboratorUser.email,
@@ -207,7 +200,7 @@ export async function updatePresentationShareSettingsAction(
             newRole: newRoleOrAction as PresentationAccessRole
          });
          collaboratorChanged = true;
-         
+
          if (collaboratorUser && collaboratorUser.email) {
             const presentationLink = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:9002'}/editor/${presentationId}`;
             const emailContent = createRoleChangeEmail(
@@ -222,7 +215,7 @@ export async function updatePresentationShareSettingsAction(
                 await sendEmail({ to: collaboratorUser.email, subject: emailContent.subject, htmlBody: emailContent.htmlBody });
                  await createNotification(
                     collaboratorUser.id,
-                    'role_changed', // Use new specific type
+                    'role_changed',
                     `Your Role Changed for "${presentation.title}"`,
                     `${currentUserName} changed your role to ${newRoleOrAction as PresentationAccessRole} for "${presentation.title}".`,
                     `/editor/${presentationId}`,
@@ -238,8 +231,8 @@ export async function updatePresentationShareSettingsAction(
 
   try {
     await apiUpdatePresentation(presentationId, updates);
-    const updatedPresentation = await getPresentationById(presentationId); // Fetch updated
-    
+    const updatedPresentation = await getPresentationById(presentationId);
+
     if (mainActionType === 'sharing_settings_updated' && Object.keys(activityDetails).length > 0) {
        await logPresentationActivity(presentationId, currentUserId, 'sharing_settings_updated', activityDetails);
     }
@@ -278,4 +271,3 @@ export async function verifyPasswordAction(
     return { success: false, message: 'Incorrect password.' };
   }
 }
-

@@ -38,7 +38,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, useForm } from '@/components/ui/form'; // Added useForm
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { formatDistanceToNowStrict } from 'date-fns';
@@ -66,7 +66,7 @@ export default function DashboardPage() {
   const { toast } = useToast();
 
   const [presentations, setPresentations] = useState<Presentation[]>([]);
-  const [isLoadingData, setIsLoadingData] = useState(true); 
+  const [isLoadingData, setIsLoadingData] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filter, setFilter] = useState('all');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
@@ -75,9 +75,9 @@ export default function DashboardPage() {
 
   const [presentationsCreatedCount, setPresentationsCreatedCount] = useState(0);
   const [totalSlidesCreatedCount, setTotalSlidesCreatedCount] = useState(0);
-  
+
   const [pendingInvitations, setPendingInvitations] = useState<TeamType[]>([]);
-  const [isRespondingToInvite, setIsRespondingToInvite] = useState<string | null>(null); 
+  const [isRespondingToInvite, setIsRespondingToInvite] = useState<string | null>(null);
   const [isRedirectingToStripe, setIsRedirectingToStripe] = useState(false);
 
 
@@ -102,7 +102,7 @@ export default function DashboardPage() {
         } else {
           const invites = await getPendingTeamInvitationsForUserById(currentUser.id);
           setPendingInvitations(invites);
-          setPresentations([]); 
+          setPresentations([]);
           setPresentationsCreatedCount(0);
           setTotalSlidesCreatedCount(0);
         }
@@ -113,7 +113,7 @@ export default function DashboardPage() {
         setIsLoadingData(false);
       }
     } else {
-      setIsLoadingData(false); 
+      setIsLoadingData(false);
     }
   }, [currentUser, toast]);
 
@@ -124,7 +124,7 @@ export default function DashboardPage() {
       fetchData();
     }
   }, [currentUser, authLoading, router, fetchData]);
-  
+
   useEffect(() => {
     if (createTeamFormState.message) {
       if (createTeamFormState.success) {
@@ -132,7 +132,7 @@ export default function DashboardPage() {
         createTeamForm.reset();
         // Force a full re-render/re-fetch by navigating or using router.refresh()
         // This ensures useAuth hook re-evaluates currentUser with new teamId
-        router.refresh(); 
+        router.refresh();
         fetchData(); // Also re-fetch dashboard specific data
       } else {
         toast({ title: "Error", description: createTeamFormState.message, variant: "destructive" });
@@ -183,7 +183,7 @@ export default function DashboardPage() {
       toast({ title: "Error Duplicating", description: error.message || "Could not duplicate presentation.", variant: "destructive" });
     }
   };
-  
+
   const handleToggleFavorite = async (presentationId: string) => {
     if (!currentUser) return;
     try {
@@ -192,12 +192,12 @@ export default function DashboardPage() {
         title: isNowFavorite ? "Favorited" : "Unfavorited",
         description: `Presentation ${isNowFavorite ? 'added to' : 'removed from'} favorites.`,
       });
-      fetchData(); 
+      fetchData();
     } catch (error: any) {
       toast({ title: "Error", description: error.message || "Could not update favorite status.", variant: "destructive" });
     }
   };
-  
+
   const handleRespondToInvitation = async (notificationId: string, teamId: string, role: TeamRole, action: 'accept' | 'decline') => {
     setIsRespondingToInvite(teamId); // Use teamId as a simple flag for the specific invitation being processed
     try {
@@ -211,7 +211,7 @@ export default function DashboardPage() {
             toast({ title: `Invitation ${action === 'accept' ? 'Accepted' : 'Declined'}`, description: result.message });
             // Force a full re-render/re-fetch by navigating or using router.refresh()
             // This ensures useAuth hook re-evaluates currentUser with new teamId if accepted
-            router.refresh(); 
+            router.refresh();
             fetchData(); // Re-fetch dashboard data to update UI
         } else {
             toast({ title: 'Error', description: result.message, variant: 'destructive' });
@@ -268,7 +268,7 @@ export default function DashboardPage() {
     })
     .slice(0,3);
 
-  const handleUpgradeClick = async (planId: 'premium_monthly' | 'premium_yearly') => { 
+  const handleUpgradeClick = async (planId: 'premium_monthly' | 'premium_yearly') => {
     if (!currentUser) {
       toast({ title: "Login Required", description: "Please log in to upgrade.", variant: "info" });
       router.push('/login?redirect=/dashboard');
@@ -305,9 +305,9 @@ export default function DashboardPage() {
       </div>
     );
   }
-  
+
   if (!currentUser && !authLoading) {
-     return (  
+     return (
         <div className="flex flex-col min-h-screen">
           <SiteHeader />
           <main className="flex-grow container mx-auto p-4 sm:p-6 lg:p-8 flex items-center justify-center">
@@ -316,7 +316,7 @@ export default function DashboardPage() {
         </div>
      );
   }
-  
+
   if (currentUser && !currentUser.teamId && !isLoadingData) {
     return (
       <div className="flex flex-col min-h-screen bg-background">
@@ -334,13 +334,8 @@ export default function DashboardPage() {
                   <h3 className="text-xl font-semibold text-center">Pending Team Invitations</h3>
                   <ul className="space-y-3">
                     {pendingInvitations.map(inviteTeam => {
-                        // Assuming pendingInvitations on TeamType is keyed by userId and contains invite details
                         const inviteDetails = inviteTeam.pendingInvitations?.[currentUser.id];
-                        if (!inviteDetails) return null; // Should not happen if getPendingTeamInvitationsForUserById works correctly
-                        
-                        // The notificationId to mark as read would ideally come from the notification system,
-                        // but for direct invite handling, we might need to search for it or pass it if available.
-                        // For simplicity, we'll pass a placeholder for notificationId if not directly available on inviteDetails.
+                        if (!inviteDetails) return null;
                         const notificationIdForAction = inviteDetails.inviteId || `invite_for_${inviteTeam.id}`;
 
                         return (
@@ -352,15 +347,15 @@ export default function DashboardPage() {
                                 </p>
                                 </div>
                                 <div className="flex space-x-2 flex-shrink-0">
-                                <Button 
-                                    size="sm" 
+                                <Button
+                                    size="sm"
                                     onClick={() => handleRespondToInvitation(notificationIdForAction, inviteTeam.id, inviteDetails.role, 'accept')}
                                     disabled={isRespondingToInvite === inviteTeam.id}
                                 >
                                     {isRespondingToInvite === inviteTeam.id ? <Loader2 className="mr-1 h-4 w-4 animate-spin"/> : <Check className="mr-1 h-4 w-4"/>} Accept
                                 </Button>
-                                <Button 
-                                    size="sm" 
+                                <Button
+                                    size="sm"
                                     variant="outline"
                                     onClick={() => handleRespondToInvitation(notificationIdForAction, inviteTeam.id, inviteDetails.role, 'decline')}
                                     disabled={isRespondingToInvite === inviteTeam.id}
@@ -431,7 +426,7 @@ export default function DashboardPage() {
           <h1 className="font-headline text-4xl font-bold text-primary">Your Dashboard</h1>
           <p className="text-muted-foreground">Welcome back, {currentUser?.name}! Manage your presentations and assets here.</p>
         </div>
-        
+
         {currentUser && !currentUser.isPremium && (
           <Card className="mb-8 bg-gradient-to-r from-primary/10 via-accent/10 to-primary/10 border-primary/30 shadow-lg">
             <CardHeader>
@@ -439,7 +434,7 @@ export default function DashboardPage() {
               <CardDescription className="text-foreground/80">Unlock unlimited presentations, advanced AI features, more team members, and custom branding.</CardDescription>
             </CardHeader>
             <CardContent>
-              <Button 
+              <Button
                 onClick={() => handleUpgradeClick('premium_monthly')}
                 className="bg-primary hover:bg-primary/90 text-primary-foreground shadow-md hover:shadow-lg transition-shadow"
                 size="lg"
