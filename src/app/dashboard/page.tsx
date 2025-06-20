@@ -38,7 +38,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, useForm } from '@/components/ui/form'; // Added useForm
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'; 
+import { useForm, type SubmitHandler } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { formatDistanceToNowStrict } from 'date-fns';
@@ -98,7 +99,7 @@ export default function DashboardPage() {
           const userCreatedPresentations = data.filter(p => p.creatorId === currentUser.id);
           setPresentationsCreatedCount(userCreatedPresentations.length);
           setTotalSlidesCreatedCount(userCreatedPresentations.reduce((sum, p) => sum + (p.slides?.length || 0), 0));
-          setPendingInvitations([]); // Clear pending invites if user is in a team
+          setPendingInvitations([]); 
         } else {
           const invites = await getPendingTeamInvitationsForUserById(currentUser.id);
           setPendingInvitations(invites);
@@ -130,10 +131,9 @@ export default function DashboardPage() {
       if (createTeamFormState.success) {
         toast({ title: "Team Created!", description: createTeamFormState.message });
         createTeamForm.reset();
-        // Force a full re-render/re-fetch by navigating or using router.refresh()
-        // This ensures useAuth hook re-evaluates currentUser with new teamId
+        
         router.refresh();
-        fetchData(); // Also re-fetch dashboard specific data
+        fetchData(); 
       } else {
         toast({ title: "Error", description: createTeamFormState.message, variant: "destructive" });
       }
@@ -199,7 +199,7 @@ export default function DashboardPage() {
   };
 
   const handleRespondToInvitation = async (notificationId: string, teamId: string, role: TeamRole, action: 'accept' | 'decline') => {
-    setIsRespondingToInvite(teamId); // Use teamId as a simple flag for the specific invitation being processed
+    setIsRespondingToInvite(teamId); 
     try {
         const response = await fetch('/api/teams/invitations/respond', {
             method: 'POST',
@@ -209,10 +209,9 @@ export default function DashboardPage() {
         const result = await response.json();
         if (result.success) {
             toast({ title: `Invitation ${action === 'accept' ? 'Accepted' : 'Declined'}`, description: result.message });
-            // Force a full re-render/re-fetch by navigating or using router.refresh()
-            // This ensures useAuth hook re-evaluates currentUser with new teamId if accepted
+            
             router.refresh();
-            fetchData(); // Re-fetch dashboard data to update UI
+            fetchData(); 
         } else {
             toast({ title: 'Error', description: result.message, variant: 'destructive' });
         }
@@ -283,7 +282,7 @@ export default function DashboardPage() {
       });
       const sessionData = await response.json();
       if (response.ok && sessionData.success && sessionData.url) {
-        router.push(sessionData.url); // Redirect to Stripe Checkout
+        router.push(sessionData.url); 
       } else {
         throw new Error(sessionData.message || "Failed to create Stripe Checkout session.");
       }
@@ -292,6 +291,12 @@ export default function DashboardPage() {
     } finally {
       setIsRedirectingToStripe(false);
     }
+  };
+
+  const processCreateTeamForm: SubmitHandler<CreateTeamFormValues> = (data) => {
+    const formData = new FormData();
+    formData.append('teamName', data.teamName);
+    createTeamFormAction(formData);
   };
 
 
@@ -390,7 +395,7 @@ export default function DashboardPage() {
               <div>
                 <h3 className="text-xl font-semibold text-center mb-4">Create a New Team</h3>
                 <Form {...createTeamForm}>
-                  <form action={createTeamFormAction} onSubmit={createTeamForm.handleSubmit(() => createTeamForm.control._formAction(createTeamFormState as any))} className="space-y-4 max-w-sm mx-auto">
+                  <form onSubmit={createTeamForm.handleSubmit(processCreateTeamForm)} className="space-y-4 max-w-sm mx-auto">
                     <FormField
                       control={createTeamForm.control}
                       name="teamName"
@@ -766,3 +771,4 @@ export default function DashboardPage() {
     </div>
   );
 }
+

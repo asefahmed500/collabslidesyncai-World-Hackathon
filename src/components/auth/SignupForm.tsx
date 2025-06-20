@@ -2,7 +2,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
+import { useForm, type SubmitHandler } from "react-hook-form";
 import * as z from "zod";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -37,6 +37,7 @@ const formSchema = z.object({
   message: "Passwords don't match.",
   path: ["confirmPassword"],
 });
+type SignupFormValues = z.infer<typeof formSchema>;
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -56,7 +57,7 @@ export function SignupForm() {
     message: "",
   });
 
-  const form = useForm<z.infer<typeof formSchema>>({
+  const form = useForm<SignupFormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       name: "",
@@ -75,6 +76,8 @@ export function SignupForm() {
           description: formState.message,
         });
         form.reset(); 
+        // Potentially redirect to login or dashboard after a delay
+        // router.push('/login'); 
       } else {
         toast({
           title: "Signup Failed",
@@ -111,6 +114,17 @@ export function SignupForm() {
   const handleGoogleSignup = () => socialLogin(new GoogleAuthProvider());
   const handleGitHubSignup = () => socialLogin(new GithubAuthProvider());
 
+  const processForm: SubmitHandler<SignupFormValues> = (data) => {
+    const formData = new FormData();
+    formData.append('name', data.name);
+    formData.append('email', data.email);
+    formData.append('teamName', data.teamName);
+    formData.append('password', data.password);
+    // confirmPassword is not usually sent to the server action, but if needed, it can be appended.
+    // formData.append('confirmPassword', data.confirmPassword); 
+    formAction(formData);
+  };
+
   return (
     <Card className="w-full max-w-md shadow-xl">
       <CardHeader className="text-center">
@@ -120,7 +134,7 @@ export function SignupForm() {
       </CardHeader>
       <CardContent>
         <Form {...form}>
-          <form action={formAction} onSubmit={form.handleSubmit(() => form.control._formAction(formAction as any))} className="space-y-4">
+          <form onSubmit={form.handleSubmit(processForm)} className="space-y-4">
             <FormField
               control={form.control}
               name="name"

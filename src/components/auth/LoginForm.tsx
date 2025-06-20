@@ -2,7 +2,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
+import { useForm, type SubmitHandler } from "react-hook-form";
 import * as z from "zod";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -30,6 +30,7 @@ const formSchema = z.object({
   email: z.string().email({ message: "Invalid email address." }),
   password: z.string().min(1, { message: "Password is required." }),
 });
+type LoginFormValues = z.infer<typeof formSchema>;
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -49,7 +50,7 @@ export function LoginForm() {
     message: "",
   });
 
-  const form = useForm<z.infer<typeof formSchema>>({
+  const form = useForm<LoginFormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       email: "",
@@ -84,7 +85,7 @@ export function LoginForm() {
       const result = await signInWithPopup(auth, provider);
       const firebaseUser = result.user;
       if (firebaseUser) {
-        const serverResponse = await handleSocialSignIn(firebaseUser as FirebaseUserType); // Type assertion
+        const serverResponse = await handleSocialSignIn(firebaseUser as FirebaseUserType); 
         if (serverResponse.success) {
           toast({ title: "Login Successful", description: "Redirecting to dashboard..." });
           setTimeout(() => router.push("/dashboard").then(() => router.refresh()), 500);
@@ -105,6 +106,12 @@ export function LoginForm() {
   const handleGoogleLogin = () => socialLogin(new GoogleAuthProvider());
   const handleGitHubLogin = () => socialLogin(new GithubAuthProvider());
 
+  const processForm: SubmitHandler<LoginFormValues> = (data) => {
+    const formData = new FormData();
+    formData.append('email', data.email);
+    formData.append('password', data.password);
+    formAction(formData);
+  };
 
   return (
     <Card className="w-full max-w-md shadow-xl">
@@ -115,7 +122,7 @@ export function LoginForm() {
       </CardHeader>
       <CardContent>
         <Form {...form}>
-          <form action={formAction} className="space-y-6">
+          <form onSubmit={form.handleSubmit(processForm)} className="space-y-6">
             <FormField
               control={form.control}
               name="email"

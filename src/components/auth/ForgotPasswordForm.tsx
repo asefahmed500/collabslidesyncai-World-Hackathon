@@ -2,7 +2,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
+import { useForm, type SubmitHandler } from "react-hook-form";
 import * as z from "zod";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -27,6 +27,7 @@ import { sendPasswordReset, AuthResponse } from "@/app/(auth)/actions";
 const formSchema = z.object({
   email: z.string().email({ message: "Please enter a valid email address." }),
 });
+type ForgotPasswordFormValues = z.infer<typeof formSchema>;
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -46,7 +47,7 @@ export function ForgotPasswordForm() {
     message: "",
   });
 
-  const form = useForm<z.infer<typeof formSchema>>({
+  const form = useForm<ForgotPasswordFormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       email: "",
@@ -71,6 +72,12 @@ export function ForgotPasswordForm() {
     }
   }, [formState, toast, form]);
 
+  const processForm: SubmitHandler<ForgotPasswordFormValues> = (data) => {
+    const formData = new FormData();
+    formData.append('email', data.email);
+    formAction(formData);
+  };
+
   return (
     <Card className="w-full max-w-md shadow-xl">
       <CardHeader className="text-center">
@@ -82,7 +89,7 @@ export function ForgotPasswordForm() {
       </CardHeader>
       <CardContent>
         <Form {...form}>
-          <form action={formAction} onSubmit={form.handleSubmit(() => form.control._formAction(form.getValues() as any))} className="space-y-6">
+          <form onSubmit={form.handleSubmit(processForm)} className="space-y-6">
             <FormField
               control={form.control}
               name="email"
