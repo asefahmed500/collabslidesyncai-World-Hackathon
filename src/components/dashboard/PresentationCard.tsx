@@ -21,7 +21,7 @@ import { cn } from '@/lib/utils';
 
 interface PresentationCardProps {
   presentation: Presentation;
-  onDeleteRequest: (presentationId: string) => void; 
+  onDeleteRequest: (presentationId: string) => void;
   onDuplicateRequest: (presentationId: string) => void;
   onToggleFavoriteRequest: (presentationId: string) => void;
   isFavorite: boolean;
@@ -31,12 +31,8 @@ export function PresentationCard({ presentation, onDeleteRequest, onDuplicateReq
   const router = useRouter();
   const { currentUser } = useAuth();
   const collaboratorCount = presentation.access ? Object.keys(presentation.access).filter(id => id !== presentation.creatorId).length : 0;
-  
-  const lastUpdatedDate = presentation.lastUpdatedAt instanceof Date 
-    ? presentation.lastUpdatedAt 
-    : (presentation.lastUpdatedAt as any)?.toDate 
-    ? (presentation.lastUpdatedAt as any).toDate() 
-    : new Date();
+
+  const lastUpdatedDate = presentation.lastUpdatedAt; // Now expected to be a JS Date
 
   const isCreator = presentation.creatorId === currentUser?.id;
 
@@ -79,7 +75,7 @@ export function PresentationCard({ presentation, onDeleteRequest, onDuplicateReq
         </CardDescription>
         <div className="flex items-center text-xs text-muted-foreground mb-1">
           <Clock className="w-3 h-3 mr-1.5 flex-shrink-0" />
-          Updated: {formatDistanceToNowStrict(lastUpdatedDate, { addSuffix: true })}
+          Updated: {lastUpdatedDate ? formatDistanceToNowStrict(lastUpdatedDate, { addSuffix: true }) : 'N/A'}
         </div>
         {collaboratorCount > 0 && (
           <div className="flex items-center text-xs text-muted-foreground">

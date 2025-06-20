@@ -28,7 +28,8 @@ export function CollaborationBar({ activeCollaborators, currentUser }: Collabora
     // Ensure names are treated as strings for localeCompare
     const nameA = a.name || '';
     const nameB = b.name || '';
-    return nameA.localeCompare(nameB) || (b.lastSeen.toDate().getTime() - a.lastSeen.toDate().getTime());
+    // lastSeen is now expected to be a JS Date
+    return nameA.localeCompare(nameB) || (b.lastSeen.getTime() - a.lastSeen.getTime());
   });
 
   const displayedCollaborators = sortedCollaborators.slice(0, maxAvatars);
@@ -50,7 +51,8 @@ export function CollaborationBar({ activeCollaborators, currentUser }: Collabora
               </TooltipTrigger>
               <TooltipContent>
                 <p>{user.name || 'Anonymous User'} {currentUser && user.id === currentUser.id ? '(You)' : ''}</p>
-                <p className="text-xs text-muted-foreground">Last seen: {new Date(user.lastSeen.toDate()).toLocaleTimeString()}</p>
+                {/* user.lastSeen is now a JS Date */}
+                <p className="text-xs text-muted-foreground">Last seen: {user.lastSeen.toLocaleTimeString()}</p>
               </TooltipContent>
             </Tooltip>
           ))}

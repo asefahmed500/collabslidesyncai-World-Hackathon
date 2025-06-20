@@ -53,21 +53,22 @@ import {
   releaseExpiredLocks,
   getNextUserColor,
   logPresentationActivity,
-  getPresentationById, 
-  getPresentationByIdAdmin, 
+  getPresentationById,
+  getPresentationByIdAdmin,
   uuidv4,
+  convertTimestamps, // Import convertTimestamps
 } from '@/lib/firestoreService';
 import { doc, onSnapshot, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebaseConfig';
 import { throttle } from 'lodash';
 import { ShareDialog } from '@/components/editor/ShareDialog';
 import { PasswordPromptDialog } from '@/components/editor/PasswordPromptDialog';
-import { TemplateSelectionDialog } from '@/components/editor/TemplateSelectionDialog'; 
-import { slideTemplates } from '@/lib/slideTemplates'; 
+import { TemplateSelectionDialog } from '@/components/editor/TemplateSelectionDialog';
+import { slideTemplates } from '@/lib/slideTemplates';
 import { useIsMobile } from '@/hooks/use-mobile';
 
-const LOCK_CHECK_INTERVAL = 15000; 
-const PRESENCE_UPDATE_INTERVAL = 30000; 
+const LOCK_CHECK_INTERVAL = 15000;
+const PRESENCE_UPDATE_INTERVAL = 30000;
 
 export default function EditorPage() {
   const router = useRouter();
@@ -92,7 +93,7 @@ export default function EditorPage() {
   const [isTakenDown, setIsTakenDown] = useState(false);
   const [passwordVerifiedInSession, setPasswordVerifiedInSession] = useState(false);
   const [slideToDelete, setSlideToDelete] = useState<Slide | null>(null);
-  const [showTemplatesDialog, setShowTemplatesDialog] = useState(false); 
+  const [showTemplatesDialog, setShowTemplatesDialog] = useState(false);
 
   const isMobile = useIsMobile();
 
@@ -123,7 +124,7 @@ export default function EditorPage() {
   const checkAccessAndLoad = useCallback(async (presData: Presentation, user: AppUser | null) => {
     if (presData.moderationStatus === 'taken_down' && (!user || !user.isAppAdmin)) {
         setIsTakenDown(true);
-        setAccessDenied(true); 
+        setAccessDenied(true);
         toast({ title: "Presentation Unavailable", description: "This presentation is currently unavailable.", variant: "destructive" });
         return false;
     }
@@ -154,11 +155,11 @@ export default function EditorPage() {
       }
     }
 
-    if (hasAccess || (user && user.isAppAdmin)) { 
+    if (hasAccess || (user && user.isAppAdmin)) {
       setAccessDenied(false);
-      if (user && !(user.isAppAdmin && presData.creatorId !== user.id)) { 
+      if (user && !(user.isAppAdmin && presData.creatorId !== user.id)) {
          logPresentationActivity(presData.id, user.id, 'presentation_viewed', { accessMethod });
-      } else if (presData.settings.isPublic && !presData.settings.passwordProtected && !user) { 
+      } else if (presData.settings.isPublic && !presData.settings.passwordProtected && !user) {
          logPresentationActivity(presData.id, 'guest', 'presentation_viewed', { accessMethod: 'public_link_anonymous' });
       }
       return true;
@@ -182,21 +183,23 @@ export default function EditorPage() {
       const presRef = doc(db, 'presentations', presentationId);
       unsubscribePresentationListener.current = onSnapshot(presRef, async (docSnap) => {
         if (docSnap.exists()) {
-          const data = docSnap.data() as Omit<Presentation, 'id'>;
+          const rawFirestoreData = docSnap.data() as Omit<Presentation, 'id'>;
+          const data = convertTimestamps(rawFirestoreData) as Omit<Presentation, 'id'>; // Convert Timestamps to JS Dates
+
           const presentationWithDefaults: Presentation = {
             id: docSnap.id,
-            ...data,
+            ...data, // Use converted data
             moderationStatus: data.moderationStatus || 'active',
-            slides: (data.slides || []).map(slide => ({
+            slides: (data.slides || []).map(slide => ({ // slide objects are now from converted data
               ...slide,
               backgroundColor: slide.backgroundColor || '#FFFFFF',
               backgroundImageUrl: slide.backgroundImageUrl || undefined,
               backgroundGradient: slide.backgroundGradient || null,
-              elements: (slide.elements || []).map(el => ({
+              elements: (slide.elements || []).map(el => ({ // el objects are now from converted data
                 ...el,
                 zIndex: el.zIndex === undefined ? 0 : el.zIndex,
                 lockedBy: el.lockedBy || null,
-                lockTimestamp: el.lockTimestamp || null,
+                lockTimestamp: el.lockTimestamp || null, // Will be a JS Date if present
                 rotation: el.rotation || 0,
                 style: {
                   fontFamily: el.style?.fontFamily || 'PT Sans',
@@ -303,8 +306,8 @@ export default function EditorPage() {
     setSelectedTool(tool);
     if (tool === 'ai-design' || tool === 'ai-content' || (tool && tool.startsWith('ai-'))) {
       setIsRightPanelOpen('ai');
-    } else if (tool === 'templates') { 
-      handleShowSlideTemplates(); 
+    } else if (tool === 'templates') {
+      handleShowSlideTemplates();
     } else if (tool !== null && !selectedElement) { // If a creation tool is selected and no element is selected
       setIsRightPanelOpen(null); // Close panels to make space for potential canvas click
     } else if (selectedElement) {
@@ -314,7 +317,7 @@ export default function EditorPage() {
 
   const handleAction = (action: string) => {
      if (action === 'comments') {
-       setIsRightPanelOpen(prev => prev === 'properties' && selectedElement === null ? null : 'properties'); 
+       setIsRightPanelOpen(prev => prev === 'properties' && selectedElement === null ? null : 'properties');
     } else if (action === 'ai-panel') {
        setIsRightPanelOpen(prev => prev === 'ai' ? null : 'ai');
     } else if (action === 'share') {
@@ -345,7 +348,7 @@ export default function EditorPage() {
     }
 
     setSelectedElementId(elementId);
-    setSelectedTool(null); 
+    setSelectedTool(null);
     setIsRightPanelOpen(elementId ? 'properties' : 'properties'); // Always show properties panel, for element or slide
 
     if (elementId) {
@@ -386,7 +389,7 @@ export default function EditorPage() {
     } else {
       toast({title: "Error", description: "Template not found.", variant: "destructive"});
     }
-    setShowTemplatesDialog(false); 
+    setShowTemplatesDialog(false);
   };
 
   const handleDeleteSlide = (slideIdToDelete: string) => {
@@ -407,7 +410,7 @@ export default function EditorPage() {
         if (currentSlideId === slideToDelete.id) {
           if (updatedSlides.length > 0) {
             const currentIndex = presentation.slides.findIndex(s => s.id === slideToDelete.id);
-            const nextSlideIndex = Math.max(0, Math.min(currentIndex -1, updatedSlides.length - 1)); 
+            const nextSlideIndex = Math.max(0, Math.min(currentIndex -1, updatedSlides.length - 1));
             setCurrentSlideId(updatedSlides[nextSlideIndex]?.id || (updatedSlides[0]?.id || null));
           } else {
             setCurrentSlideId(null);
@@ -469,7 +472,7 @@ export default function EditorPage() {
 
   const handleShowSlideTemplates = () => {
     setShowTemplatesDialog(true);
-    setSelectedTool(null); 
+    setSelectedTool(null);
     setIsRightPanelOpen(null); // Close other panels when template dialog opens
   };
 
@@ -479,7 +482,7 @@ export default function EditorPage() {
 
     let newElementPartial: Omit<SlideElement, 'id'> = {
         type: 'text' as SlideElementType,
-        content: '', 
+        content: '',
         position,
         size: { width: 150, height: 50 },
         style: { fontFamily: 'PT Sans', fontSize: '16px', color: '#333333', backgroundColor: 'transparent', textAlign: 'left', opacity: 1 },
@@ -495,7 +498,7 @@ export default function EditorPage() {
         newElementPartial.size = { width: 200, height: 40 };
     } else if (selectedTool === 'image') {
         newElementPartial.type = 'image';
-        newElementPartial.content = 'https://placehold.co/300x200.png?text=New+Image'; 
+        newElementPartial.content = 'https://placehold.co/300x200.png?text=New+Image';
         (newElementPartial.style as any)['data-ai-hint'] = 'abstract image';
         newElementPartial.size = { width: 300, height: 200 };
     } else if (selectedTool === 'shape-rectangle') {
@@ -512,21 +515,21 @@ export default function EditorPage() {
     } else if (selectedTool === 'icon') {
         newElementPartial.type = 'icon';
         newElementPartial.content = { name: 'smile' } as IconContent;
-        newElementPartial.style = { ...newElementPartial.style, color: '#333333', fontSize: '48px' }; 
+        newElementPartial.style = { ...newElementPartial.style, color: '#333333', fontSize: '48px' };
         newElementPartial.size = { width: 60, height: 60 };
     } else {
-        return; 
+        return;
     }
 
     try {
         const newElementId = await apiAddElementToSlide(presentation.id, currentSlideId, newElementPartial);
-        await handleElementSelect(newElementId); 
+        await handleElementSelect(newElementId);
         logPresentationActivity(presentation.id, currentUser.id, 'element_added', { elementType: newElementPartial.type, elementId: newElementId });
     } catch (error: any) {
         console.error("Error adding element:", error);
         toast({ title: "Error Adding Element", description: error.message || "Could not add the element.", variant: "destructive" });
     }
-    setSelectedTool(null); 
+    setSelectedTool(null);
   };
 
   const handleDeleteElement = async (elementId: string) => {
@@ -545,7 +548,7 @@ export default function EditorPage() {
         toast({ title: "Element Deleted" });
         logPresentationActivity(presentation.id, currentUser.id, 'element_deleted', { elementType: elementToDelete.type, elementId });
         if (selectedElementId === elementId) {
-            setSelectedElementId(null); 
+            setSelectedElementId(null);
             setIsRightPanelOpen(null); // Close properties panel
         }
     } catch (error: any) {
@@ -627,7 +630,7 @@ export default function EditorPage() {
 
   const handleUpdateSlideProperties = async (updates: { backgroundColor?: string; backgroundImageUrl?: string | null, backgroundGradient?: SlideBackgroundGradient | null }) => {
     if (!presentation || !currentSlideId || !currentUser) return;
-    
+
     const updatedSlides = presentation.slides.map(s => {
         if (s.id === currentSlideId) {
             const newProps: Partial<Slide> = {};
@@ -659,8 +662,8 @@ export default function EditorPage() {
 
     try {
         await apiUpdatePresentation(presentation.id, { slides: updatedSlides });
-        logPresentationActivity(presentation.id, currentUser.id, 'slide_background_updated', { 
-            slideId: currentSlideId, 
+        logPresentationActivity(presentation.id, currentUser.id, 'slide_background_updated', {
+            slideId: currentSlideId,
             newColor: updates.backgroundColor,
             newImage: updates.backgroundImageUrl,
             newGradient: updates.backgroundGradient,
@@ -675,7 +678,7 @@ export default function EditorPage() {
     if (presentationId && currentUser && isOnline) {
       updateUserCursorPosition(presentationId, currentUser.id, slideId, position);
     }
-  }, 100), [presentationId, currentUser, isOnline]); 
+  }, 100), [presentationId, currentUser, isOnline]);
 
   const handleMouseMoveOnCanvas = (position: { x: number; y: number } | null) => {
     if (currentSlideId && position && currentUser) {
@@ -684,14 +687,14 @@ export default function EditorPage() {
   };
 
   const handleApplyAITextUpdate = (elementId: string, newContent: string) => {
-    if (selectedElement && selectedElement.id === elementId) { 
+    if (selectedElement && selectedElement.id === elementId) {
         handleUpdateElement({ id: elementId, content: newContent });
         toast({title: "AI Update Applied", description: "Text element updated with AI suggestion."});
     }
   };
 
   const handleApplyAISpeakerNotes = (notes: string) => {
-    if (presentation && currentSlideId) { 
+    if (presentation && currentSlideId) {
         const updatedSlides = presentation.slides.map(s =>
             s.id === currentSlideId ? { ...s, speakerNotes: notes } : s
         );
@@ -705,8 +708,8 @@ export default function EditorPage() {
     const newElementPartial: Omit<SlideElement, 'id'> = {
         type: 'image',
         content: iconDataUri,
-        position: { x: 50, y: 50 }, 
-        size: { width: 60, height: 60 }, 
+        position: { x: 50, y: 50 },
+        size: { width: 60, height: 60 },
         style: { (('data-ai-hint' as any)): description, opacity: 1, backgroundColor: 'transparent' },
         zIndex: (currentSlide?.elements.length || 0) + 1,
         rotation: 0,
@@ -727,14 +730,14 @@ export default function EditorPage() {
     if (!presentation || !currentSlideId || !currentUser) return;
     const newElementPartial: Omit<SlideElement, 'id'> = {
         type: 'chart',
-        content: { 
-            type: suggestedConfig.chartType, 
-            data: {}, 
+        content: {
+            type: suggestedConfig.chartType,
+            data: {},
             label: suggestedConfig.titleSuggestion || 'New Chart',
             aiSuggestionNotes: `Data Mapping: ${suggestedConfig.dataMapping}\nAdditional Notes: ${suggestedConfig.additionalNotes || 'None'}`,
         } as ChartContent,
-        position: { x: 100, y: 100 }, 
-        size: { width: 400, height: 300 }, 
+        position: { x: 100, y: 100 },
+        size: { width: 400, height: 300 },
         style: { opacity: 1 },
         zIndex: (currentSlide?.elements.length || 0) + 1,
         rotation: 0,
@@ -750,7 +753,7 @@ export default function EditorPage() {
         toast({ title: "Error Adding Chart", description: error.message || "Could not add the chart.", variant: "destructive" });
     }
   };
-  
+
   const handleApplyAIBackgroundToSlide = (imageUrl: string) => {
     if (currentSlideId) {
         handleUpdateSlideProperties({ backgroundImageUrl: imageUrl, backgroundGradient: null, backgroundColor: undefined });
@@ -762,17 +765,17 @@ export default function EditorPage() {
     setPasswordVerifiedInSession(true);
     sessionStorage.setItem(`passwordVerified_${presentationId}`, 'true');
     setIsPasswordPromptOpen(false);
-    setIsLoading(true); 
-    
-    const presDataToLog = presentation || await getPresentationByIdAdmin(presentationId); 
+    setIsLoading(true);
 
-    if (presDataToLog && currentUser) { 
+    const presDataToLog = presentation || await getPresentationByIdAdmin(presentationId);
+
+    if (presDataToLog && currentUser) {
         logPresentationActivity(presDataToLog.id, currentUser.id, 'presentation_viewed', { accessMethod: 'public_link_password' });
-    } else if (presDataToLog) { 
+    } else if (presDataToLog) {
         logPresentationActivity(presDataToLog.id, 'guest_password_verified', 'presentation_viewed', { accessMethod: 'public_link_password' });
     }
-    
-    setIsLoading(false); 
+
+    setIsLoading(false);
   };
 
   const mobileSheetOpen = isMobile && isRightPanelOpen !== null;
@@ -888,7 +891,7 @@ export default function EditorPage() {
           />
           <p className="text-xs text-muted-foreground">
             {presentation?.version ? `Version ${presentation.version} - ` : ''}
-            Last server update: {presentation?.lastUpdatedAt ? new Date((presentation.lastUpdatedAt as Timestamp).toDate()).toLocaleTimeString() : 'Syncing...'}
+            Last server update: {presentation?.lastUpdatedAt ? presentation.lastUpdatedAt.toLocaleTimeString() : 'Syncing...'}
             {isSaving && <Loader2 className="inline-block ml-2 h-3 w-3 animate-spin" />}
           </p>
         </div>
@@ -932,7 +935,7 @@ export default function EditorPage() {
           slides={presentation?.slides || []}
           currentSlideId={currentSlideId}
           onSlideSelect={handleSlideSelect}
-          onAddSlide={() => handleAddSlide()} 
+          onAddSlide={() => handleAddSlide()}
           onDeleteSlide={handleDeleteSlide}
           onDuplicateSlide={handleDuplicateSlide}
           onMoveSlide={handleMoveSlide}
@@ -1030,7 +1033,7 @@ export default function EditorPage() {
           </SheetContent>
         </Sheet>
       )}
-      
+
       {presentation && currentUser && (
         <ShareDialog
             presentation={presentation}
@@ -1074,5 +1077,3 @@ export default function EditorPage() {
     </div>
   );
 }
-
-    

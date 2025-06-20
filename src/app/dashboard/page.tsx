@@ -38,7 +38,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'; 
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { useForm, type SubmitHandler } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -99,7 +99,7 @@ export default function DashboardPage() {
           const userCreatedPresentations = data.filter(p => p.creatorId === currentUser.id);
           setPresentationsCreatedCount(userCreatedPresentations.length);
           setTotalSlidesCreatedCount(userCreatedPresentations.reduce((sum, p) => sum + (p.slides?.length || 0), 0));
-          setPendingInvitations([]); 
+          setPendingInvitations([]);
         } else {
           const invites = await getPendingTeamInvitationsForUserById(currentUser.id);
           setPendingInvitations(invites);
@@ -131,7 +131,7 @@ export default function DashboardPage() {
       if (createTeamFormState.success) {
         toast({ title: "Team Created!", description: createTeamFormState.message });
         createTeamForm.reset();
-        
+
         refreshCurrentUser().then(() => { // Refresh current user context
             router.refresh(); // Then refresh server components
             fetchData(); // Then re-fetch client-side data
@@ -201,7 +201,7 @@ export default function DashboardPage() {
   };
 
   const handleRespondToInvitation = async (notificationId: string, teamId: string, role: TeamRole, action: 'accept' | 'decline') => {
-    setIsRespondingToInvite(teamId); 
+    setIsRespondingToInvite(teamId);
     try {
         const response = await fetch('/api/teams/invitations/respond', {
             method: 'POST',
@@ -211,7 +211,7 @@ export default function DashboardPage() {
         const result = await response.json();
         if (result.success) {
             toast({ title: `Invitation ${action === 'accept' ? 'Accepted' : 'Declined'}`, description: result.message });
-            
+
             await refreshCurrentUser(); // Refresh current user context
             router.refresh(); // Then refresh server components
             fetchData(); // Then re-fetch client-side data
@@ -249,7 +249,7 @@ export default function DashboardPage() {
         const getVal = (obj: Presentation, keyPart: string) => {
             if (keyPart.startsWith('lastUpdatedAt') || keyPart.startsWith('createdAt')) {
                 const dateVal = obj[keyPart.split('_')[0] as 'lastUpdatedAt' | 'createdAt'];
-                return dateVal instanceof Date ? dateVal.getTime() : (dateVal as any)?.toDate ? (dateVal as any).toDate().getTime() : 0;
+                return dateVal ? dateVal.getTime() : 0; // Assumes dateVal is JS Date or undefined/null
             }
             return obj[keyPart.split('_')[0] as 'title'] || '';
         };
@@ -264,8 +264,8 @@ export default function DashboardPage() {
 
   const recentPresentations = [...presentations]
     .sort((a,b) => {
-         const dateA = a.lastUpdatedAt instanceof Date ? a.lastUpdatedAt.getTime() : (a.lastUpdatedAt as any)?.toDate ? (a.lastUpdatedAt as any).toDate().getTime() : 0;
-        const dateB = b.lastUpdatedAt instanceof Date ? b.lastUpdatedAt.getTime() : (b.lastUpdatedAt as any)?.toDate ? (b.lastUpdatedAt as any).toDate().getTime() : 0;
+        const dateA = a.lastUpdatedAt ? a.lastUpdatedAt.getTime() : 0; // Assumes JS Date
+        const dateB = b.lastUpdatedAt ? b.lastUpdatedAt.getTime() : 0; // Assumes JS Date
         return dateB - dateA;
     })
     .slice(0,3);
@@ -285,7 +285,7 @@ export default function DashboardPage() {
       });
       const sessionData = await response.json();
       if (response.ok && sessionData.success && sessionData.url) {
-        router.push(sessionData.url); 
+        router.push(sessionData.url);
       } else {
         throw new Error(sessionData.message || "Failed to create Stripe Checkout session.");
       }
@@ -633,7 +633,7 @@ export default function DashboardPage() {
                             )}
                           </div>
                           <p className="text-xs text-muted-foreground truncate">
-                            Last updated: {presentation.lastUpdatedAt ? formatDistanceToNowStrict(presentation.lastUpdatedAt instanceof Date ? presentation.lastUpdatedAt : (presentation.lastUpdatedAt as any).toDate(), { addSuffix: true }) : 'N/A'}
+                            Last updated: {presentation.lastUpdatedAt ? formatDistanceToNowStrict(presentation.lastUpdatedAt, { addSuffix: true }) : 'N/A'}
                             {presentation.teamId && currentUser?.teamId && presentation.teamId === currentUser.teamId && <Badge variant="outline" className="ml-2 text-xs">Team</Badge>}
                           </p>
                         </div>
@@ -774,4 +774,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-

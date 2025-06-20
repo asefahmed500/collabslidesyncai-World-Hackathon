@@ -23,7 +23,7 @@ const getNotificationIcon = (type: NotificationEnumType, customIcon?: string) =>
     // Future: Allow custom SVG paths or image URLs
   }
   switch (type) {
-    case 'team_invite': 
+    case 'team_invite':
     case 'team_invitation':
       return <Users className="h-5 w-5 text-blue-500" />;
     case 'comment_new': return <MessageSquare className="h-5 w-5 text-green-500" />;
@@ -92,7 +92,7 @@ export function NotificationItem({ notification, currentUserId }: NotificationIt
 
 
   const timeAgo = notification.createdAt
-    ? formatDistanceToNowStrict(new Date(notification.createdAt.toDate()), { addSuffix: true })
+    ? formatDistanceToNowStrict(notification.createdAt, { addSuffix: true }) // Assumes createdAt is JS Date
     : 'just now';
 
   const isActionableInvitation = notification.type === 'team_invitation' && !notification.isRead && notification.teamIdForAction && notification.roleForAction;
@@ -107,7 +107,7 @@ export function NotificationItem({ notification, currentUserId }: NotificationIt
       onClick={!isActionableInvitation ? handleRegularNotificationClick : undefined} // Only regular click if not actionable
       role={notification.link || isActionableInvitation ? "button" : "listitem"}
       tabIndex={0}
-      onKeyDown={(e) => { 
+      onKeyDown={(e) => {
         if (!isActionableInvitation && (e.key === 'Enter' || e.key === ' ')) handleRegularNotificationClick();
       }}
     >
@@ -160,4 +160,3 @@ export function NotificationItem({ notification, currentUserId }: NotificationIt
     </div>
   );
 }
-
