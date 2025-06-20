@@ -16,7 +16,7 @@ import {
   deleteUser as firebaseDeleteUser,
   reauthenticateWithCredential,
   EmailAuthProvider,
-  type User as FirebaseUserType 
+  type User as FirebaseUserType
 } from 'firebase/auth';
 import type { User as AppUser } from '@/types';
 import {
@@ -27,7 +27,7 @@ import {
   getUserByEmailFromMongoDB,
   updateUserTeamAndRoleInMongoDB
 } from '@/lib/mongoUserService';
-import { createTeamInMongoDB, removeMemberFromTeamInMongoDB, logTeamActivityInMongoDB } from '@/lib/mongoTeamService';
+import { createTeamInMongoDB, removeMemberFromTeamInMongoDB, logTeamActivityInMongoDB, deleteTeamFromMongoDB } from '@/lib/mongoTeamService';
 import { revalidatePath } from 'next/cache';
 import dbConnect from '@/lib/mongodb'; // Added for direct DB operations in server action
 
@@ -63,6 +63,10 @@ export async function signUpWithEmail(prevState: any, formData: FormData): Promi
     return { success: false, message: 'Team name must be at least 3 characters.' };
   }
 
+  let firebaseUser: FirebaseUserType | null = null;
+  let appUser: AppUser | null = null;
+  let newTeamId: string | null = null;
+
   try {
     const existingMongoUserByEmail = await getUserByEmailFromMongoDB(email);
     if (existingMongoUserByEmail) {
@@ -70,54 +74,78 @@ export async function signUpWithEmail(prevState: any, formData: FormData): Promi
     }
 
     const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-    const firebaseUser = userCredential.user;
+    firebaseUser = userCredential.user;
 
     await firebaseUpdateProfile(firebaseUser, { displayName: name });
-    
+
     const initialAppUserForMongo: Partial<AppUser> = {
         name,
         email: firebaseUser.email,
         emailVerified: firebaseUser.emailVerified,
         profilePictureUrl: firebaseUser.photoURL,
-        role: 'guest', 
+        role: 'guest',
         isAppAdmin: false,
     };
 
-    let appUser = await createUserInMongoDB(firebaseUser, initialAppUserForMongo);
+    appUser = await createUserInMongoDB(firebaseUser, initialAppUserForMongo);
     if (!appUser) {
-      await firebaseDeleteUser(firebaseUser); 
+      if (firebaseUser) await firebaseDeleteUser(firebaseUser);
       return { success: false, message: 'Failed to create user profile in database. Firebase user rolled back.' };
     }
 
-    const newTeam = await createTeamInMongoDB(teamName, appUser);
-    if (!newTeam) {
-      await firebaseDeleteUser(firebaseUser); 
-      await deleteUserFromMongoDB(appUser.id); 
+    const teamRecord = await createTeamInMongoDB(teamName, appUser);
+    if (!teamRecord) {
+      if (firebaseUser) await firebaseDeleteUser(firebaseUser);
+      if (appUser) await deleteUserFromMongoDB(appUser.id);
       return { success: false, message: 'Failed to create team. User creation rolled back.' };
     }
+    newTeamId = teamRecord.id;
 
-    const updatedAppUserWithTeam = await updateUserTeamAndRoleInMongoDB(appUser.id, newTeam.id, 'owner');
+    const updatedAppUserWithTeam = await updateUserTeamAndRoleInMongoDB(appUser.id, newTeamId, 'owner');
      if (!updatedAppUserWithTeam) {
-        console.error(`Failed to update user ${appUser.id} with teamId ${newTeam.id} after team creation.`);
-        await firebaseDeleteUser(firebaseUser);
-        await deleteUserFromMongoDB(appUser.id);
+        console.error(`Failed to update user ${appUser.id} with teamId ${newTeamId} after team creation.`);
+        // Rollback sequence: Firebase User, MongoDB User, MongoDB Team
+        if (firebaseUser) await firebaseDeleteUser(firebaseUser);
+        if (appUser) await deleteUserFromMongoDB(appUser.id);
+        if (newTeamId) await deleteTeamFromMongoDB(newTeamId, appUser.id); // Delete the created team
         return { success: false, message: 'Failed to associate user with new team. Signup rolled back.' };
     }
-    
+
     await firebaseSendEmailVerification(firebaseUser);
 
     return {
       success: true,
       message: `Signup successful! Team "${teamName}" created. A verification email has been sent to ${email}. Please check your inbox.`,
       userId: firebaseUser.uid,
-      user: updatedAppUserWithTeam 
+      user: updatedAppUserWithTeam
     };
   } catch (error: any) {
     console.error('Signup error:', error);
-    if (auth.currentUser && auth.currentUser.email === email && error.message.includes('database')) {
-       try { await firebaseDeleteUser(auth.currentUser); console.log("Rolled back Firebase user due to DB error during signup.");}
-       catch (rbError) { console.error("Error rolling back Firebase user:", rbError);}
+    // General catch-all rollback if something unexpected happened
+    // This part tries to clean up if an error occurred after some entities were created but before a specific check failed.
+    if (firebaseUser) {
+      try {
+        const currentFbUser = auth.currentUser;
+        // Only delete if the currently authenticated user is the one we just tried to create
+        if (currentFbUser && currentFbUser.uid === firebaseUser.uid) {
+            await firebaseDeleteUser(firebaseUser);
+            console.log("Rolled back Firebase user due to error during signup process.");
+        }
+      } catch (rbError) { console.error("Error rolling back Firebase user in catch block:", rbError); }
     }
+    if (appUser && appUser.id) { // if appUser object was populated
+        try {
+            await deleteUserFromMongoDB(appUser.id);
+            console.log("Rolled back MongoDB user due to error during signup process.");
+        } catch (rbError) { console.error("Error rolling back MongoDB user in catch block:", rbError); }
+    }
+    if (newTeamId && appUser && appUser.id) { // if newTeamId was populated
+        try {
+            await deleteTeamFromMongoDB(newTeamId, appUser.id); // Attempt to delete team
+            console.log("Rolled back MongoDB team due to error during signup process.");
+        } catch (rbError) { console.error("Error rolling back MongoDB team in catch block:", rbError); }
+    }
+
 
     if (error.code === 'auth/email-already-in-use') {
       return { success: false, message: 'This email address is already in use by Firebase Auth. Please try another or login.' };
@@ -140,18 +168,18 @@ export async function signInWithEmail(prevState: any, formData: FormData): Promi
   try {
     const userCredential = await signInWithEmailAndPassword(auth, email, password);
     const firebaseUser = userCredential.user;
-    
+
     let appUser = await getUserFromMongoDB(firebaseUser.uid);
     if (!appUser) {
         console.warn(`User document not found in MongoDB for UID: ${firebaseUser.uid} after login. Attempting to create profile.`);
-        const recoveryData: Partial<AppUser> = { 
+        const recoveryData: Partial<AppUser> = {
             name: firebaseUser.displayName,
             email: firebaseUser.email,
             emailVerified: firebaseUser.emailVerified,
             profilePictureUrl: firebaseUser.photoURL,
-            role: 'guest', 
+            role: 'guest',
         };
-        appUser = await createUserInMongoDB(firebaseUser, recoveryData); 
+        appUser = await createUserInMongoDB(firebaseUser, recoveryData);
         if (!appUser) {
           return { success: false, message: 'Login successful with Firebase, but failed to load/create user profile from database.' };
         }
@@ -185,7 +213,7 @@ export async function handleSocialSignIn(firebaseUserAuthType: FirebaseUserType)
     if (!appUser) {
       return { success: false, message: "Failed to process user profile after social sign-in." };
     }
-    
+
     return { success: true, message: "Social sign-in successful.", userId: appUser.id, user: appUser };
   } catch (error: any) {
     console.error("Error handling social sign in on server:", error);
@@ -243,7 +271,7 @@ export async function updateUserProfileServer(userId: string, formData: FormData
     }
 
     const updatedUser = await updateUserInMongoDB(userId, updates);
-    revalidatePath('/dashboard/profile'); 
+    revalidatePath('/dashboard/profile');
     return { success: true, message: 'Profile updated successfully.', user: updatedUser };
   } catch (error: any) {
     console.error('Error updating profile:', error);
@@ -300,16 +328,16 @@ export async function deleteUserAccountServer(userId: string): Promise<AuthRespo
     if (appUser && appUser.teamId && appUser.role === 'owner') {
         return { success: false, message: 'Cannot delete account: You are the owner of a team. Please transfer ownership or delete the team first.' };
     }
-    
+
     if (appUser && appUser.teamId) {
-        await removeMemberFromTeamInMongoDB(appUser.teamId, userId); // Removed actorId, should be handled by service if needed
-        await logTeamActivityInMongoDB(appUser.teamId, 'system', 'member_removed', { memberName: appUser.name || userId, reason: 'Account Deletion' }, 'user', userId);
+        await removeMemberFromTeamInMongoDB(appUser.teamId, userId, userId); // Pass user's own ID as actorId for this action
+        await logTeamActivityInMongoDB(appUser.teamId, userId, 'member_removed', { memberName: appUser.name || userId, reason: 'Account Deletion' }, 'user', userId);
     }
 
-    await deleteUserFromMongoDB(userId); 
-    await firebaseDeleteUser(auth.currentUser); 
-    
-    revalidatePath('/'); 
+    await deleteUserFromMongoDB(userId);
+    await firebaseDeleteUser(auth.currentUser);
+
+    revalidatePath('/');
     return { success: true, message: 'Account deleted successfully.' };
   } catch (error: any) {
     console.error('Error deleting account:', error);
@@ -350,13 +378,13 @@ export async function getOrCreateAppUserFromMongoDB(fbUserMinimal: FirebaseUserM
         isAppAdmin: false, // Default platform role is standard user
         teamId: null, // Social sign-in users start without a team
     };
-    
+
     const googleProvider = fbUserMinimal.providerData.find(p => p.providerId === GoogleAuthProvider.PROVIDER_ID);
     if (googleProvider?.uid) additionalData.googleId = googleProvider.uid;
-    
+
     const githubProvider = fbUserMinimal.providerData.find(p => p.providerId === GithubAuthProvider.PROVIDER_ID);
     if (githubProvider?.uid) additionalData.githubId = githubProvider.uid;
-    
+
     appUser = await createUserInMongoDB(firebaseUserForCreate as FirebaseUserType, additionalData);
   } else {
     console.log(`User ${fbUserMinimal.uid} found in MongoDB. Checking for updates...`);
@@ -379,16 +407,16 @@ export async function getOrCreateAppUserFromMongoDB(fbUserMinimal: FirebaseUserM
     if (googleProvider?.uid && googleProvider.uid !== appUser.googleId) {
       updatesForExistingUser.googleId = googleProvider.uid;
     }
-    
+
     const githubProvider = fbUserMinimal.providerData.find(p => p.providerId === GithubAuthProvider.PROVIDER_ID);
     if (githubProvider?.uid && githubProvider.uid !== appUser.githubId) {
       updatesForExistingUser.githubId = githubProvider.uid;
     }
 
-    if (Object.keys(updatesForExistingUser).length > 1) { 
+    if (Object.keys(updatesForExistingUser).length > 1) { // Check if more than just lastActive is being updated
         console.log(`Updating existing user ${appUser.id} with data:`, updatesForExistingUser);
         appUser = await updateUserInMongoDB(appUser.id, updatesForExistingUser);
-    } else if (updatesForExistingUser.lastActive) { 
+    } else if (updatesForExistingUser.lastActive) { // Only update lastActive if no other profile fields changed
         appUser = await updateUserInMongoDB(appUser.id, { lastActive: updatesForExistingUser.lastActive });
     }
   }
