@@ -6,7 +6,7 @@ import { SiteHeader } from '@/components/shared/SiteHeader';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import { LifeBuoy, MessageSquareQuestion, Bug, Lightbulb, BookOpen, MessageCircle, Bot, PlaySquare, Users } from 'lucide-react';
+import { LifeBuoy, MessageSquareText, Bug, Lightbulb, BookOpen, MessageCircle, Bot, PlaySquare, Users } from 'lucide-react';
 import { FeedbackDialog } from '@/components/support/FeedbackDialog';
 import { AIChatbotWidget } from '@/components/support/AIChatbotWidget';
 
@@ -59,7 +59,7 @@ export default function HelpCenterPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
           <Card className="shadow-lg hover:shadow-xl transition-shadow">
             <CardHeader>
-              <CardTitle className="flex items-center"><MessageSquareQuestion className="mr-2 h-6 w-6 text-primary" /> Frequently Asked Questions</CardTitle>
+              <CardTitle className="flex items-center"><MessageSquareText className="mr-2 h-6 w-6 text-primary" /> Frequently Asked Questions</CardTitle>
             </CardHeader>
             <CardContent>
               <Accordion type="single" collapsible className="w-full">
