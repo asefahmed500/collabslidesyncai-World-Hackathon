@@ -1,4 +1,3 @@
-
 'use server';
 /**
  * @fileOverview An AI flow for suggesting chart configurations based on textual data or descriptions.
@@ -6,18 +5,19 @@
  * - suggestChart - A function that suggests a chart type and data mapping.
  * - SuggestChartInput - The input type for the suggestChart function.
  * - SuggestChartOutput - The return type for the suggestChart function.
+ * - SuggestedChartConfig - The type for a single chart suggestion configuration.
  */
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 
-export const SuggestChartInputSchema = z.object({
+const SuggestChartInputSchema = z.object({
   dataDescription: z.string().describe('A textual description of the data, or the data itself (e.g., as a simple CSV string or key-value pairs). Example: "Categories: A, B, C. Values: 10, 20, 15 for sales."'),
   goal: z.string().optional().describe('What the chart should represent or highlight (e.g., "compare sales across categories", "show trend over time").'),
 });
 export type SuggestChartInput = z.infer<typeof SuggestChartInputSchema>;
 
-export const SuggestedChartConfigSchema = z.object({
+const SuggestedChartConfigSchema = z.object({
   chartType: z.enum(['bar', 'line', 'pie', 'scatter', 'area']).describe('The suggested type of chart.'),
   dataMapping: z.string().describe("A natural language description of how to map the provided data to the chart's axes or segments (e.g., 'Use categories for X-axis and values for Y-axis', 'Each item name as a pie slice, with its count as the value')."),
   titleSuggestion: z.string().optional().describe('A suggested title for the chart.'),
@@ -25,7 +25,7 @@ export const SuggestedChartConfigSchema = z.object({
 });
 export type SuggestedChartConfig = z.infer<typeof SuggestedChartConfigSchema>;
 
-export const SuggestChartOutputSchema = z.object({
+const SuggestChartOutputSchema = z.object({
   suggestions: z.array(SuggestedChartConfigSchema).describe('An array of 1-2 chart suggestions.'),
   interpretation: z.string().optional().describe('How the AI interpreted the input data or description.'),
 });

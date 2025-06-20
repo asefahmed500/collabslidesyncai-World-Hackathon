@@ -1,4 +1,3 @@
-
 'use server';
 /**
  * @fileOverview An AI flow for generating slide background images.
@@ -11,13 +10,13 @@
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 
-export const GenerateBackgroundInputSchema = z.object({
+const GenerateBackgroundInputSchema = z.object({
   description: z.string().describe('A description of the desired background (e.g., "abstract blue waves", "minimalist dark geometric pattern", "sunset over mountains"). Keep it descriptive but concise.'),
   stylePrompt: z.string().optional().describe('Optional style prompt (e.g., "watercolor", "photorealistic", "vector art").'),
 });
 export type GenerateBackgroundInput = z.infer<typeof GenerateBackgroundInputSchema>;
 
-export const GenerateBackgroundOutputSchema = z.object({
+const GenerateBackgroundOutputSchema = z.object({
   imageDataUri: z.string().describe("The generated background image as a data URI (e.g., 'data:image/png;base64,...'). Null if generation failed."),
   feedback: z.string().optional().describe("Feedback or reason if image generation failed or has issues."),
 });

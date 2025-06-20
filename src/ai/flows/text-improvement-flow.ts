@@ -10,7 +10,7 @@
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 
-export const ImproveTextInputSchema = z.object({
+const ImproveTextInputSchema = z.object({
   textToImprove: z.string().describe('The text content to be improved.'),
   improvementType: z
     .enum(['grammar', 'clarity', 'professionalism', 'conciseness'])
@@ -18,7 +18,7 @@ export const ImproveTextInputSchema = z.object({
 });
 export type ImproveTextInput = z.infer<typeof ImproveTextInputSchema>;
 
-export const ImproveTextOutputSchema = z.object({
+const ImproveTextOutputSchema = z.object({
   improvedText: z.string().describe('The suggested improved version of the text.'),
   explanation: z.string().optional().describe('An optional explanation of the changes made.'),
 });

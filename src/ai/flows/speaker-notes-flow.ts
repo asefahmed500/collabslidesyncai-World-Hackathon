@@ -10,13 +10,13 @@
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 
-export const GenerateSpeakerNotesInputSchema = z.object({
+const GenerateSpeakerNotesInputSchema = z.object({
   slideContent: z.string().describe('The combined text content from all elements on the slide.'),
   presentationContext: z.string().optional().describe('Optional broader context about the presentation (e.g., audience, overall topic) to help tailor notes.'),
 });
 export type GenerateSpeakerNotesInput = z.infer<typeof GenerateSpeakerNotesInputSchema>;
 
-export const GenerateSpeakerNotesOutputSchema = z.object({
+const GenerateSpeakerNotesOutputSchema = z.object({
   speakerNotes: z.string().describe('The generated speaker notes for the slide, formatted as a single string. Bullet points should start with "- ".'),
 });
 export type GenerateSpeakerNotesOutput = z.infer<typeof GenerateSpeakerNotesOutputSchema>;

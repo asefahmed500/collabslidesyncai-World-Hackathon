@@ -10,7 +10,7 @@
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 
-export const GenerateContentInputSchema = z.object({
+const GenerateContentInputSchema = z.object({
   currentContent: z.string().optional().describe('Existing content to base generation on (e.g., for rewriting or summarizing into bullets).'),
   generationType: z
     .enum(['bullet_points_from_content', 'bullet_points_from_topic', 'rewrite_content', 'summarize_content'])
@@ -20,7 +20,7 @@ export const GenerateContentInputSchema = z.object({
 });
 export type GenerateContentInput = z.infer<typeof GenerateContentInputSchema>;
 
-export const GenerateContentOutputSchema = z.object({
+const GenerateContentOutputSchema = z.object({
   generatedContent: z.string().describe('The newly generated content (can be a list of bullet points formatted as a string, or rewritten text).'),
   contentType: z.enum(['text', 'bullet_list_string']).describe('The nature of the generated content.'),
 });

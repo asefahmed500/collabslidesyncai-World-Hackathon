@@ -10,7 +10,7 @@
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 
-export const AdjustToneInputSchema = z.object({
+const AdjustToneInputSchema = z.object({
   textToAdjust: z.string().describe('The text whose tone needs to be adjusted.'),
   targetTone: z
     .enum(['formal', 'casual', 'enthusiastic', 'neutral'])
@@ -18,7 +18,7 @@ export const AdjustToneInputSchema = z.object({
 });
 export type AdjustToneInput = z.infer<typeof AdjustToneInputSchema>;
 
-export const AdjustToneOutputSchema = z.object({
+const AdjustToneOutputSchema = z.object({
   adjustedText: z.string().describe('The text with the adjusted tone.'),
 });
 export type AdjustToneOutput = z.infer<typeof AdjustToneOutputSchema>;

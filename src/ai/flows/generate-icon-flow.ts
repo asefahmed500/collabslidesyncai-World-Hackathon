@@ -1,4 +1,3 @@
-
 'use server';
 /**
  * @fileOverview An AI flow for generating simple icons based on textual descriptions.
@@ -11,12 +10,12 @@
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 
-export const GenerateIconInputSchema = z.object({
+const GenerateIconInputSchema = z.object({
   description: z.string().describe('A short description of the icon to generate (e.g., "a simple heart icon", "blue folder icon"). Keep it concise for best results.'),
 });
 export type GenerateIconInput = z.infer<typeof GenerateIconInputSchema>;
 
-export const GenerateIconOutputSchema = z.object({
+const GenerateIconOutputSchema = z.object({
   iconDataUri: z.string().describe("The generated icon image as a data URI (e.g., 'data:image/png;base64,...'). Null if generation failed."),
   feedback: z.string().optional().describe("Feedback or reason if icon generation failed or has issues."),
 });
