@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
   switch (event.type) {
     case 'checkout.session.completed':
       const session = event.data.object as Stripe.Checkout.Session;
-      const clientReferenceId = session.client_reference_id; // Should be your app's userId
+      const clientReferenceId = session.client_reference_id; 
       const userIdFromMetadata = session.metadata?.userId;
       const userEmailFromDetails = session.customer_details?.email;
       const stripeCustomerId = session.customer as string;
@@ -59,10 +59,14 @@ export async function POST(request: NextRequest) {
 
       if (!userToUpdate) {
         console.error(`🔴 User not found for client_reference_id: ${clientReferenceId}, metadata ID: ${userIdFromMetadata}, or email: ${userEmailFromDetails}. Checkout session ID: ${session.id}`);
-        // Potentially create a new user if your flow supports it, or log for manual intervention
         break; 
       }
       
+      if (!stripeSubscriptionId) {
+        console.error(`🔴 Stripe Subscription ID missing in checkout.session.completed for session ID: ${session.id}. Cannot process.`);
+        break;
+      }
+
       try {
         const subscription = await stripe.subscriptions.retrieve(stripeSubscriptionId);
         const planId = session.metadata?.planId || subscription.items.data[0]?.price?.lookup_key || 'unknown_plan';
@@ -78,7 +82,6 @@ export async function POST(request: NextRequest) {
           subscriptionEndDate: currentPeriodEnd,
         });
         console.log(`✅ User ${userToUpdate.id} upgraded. Plan: ${planId}, Subscription: ${stripeSubscriptionId}`);
-        // TODO: Send subscription activated email (optional)
       } catch (subError: any) {
         console.error(`🔴 Error processing checkout.session.completed for user ${userToUpdate.id}: ${subError.message}`);
       }
@@ -99,12 +102,10 @@ export async function POST(request: NextRequest) {
             const newEndDate = new Date(subscriptionDetails.current_period_end * 1000);
             await updateUserInMongoDB(userWithPaidInvoice.id, { 
               subscriptionEndDate: newEndDate,
-              isPremium: true, // Ensure premium status is active
-              // Optionally update start date if it's a new cycle after a pause
+              isPremium: true, 
               subscriptionStartDate: new Date(subscriptionDetails.current_period_start * 1000),
             });
             console.log(`✅ Invoice payment succeeded for subscription: ${subIdForInvoice}. User ${userWithPaidInvoice.id} subscription end date updated to ${newEndDate.toLocaleDateString()}.`);
-            // TODO: Send payment receipt email (optional, Stripe can also do this)
         } catch (invError: any) {
             console.error(`🔴 Error processing invoice.payment_succeeded for subscription ${subIdForInvoice}: ${invError.message}`);
         }
@@ -119,15 +120,9 @@ export async function POST(request: NextRequest) {
       if (subIdForFailed) {
         const userWithFailedPayment = await UserModel.findOne({ stripeSubscriptionId: subIdForFailed }).exec();
         if (userWithFailedPayment) {
-          // Update user status. Depending on your Stripe settings for retries,
-          // you might set `isPremium: false` here or after all retries fail.
-          // For now, let's assume Stripe handles dunning and we only act on final cancellation.
           await updateUserInMongoDB(userWithFailedPayment.id, { 
-            // isPremium: false, // Consider if this should be immediate or after dunning.
-            // subscriptionStatus: 'past_due' // If you add such a field in your User model
           });
           console.log(`⚠️ User ${userWithFailedPayment.id} payment failed. Consider notifying user. Current premium status might be maintained during dunning.`);
-          // TODO: Send payment failed email
         } else {
            console.error(`🔴 User not found for subscription ID: ${subIdForFailed} during invoice.payment_failed`);
         }
@@ -145,7 +140,6 @@ export async function POST(request: NextRequest) {
         break;
       }
 
-      // Determine if the subscription is effectively active
       const isActiveStatus = updatedSubscription.status === 'active' || updatedSubscription.status === 'trialing';
       const newIsPremiumStatus = isActiveStatus && !updatedSubscription.cancel_at_period_end;
       
@@ -164,31 +158,28 @@ export async function POST(request: NextRequest) {
       
       if (updatedSubscription.cancel_at_period_end && isActiveStatus) {
         console.log(`User ${userToUpdateSubscription.id} subscription is set to cancel at period end (${newEndDateUpdated?.toLocaleDateString()}). Premium access remains until then.`);
-        // TODO: Send email about pending cancellation
       }
       break;
 
-    case 'customer.subscription.deleted': // Handles cancellations that have taken effect (subscription ended)
+    case 'customer.subscription.deleted': 
       const deletedSubscription = event.data.object as Stripe.Subscription;
       console.log(`🚫 Subscription deleted/canceled: ${deletedSubscription.id}`);
       const customerIdForDelete = deletedSubscription.customer as string;
       
       const userWithDeletedSubscription = await UserModel.findOne({ stripeCustomerId: customerIdForDelete, stripeSubscriptionId: deletedSubscription.id }).exec();
       if (!userWithDeletedSubscription) {
-        console.error(`🔴 User not found for Stripe Customer ID: ${customerIdForDelete} and Subscription ID: ${deletedSubscription.id} during customer.subscription.deleted`);
+        console.warn(`User not found for Stripe Customer ID: ${customerIdForDelete} and Subscription ID: ${deletedSubscription.id} during customer.subscription.deleted. Might have already been processed or customer deleted.`);
         break;
       }
 
       await updateUserInMongoDB(userWithDeletedSubscription.id, { 
         isPremium: false, 
         subscriptionPlan: null,
-        stripeSubscriptionId: null, // Clear the specific subscription ID
-        // stripeCustomerId can remain for future subscriptions
+        stripeSubscriptionId: null, 
         subscriptionStartDate: null,
         subscriptionEndDate: deletedSubscription.ended_at ? new Date(deletedSubscription.ended_at * 1000) : new Date(), 
       });
       console.log(`🚫 User ${userWithDeletedSubscription.id} premium access revoked due to subscription cancellation/deletion.`);
-      // TODO: Send subscription canceled email (optional)
       break;
       
     default:
