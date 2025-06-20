@@ -1,12 +1,12 @@
 
-import { Users, Edit3, TrendingUp, Youtube, UserPlus } from 'lucide-react';
+import { Users, Edit3, TrendingUp, Youtube, UserPlus, PenSquare, Users2, Share2, MonitorPlay } from 'lucide-react'; // Updated imports
 
 const howItWorksSteps = [
   { title: "Sign Up Free", description: "Create your account in seconds.", icon: <UserPlus className="h-8 w-8 text-primary"/> },
   { title: "Create Team", description: "Set up your team or join an existing one.", icon: <Users className="h-8 w-8 text-primary"/> },
-  { title: "Build Slides", description: "Use our intuitive editor and AI tools.", icon: <Edit3 className="h-8 w-8 text-primary"/> },
-  { title: "Collaborate", description: "Work together in real-time with your team.", icon: <TrendingUp className="h-8 w-8 text-primary"/> },
-  { title: "Share & Present", description: "Deliver impactful presentations online or offline.", icon: <Youtube className="h-8 w-8 text-primary"/> },
+  { title: "Build Slides", description: "Use our intuitive editor and AI tools.", icon: <PenSquare className="h-8 w-8 text-primary"/> }, // Changed icon
+  { title: "Collaborate", description: "Work together in real-time with your team.", icon: <Users2 className="h-8 w-8 text-primary"/> }, // Changed icon
+  { title: "Share & Present", description: "Deliver impactful presentations online or offline.", icon: <MonitorPlay className="h-8 w-8 text-primary"/> }, // Changed icon
 ];
 
 export function HowItWorksSection() {

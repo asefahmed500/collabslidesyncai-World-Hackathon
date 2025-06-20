@@ -1,6 +1,7 @@
 
 import Image from 'next/image';
 import { Card } from '@/components/ui/card';
+import { Network, Factory, Landmark, Activity, Cloud } from 'lucide-react'; // Added new icons
 
 const testimonials = [
   {
@@ -26,12 +27,12 @@ const testimonials = [
   },
 ];
 
-const companyLogos = [
-  { src: "https://placehold.co/120x50.png?text=InnovateCorp", alt: "InnovateCorp Logo", dataAiHint:"company logo grey" },
-  { src: "https://placehold.co/110x45.png?text=SolutionsIO", alt: "SolutionsIO Logo", dataAiHint:"company logo tech" },
-  { src: "https://placehold.co/130x55.png?text=AlphaEnterprises", alt: "AlphaEnterprises Logo", dataAiHint:"company logo business" },
-  { src: "https://placehold.co/100x60.png?text=SynergySys", alt: "SynergySys Logo", dataAiHint:"company logo modern" },
-  { src: "https://placehold.co/125x50.png?text=NextGenLLC", alt: "NextGenLLC Logo", dataAiHint:"company logo finance" },
+const companyIcons = [
+  { icon: Network, alt: "Tech Company" },
+  { icon: Factory, alt: "Industrial Company" },
+  { icon: Landmark, alt: "Financial Institution" },
+  { icon: Activity, alt: "Analytics Company" },
+  { icon: Cloud, alt: "SaaS Company" },
 ];
 
 export function TestimonialsSection() {
@@ -61,10 +62,15 @@ export function TestimonialsSection() {
         </div>
         <div className="mt-16 text-center">
           <h3 className="text-xl font-semibold text-foreground/90 mb-8">Trusted by innovative companies of all sizes:</h3>
-          <div className="flex flex-wrap justify-center items-center gap-x-12 gap-y-8">
-            {companyLogos.map((logo, i) => (
-              <Image key={i} src={logo.src} alt={logo.alt} width={parseInt(logo.src.match(/(\d+)x(\d+)/)?.[1] || '120')} height={parseInt(logo.src.match(/(\d+)x(\d+)/)?.[2] || '60')} className="opacity-70 hover:opacity-100 transition-opacity" data-ai-hint={logo.dataAiHint} />
-            ))}
+          <div className="flex flex-wrap justify-center items-center gap-x-10 gap-y-8 md:gap-x-16">
+            {companyIcons.map((item, i) => {
+              const IconComponent = item.icon;
+              return (
+                <div key={i} className="flex items-center justify-center p-2 text-muted-foreground hover:text-primary transition-colors" title={item.alt}>
+                  <IconComponent className="h-10 w-10 md:h-12 md:w-12" strokeWidth={1.5} />
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
