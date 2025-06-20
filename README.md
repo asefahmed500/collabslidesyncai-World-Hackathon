@@ -1,5 +1,4 @@
 
-
 # CollabDeck
 
 CollabDeck is a powerful, collaborative presentation editor built with Next.js, React, Tailwind CSS, ShadCN UI components, Firebase, MongoDB, and Genkit for AI-powered assistance. It enables users to create, share, and present dynamic slideshows with ease, leveraging real-time collaboration and intelligent features.
