@@ -124,10 +124,20 @@ export function ShareDialog({ presentation, isOpen, onOpenChange, onPresentation
     toast({ title: "Preparing PDF Export...", description: "Your browser's print dialog will open. Please select 'Save as PDF'." });
     const printWindow = window.open(`/present/${presentation.id}?print=true`, '_blank');
     if (printWindow) {
+        const timer = setInterval(() => { // Check if window is closed by user manually
+            if (printWindow.closed) {
+                clearInterval(timer);
+                setIsExporting(false);
+            }
+        }, 500);
         printWindow.onload = () => {
             setTimeout(() => { 
                 printWindow.print();
-                setIsExporting(false);
+                // Note: We can't reliably know when the print dialog closes.
+                // So, setIsExporting(false) might happen prematurely if we put it here.
+                // User will close the print window manually.
+                // For simplicity, let's assume it's quick or handle timeout.
+                 setTimeout(() => setIsExporting(false), 3000); // Reset after a delay
             }, 1000); 
         };
     } else {
@@ -148,15 +158,33 @@ export function ShareDialog({ presentation, isOpen, onOpenChange, onPresentation
         pptx.company = "CollabDeck";
         pptx.title = presentation.title;
 
+        const CANVAS_BASE_WIDTH = 960; // Your editor's canvas base width
+        const CANVAS_BASE_HEIGHT = 540; // Your editor's canvas base height
+
         for (const slideData of presentation.slides) {
             const slide = pptx.addSlide();
-            slide.background = { color: slideData.backgroundColor?.replace('#', '') || "FFFFFF" };
+            
+            // Background
+            if (slideData.backgroundGradient) {
+                // Basic gradient support - PptxGenJS gradient support is limited
+                 slide.background = { color: slideData.backgroundGradient.startColor.replace('#', '') }; // Use start color as fallback
+                 console.warn("PPTX Export: Full gradient background export is complex and not fully supported. Using start color as solid background.");
+            } else if (slideData.backgroundImageUrl) {
+                // PptxGenJS addImage for background is tricky, often better to add as full-slide image
+                // For simplicity, we might just set a fallback color or leave default
+                slide.background = { color: "FFFFFF" }; // Default white
+                // Or attempt to add image as a full-slide element if needed (complex positioning)
+                 console.warn("PPTX Export: Background image export to PPTX is not implemented. Slide will have default background.");
+            } else {
+                slide.background = { color: slideData.backgroundColor?.replace('#', '') || "FFFFFF" };
+            }
+
 
             for (const element of slideData.elements) {
-                const elX = (element.position.x / 960) * 100; 
-                const elY = (element.position.y / 540) * 100; 
-                const elW = (element.size.width / 960) * 100;
-                const elH = (element.size.height / 540) * 100;
+                const elX = (element.position.x / CANVAS_BASE_WIDTH) * 100; 
+                const elY = (element.position.y / CANVAS_BASE_HEIGHT) * 100; 
+                const elW = (element.size.width / CANVAS_BASE_WIDTH) * 100;
+                const elH = (element.size.height / CANVAS_BASE_HEIGHT) * 100;
 
                 const options: any = {
                     x: `${elX}%`, y: `${elY}%`, w: `${elW}%`, h: `${elH}%`,
@@ -166,18 +194,43 @@ export function ShareDialog({ presentation, isOpen, onOpenChange, onPresentation
                 if (element.type === 'text') {
                     options.color = element.style.color?.replace('#', '') || '000000';
                     options.fontFace = element.style.fontFamily || 'Arial';
-                    options.fontSize = parseFloat(element.style.fontSize || '18');
+                    
+                    let fontSize = parseFloat(element.style.fontSize || '18');
+                    // PPTX font sizes are in points. Rough conversion: 1px approx 0.75pt.
+                    // However, direct use of pixel value often works okay if scaling is relative.
+                    // For better accuracy, use a mapping or a fixed scale factor.
+                    // Let's try a simple pixel-to-point assumption for now, may need adjustment.
+                    options.fontSize = Math.max(8, fontSize * 0.75); // Ensure min font size
+                    
                     options.align = element.style.textAlign || 'left';
                     options.bold = element.style.fontWeight === 'bold';
                     options.italic = element.style.fontStyle === 'italic';
                     options.underline = element.style.textDecoration === 'underline';
-                    slide.addText(element.content, options);
+                    
+                    // Transparency for text is not directly supported in pptxgenjs text objects.
+                    // It would require exporting text as an image or using more complex methods.
+                    // options.transparency = Math.round((1 - (element.style.opacity ?? 1)) * 100);
+                    
+                    slide.addText((element.content as string) || "", options);
+
                 } else if (element.type === 'image' && typeof element.content === 'string') {
-                    slide.addImage({ ...options, path: element.content });
+                    try {
+                        // For data URIs (like AI generated icons), ensure correct handling
+                        if (element.content.startsWith('data:image')) {
+                             slide.addImage({ ...options, data: element.content });
+                        } else {
+                             slide.addImage({ ...options, path: element.content });
+                        }
+                    } catch (imgError) {
+                        console.error("Error adding image to PPTX:", element.content, imgError);
+                        // Add a placeholder if image fails
+                        slide.addText("[Image Error]", { ...options, color: "FF0000", fontSize: 10 });
+                    }
                 } else if (element.type === 'shape') {
+                    const shapeFillColor = element.style.backgroundColor?.replace('#', '') || 'CCCCCC';
                     const shapeOptions: any = {
                         ...options,
-                        fill: { color: element.style.backgroundColor?.replace('#', '') || 'CCCCCC' },
+                        fill: { color: shapeFillColor },
                     };
                     if (element.style.borderWidth && element.style.borderColor) {
                         shapeOptions.line = {
@@ -185,10 +238,17 @@ export function ShareDialog({ presentation, isOpen, onOpenChange, onPresentation
                             width: element.style.borderWidth,
                         };
                     }
+                    // Transparency for shapes
+                    if (element.style.opacity !== undefined && element.style.opacity < 1) {
+                        shapeOptions.fill.transparency = Math.round((1 - element.style.opacity) * 100);
+                    }
+
                     if (element.style.shapeType === 'rectangle') {
                         slide.addShape(pptx.shapes.RECTANGLE, shapeOptions);
                     } else if (element.style.shapeType === 'circle') {
                         slide.addShape(pptx.shapes.OVAL, shapeOptions);
+                    } else if (element.style.shapeType === 'triangle') {
+                         slide.addShape(pptx.shapes.TRIANGLE, shapeOptions);
                     }
                 }
             }
@@ -207,7 +267,8 @@ export function ShareDialog({ presentation, isOpen, onOpenChange, onPresentation
     if (!presentation) return;
     setIsExporting(true); 
     router.push(`/present/${presentation.id}?exportAllImages=true`);
-    onOpenChange(false);
+    // No need to call onOpenChange(false) here, as the navigation will handle it.
+    // setIsExporting will be reset on the PresentPage after export.
   };
 
 

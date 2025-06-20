@@ -69,9 +69,17 @@ const renderElementForPresentation = (element: SlideElement, zoom: number) => {
     case 'shape':
       const shapeStyle: React.CSSProperties = { ...baseStyle };
       if (style.shapeType === 'circle') shapeStyle.borderRadius = '50%';
+      if (style.shapeType === 'triangle') { // Basic triangle representation for export
+        shapeStyle.width = '0';
+        shapeStyle.height = '0';
+        shapeStyle.borderLeft = `${(element.size.width / 2) * zoom}px solid transparent`;
+        shapeStyle.borderRight = `${(element.size.width / 2) * zoom}px solid transparent`;
+        shapeStyle.borderBottom = `${element.size.height * zoom}px solid ${style.backgroundColor || '#CCCCCC'}`;
+        shapeStyle.backgroundColor = 'transparent'; // Triangle made with borders
+      }
       return (
         <div key={element.id} style={shapeStyle}>
-          {style.shapeType === 'triangle' && <div className="w-full h-full text-xs flex items-center justify-center text-muted-foreground/50">[Triangle]</div>}
+          {/* For non-triangle shapes, this div itself is the shape. For triangle, content is inside. */}
         </div>
       );
     default:
@@ -237,17 +245,22 @@ export default function PresentationViewPage() {
   }, [presentationId, authLoading, checkAccessAndLoad, passwordVerifiedInSession, toast]);
   
   useEffect(() => {
-    if (isPrintMode && presentation) {
-        setIsPrinting(true); // Add a class to body or root for print styles
-        setTimeout(() => { // Allow content to render with print styles
-            window.print();
-            setIsPrinting(false);
-             // Optional: close window or navigate back after print dialog
-            if (window.opener) window.close(); else router.replace(`/present/${presentation.id}`);
-
-        }, 500);
+    if (isPrintMode && presentation && !isLoading && !accessDenied && !isTakenDown) {
+        document.body.classList.add("printing-mode");
+        // Allow content to render with print styles
+        // Using requestAnimationFrame to ensure styles are applied before print
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => { // Second frame for good measure
+                window.print();
+                document.body.classList.remove("printing-mode");
+                if (window.opener) window.close(); else router.replace(`/present/${presentation.id}`);
+            });
+        });
     }
-  }, [isPrintMode, presentation, router]);
+    return () => {
+        document.body.classList.remove("printing-mode");
+    }
+  }, [isPrintMode, presentation, router, isLoading, accessDenied, isTakenDown]);
 
 
   const exportAllSlidesAsImages = useCallback(async () => {
@@ -262,20 +275,22 @@ export default function PresentationViewPage() {
     for (let i = 0; i < presentation.slides.length; i++) {
         setCurrentSlideIndex(i);
         // Wait for state update and re-render to complete
-        await new Promise(resolve => setTimeout(resolve, 300)); // Small delay for render
+        await new Promise(resolve => setTimeout(resolve, 500)); // Increased delay for complex renders
 
         if (slideRenderAreaRef.current) {
             try {
                 const canvas = await html2canvas(slideRenderAreaRef.current, {
                     useCORS: true, // Important for external images
-                    logging: false, // Reduce console noise
+                    logging: false, 
                     scale: 2, // Increase resolution
+                    backgroundColor: null, // Use slide's actual background
+                    allowTaint: true, // May help with some CORS images but can taint canvas
                 });
                 const imageData = canvas.toDataURL('image/png');
                 zip.file(`slide_${String(i + 1).padStart(2, '0')}.png`, imageData.split(',')[1], { base64: true });
             } catch (error) {
                 console.error(`Error capturing slide ${i + 1}:`, error);
-                toast({ title: "Capture Error", description: `Could not capture slide ${i + 1}.`, variant: "destructive" });
+                toast({ title: "Capture Error", description: `Could not capture slide ${i + 1}. Skipping.`, variant: "destructive" });
             }
         }
     }
@@ -284,7 +299,7 @@ export default function PresentationViewPage() {
         const zipBlob = await zip.generateAsync({ type: 'blob' });
         const link = document.createElement('a');
         link.href = URL.createObjectURL(zipBlob);
-        link.download = `${presentation.title || 'presentation'}_slides.zip`;
+        link.download = `${presentation.title?.replace(/[^a-z0-9_.-]/gi, '_') || 'presentation'}_slides.zip`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -296,16 +311,15 @@ export default function PresentationViewPage() {
     } finally {
         setCurrentSlideIndex(originalSlideIndex); // Restore original slide
         setIsExportingImages(false);
-        // Remove the query param from URL without full reload if possible
         router.replace(`/present/${presentation.id}`, { scroll: false });
     }
   }, [presentation, currentSlideIndex, toast, router, shouldExportAllImages]);
 
   useEffect(() => {
-    if (shouldExportAllImages && presentation && !isExportingImages && !isLoading) {
+    if (shouldExportAllImages && presentation && !isExportingImages && !isLoading && !accessDenied && !isTakenDown) {
       exportAllSlidesAsImages();
     }
-  }, [shouldExportAllImages, presentation, exportAllSlidesAsImages, isExportingImages, isLoading]);
+  }, [shouldExportAllImages, presentation, exportAllSlidesAsImages, isExportingImages, isLoading, accessDenied, isTakenDown]);
 
 
 
@@ -415,7 +429,7 @@ export default function PresentationViewPage() {
   }
   
   const currentSlide = presentation.slides[currentSlideIndex];
-  if (!currentSlide && !isExportingImages) { // Allow rendering empty state if exporting images to avoid crash
+  if (!currentSlide && !isExportingImages && !isPrinting) { // Allow rendering empty state if exporting images to avoid crash
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-background text-center p-4">
         <AlertTriangle className="w-16 h-16 text-destructive mb-4" />
@@ -428,27 +442,62 @@ export default function PresentationViewPage() {
     );
   }
 
+  const renderSlideContent = (slide: Slide | undefined, currentZoom: number) => {
+    if (!slide) return null;
+    
+    let slideBackgroundStyle: React.CSSProperties = {
+        backgroundColor: slide.backgroundColor || '#FFFFFF',
+    };
+    if (slide.backgroundGradient) {
+        const { type, startColor, endColor, angle } = slide.backgroundGradient;
+        if (type === 'linear') {
+            slideBackgroundStyle.backgroundImage = `linear-gradient(${angle || 0}deg, ${startColor}, ${endColor})`;
+        } else if (type === 'radial') {
+            slideBackgroundStyle.backgroundImage = `radial-gradient(circle, ${startColor}, ${endColor})`;
+        }
+    } else if (slide.backgroundImageUrl) {
+        slideBackgroundStyle.backgroundImage = `url(${slide.backgroundImageUrl})`;
+        slideBackgroundStyle.backgroundSize = 'cover';
+        slideBackgroundStyle.backgroundPosition = 'center';
+    }
+
+    return (
+      <div 
+        className="slide-render-area relative shadow-2xl overflow-hidden transition-all duration-300"
+        style={{
+          width: `${960 * currentZoom}px`,
+          height: `${540 * currentZoom}px`,
+          ...slideBackgroundStyle
+        }}
+      >
+        {(slide.elements || []).sort((a,b) => (a.zIndex || 0) - (b.zIndex || 0)).map(element =>
+          renderElementForPresentation(element, currentZoom)
+        )}
+      </div>
+    );
+  };
+
+
   return (
-    <div className={cn("fixed inset-0 bg-background text-foreground flex flex-col overflow-hidden isolate", isPrinting && "printing-mode", isExportingImages && "exporting-images-mode")}>
+    <div className={cn("fixed inset-0 bg-background text-foreground flex flex-col overflow-hidden isolate", (isPrinting || isExportingImages) && "bg-white")}> {/* Force white bg for print/export */}
       {/* Presentation Area */}
       <div ref={presentationAreaRef} className="flex-grow flex items-center justify-center relative p-2 md:p-4 overflow-hidden" onClick={(e) => {
           if ((e.target === presentationAreaRef.current || (e.target as HTMLElement).classList.contains('slide-click-area')) && !isPrintMode && !isExportingImages) {
             if (e.clientX > window.innerWidth / 2) nextSlide(); else prevSlide();
           }
         }}>
-        <div 
-          ref={slideRenderAreaRef}
-          className="slide-render-area relative shadow-2xl overflow-hidden transition-all duration-300"
-          style={{
-            width: `${960 * zoom}px`,
-            height: `${540 * zoom}px`,
-            backgroundColor: currentSlide?.backgroundColor || '#FFFFFF', // Handle case where currentSlide might be temp undefined during export
-          }}
-        >
-          {currentSlide && (currentSlide.elements || []).sort((a,b) => (a.zIndex || 0) - (b.zIndex || 0)).map(element =>
-            renderElementForPresentation(element, zoom)
-          )}
-        </div>
+        {isPrinting ? (
+            presentation.slides.map((slide, idx) => (
+                <div key={slide.id} className="print-slide-container" ref={idx === currentSlideIndex ? slideRenderAreaRef : null}>
+                    {renderSlideContent(slide, zoom)}
+                </div>
+            ))
+        ) : (
+            <div ref={slideRenderAreaRef}>
+                {renderSlideContent(currentSlide, zoom)}
+            </div>
+        )}
+
       </div>
 
       {/* Controls & Info Bar */}
@@ -513,27 +562,27 @@ export default function PresentationViewPage() {
           </div>
       )}
       <style jsx global>{`
-        .printing-mode .absolute, .printing-mode .fixed:not(.slide-render-area):not(.slide-render-area *) {
-          display: none !important;
+        .print-slide-container {
+          width: 960px; /* Standard width, browser will scale for A4 landscape */
+          height: 540px;
+          overflow: hidden;
+          margin: 0 auto 20px auto; /* Center and add space between slides */
+          page-break-after: always;
+          border: 1px solid #eee; /* Optional: border for printed slides */
         }
-        .printing-mode .slide-render-area {
-          width: 100% !important;
-          height: auto !important; /* Adjust for print, or use aspect ratio */
-          aspect-ratio: 16 / 9;
-          box-shadow: none !important;
-          border: 1px solid #ccc;
-          margin-bottom: 20px; /* Space between slides on print */
-          page-break-after: always; /* Each slide on a new page */
-        }
-        .printing-mode .slide-render-area:last-child {
+        .print-slide-container:last-child {
           page-break-after: avoid;
         }
-        @page {
-          size: A4 landscape; /* Or your preferred print size */
-          margin: 0.5in;
+        body.printing-mode .fixed:not(.print-slide-container), 
+        body.printing-mode .absolute:not(.slide-render-area *) { 
+          display: none !important;
         }
-        .exporting-images-mode .absolute:not(.inset-0), .exporting-images-mode .fixed:not(.inset-0) {
-            display: none !important; /* Hide controls during image export */
+        @page {
+          size: A4 landscape;
+          margin: 1cm;
+        }
+        .exporting-images-mode .fixed:not(.inset-0), .exporting-images-mode .absolute:not(.inset-0) {
+            display: none !important; 
         }
       `}</style>
     </div>
