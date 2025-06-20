@@ -27,7 +27,7 @@ import type { Presentation, Slide, SlideElement, SlideComment, User as AppUserTy
 import { logTeamActivityInMongoDB } from './mongoTeamService'; 
 import { getUserByEmailFromMongoDB } from './mongoUserService'; 
 import { v4 as uuidv4 } from 'uuid';
-// import { sendEmail, createNewCommentEmail } from './emailService'; // Temporarily removed
+
 
 const USER_COLORS = [
   '#FF6B6B', '#4ECDC4', '#45B7D1', '#FED766', '#2AB7CA',
@@ -375,7 +375,7 @@ export async function addSlideToPresentation(presentationId: string, newSlideDat
     if (newSlideData.elements && newSlideData.elements.length > 0) {
       finalElements = newSlideData.elements.map(el => ({
         ...el,
-        id: uuidv4(), // Ensure new ID for each element from template
+        id: uuidv4(), 
         lockedBy: null,
         lockTimestamp: null,
       }));
@@ -948,7 +948,7 @@ export async function getUserByEmail(email: string): Promise<AppUserTypeFromFire
 export async function getAllPresentationsForAdmin(includeDeleted = false): Promise<Presentation[]> {
   let q;
   if (includeDeleted) {
-    q = query(presentationsCollection, orderBy('lastUpdatedAt', 'desc')); // Simpler query for all
+    q = query(presentationsCollection, orderBy('lastUpdatedAt', 'desc')); 
   } else {
     q = query(presentationsCollection, where('deleted', '==', false), orderBy('lastUpdatedAt', 'desc'));
   }

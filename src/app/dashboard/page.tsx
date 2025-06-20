@@ -98,6 +98,7 @@ export default function DashboardPage() {
           const userCreatedPresentations = data.filter(p => p.creatorId === currentUser.id);
           setPresentationsCreatedCount(userCreatedPresentations.length);
           setTotalSlidesCreatedCount(userCreatedPresentations.reduce((sum, p) => sum + (p.slides?.length || 0), 0));
+          setPendingInvitations([]); // Clear pending invites if user is in a team
         } else {
           const invites = await getPendingTeamInvitationsForUserById(currentUser.id);
           setPendingInvitations(invites);
@@ -129,8 +130,10 @@ export default function DashboardPage() {
       if (createTeamFormState.success) {
         toast({ title: "Team Created!", description: createTeamFormState.message });
         createTeamForm.reset();
+        // Force a full re-render/re-fetch by navigating or using router.refresh()
+        // This ensures useAuth hook re-evaluates currentUser with new teamId
         router.refresh(); 
-        fetchData(); 
+        fetchData(); // Also re-fetch dashboard specific data
       } else {
         toast({ title: "Error", description: createTeamFormState.message, variant: "destructive" });
       }
@@ -196,18 +199,20 @@ export default function DashboardPage() {
   };
   
   const handleRespondToInvitation = async (notificationId: string, teamId: string, role: TeamRole, action: 'accept' | 'decline') => {
-    setIsRespondingToInvite(teamId);
+    setIsRespondingToInvite(teamId); // Use teamId as a simple flag for the specific invitation being processed
     try {
         const response = await fetch('/api/teams/invitations/respond', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ notificationId, teamId, role, action }) // `roleForAction` should be `role` as per API
+            body: JSON.stringify({ notificationId, teamId, role, action })
         });
         const result = await response.json();
         if (result.success) {
             toast({ title: `Invitation ${action === 'accept' ? 'Accepted' : 'Declined'}`, description: result.message });
+            // Force a full re-render/re-fetch by navigating or using router.refresh()
+            // This ensures useAuth hook re-evaluates currentUser with new teamId if accepted
             router.refresh(); 
-            fetchData(); 
+            fetchData(); // Re-fetch dashboard data to update UI
         } else {
             toast({ title: 'Error', description: result.message, variant: 'destructive' });
         }
@@ -329,8 +334,15 @@ export default function DashboardPage() {
                   <h3 className="text-xl font-semibold text-center">Pending Team Invitations</h3>
                   <ul className="space-y-3">
                     {pendingInvitations.map(inviteTeam => {
+                        // Assuming pendingInvitations on TeamType is keyed by userId and contains invite details
                         const inviteDetails = inviteTeam.pendingInvitations?.[currentUser.id];
-                        if (!inviteDetails) return null; 
+                        if (!inviteDetails) return null; // Should not happen if getPendingTeamInvitationsForUserById works correctly
+                        
+                        // The notificationId to mark as read would ideally come from the notification system,
+                        // but for direct invite handling, we might need to search for it or pass it if available.
+                        // For simplicity, we'll pass a placeholder for notificationId if not directly available on inviteDetails.
+                        const notificationIdForAction = inviteDetails.inviteId || `invite_for_${inviteTeam.id}`;
+
                         return (
                             <li key={inviteTeam.id} className="p-4 border rounded-lg flex flex-col sm:flex-row justify-between items-center gap-3 bg-muted/50">
                                 <div>
@@ -342,7 +354,7 @@ export default function DashboardPage() {
                                 <div className="flex space-x-2 flex-shrink-0">
                                 <Button 
                                     size="sm" 
-                                    onClick={() => handleRespondToInvitation(inviteDetails.inviteId, inviteTeam.id, inviteDetails.role, 'accept')}
+                                    onClick={() => handleRespondToInvitation(notificationIdForAction, inviteTeam.id, inviteDetails.role, 'accept')}
                                     disabled={isRespondingToInvite === inviteTeam.id}
                                 >
                                     {isRespondingToInvite === inviteTeam.id ? <Loader2 className="mr-1 h-4 w-4 animate-spin"/> : <Check className="mr-1 h-4 w-4"/>} Accept
@@ -350,7 +362,7 @@ export default function DashboardPage() {
                                 <Button 
                                     size="sm" 
                                     variant="outline"
-                                    onClick={() => handleRespondToInvitation(inviteDetails.inviteId, inviteTeam.id, inviteDetails.role, 'decline')}
+                                    onClick={() => handleRespondToInvitation(notificationIdForAction, inviteTeam.id, inviteDetails.role, 'decline')}
                                     disabled={isRespondingToInvite === inviteTeam.id}
                                 >
                                     {isRespondingToInvite === inviteTeam.id ? <Loader2 className="mr-1 h-4 w-4 animate-spin"/> : <X className="mr-1 h-4 w-4"/>} Decline
