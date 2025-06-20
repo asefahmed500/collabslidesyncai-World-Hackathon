@@ -25,7 +25,7 @@ import {
 import { ref, deleteObject } from 'firebase/storage';
 import type { Presentation, Slide, SlideElement, SlideComment, User as AppUserTypeFromFirestore, Team, ActiveCollaboratorInfo, TeamRole, TeamMember, TeamActivity, TeamActivityType, PresentationActivity, PresentationActivityType, PresentationAccessRole, Asset, AssetType, SlideElementType, Notification, NotificationType as NotificationEnumType, PresentationModerationStatus, FeedbackSubmission, SlideBackgroundGradient } from '@/types';
 import { logTeamActivityInMongoDB } from './mongoTeamService'; 
-import { getUserByEmailFromMongoDB, getUserFromMongoDB as getUserProfileFromMongoDB } from './mongoUserService'; 
+import { getUserByEmailFromMongoDB } from './mongoUserService'; 
 import { v4 as uuidv4 } from 'uuid';
 import { sendEmail, createNewCommentEmail } from './emailService'; 
 
@@ -598,6 +598,7 @@ export async function updateElementInSlide(presentationId: string, slideId: stri
                 opacity: updatedElementPartial.style?.opacity === undefined ? (el.style?.opacity === undefined ? 1 : el.style.opacity) : updatedElementPartial.style.opacity,
                 shapeType: updatedElementPartial.style?.shapeType || el.style?.shapeType || 'rectangle',
                 ...(updatedElementPartial.style?.['data-ai-hint'] && { 'data-ai-hint': updatedElementPartial.style['data-ai-hint'] }),
+                ...updatedElementPartial.style,
             };
 
             return { 
@@ -638,7 +639,7 @@ export async function addCommentToSlide(presentationId: string, slideId: string,
         updatedSlides[slideIndex] = targetSlide;
         transaction.update(presRef, { slides: updatedSlides, lastUpdatedAt: serverTimestamp() });
         
-        const createdNotification = await createNotification(
+        await createNotification(
           presentationData.creatorId, 
           'comment_new',
           `New Comment on "${presentationData.title}"`,
@@ -649,8 +650,11 @@ export async function addCommentToSlide(presentationId: string, slideId: string,
           comment.userAvatarUrl
         );
 
+        // TODO: Email notification for new comments should be handled server-side (e.g., via a Firebase Function triggered by comment creation or a server action).
+        // The following client-side MongoDB lookup and email sending is problematic and has been removed to fix client build issues.
+        /*
         if (presentationData.creatorId !== comment.userId) {
-          const ownerProfile = await getUserProfileFromMongoDB(presentationData.creatorId);
+          const ownerProfile = await getUserProfileFromMongoDB(presentationData.creatorId); // Problematic client-side call
           if (ownerProfile && ownerProfile.email) {
             const presentationLink = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:9002'}/editor/${presentationId}?slide=${slideId}`;
             const emailContent = createNewCommentEmail(
@@ -662,7 +666,7 @@ export async function addCommentToSlide(presentationId: string, slideId: string,
               presentationLink
             );
             try {
-              await sendEmail({
+              await sendEmail({ // Email sending should be server-side
                 to: ownerProfile.email,
                 subject: emailContent.subject,
                 htmlBody: emailContent.htmlBody,
@@ -672,6 +676,7 @@ export async function addCommentToSlide(presentationId: string, slideId: string,
             }
           }
         }
+        */
     } else console.warn(`Slide ${slideId} not found in presentation ${presentationId}`);
   });
 }
@@ -1123,3 +1128,5 @@ export async function updateFeedbackStatus(feedbackId: string, status: FeedbackS
 
 export { uuidv4 };
 
+
+    
