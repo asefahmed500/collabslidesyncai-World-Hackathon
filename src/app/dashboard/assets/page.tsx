@@ -68,7 +68,14 @@ export default function AssetLibraryPage() {
   const handleDeleteAssetConfirm = async () => {
     if (!assetToDelete || !currentUser || !currentUser.teamId) return;
     try {
-      const result = await deleteAssetAction(assetToDelete.id, assetToDelete.storagePath);
+      // Pass necessary info for logging to the server action
+      const result = await deleteAssetAction(
+        assetToDelete.id, 
+        assetToDelete.storagePath,
+        assetToDelete.teamId, // Ensure assetToDelete has teamId (it should from getTeamAssets)
+        assetToDelete.fileName,
+        assetToDelete.assetType
+      );
       if (result.success) {
         setAssets(prev => prev.filter(asset => asset.id !== assetToDelete.id));
         toast({ title: "Asset Deleted", description: `${assetToDelete.fileName} has been removed.` });

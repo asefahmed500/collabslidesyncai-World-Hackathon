@@ -24,8 +24,7 @@ import {
 } from 'firebase/firestore';
 import { ref, deleteObject } from 'firebase/storage';
 import type { Presentation, Slide, SlideElement, SlideComment, User as AppUserTypeFromFirestore, Team, ActiveCollaboratorInfo, TeamRole, TeamMember, TeamActivity, TeamActivityType, PresentationActivity, PresentationActivityType, PresentationAccessRole, Asset, AssetType, SlideElementType, Notification, NotificationType as NotificationEnumType, PresentationModerationStatus, FeedbackSubmission, SlideBackgroundGradient } from '@/types';
-import { logTeamActivityInMongoDB } from './mongoTeamService';
-// Removed: import { getUserByEmailFromMongoDB } from './mongoUserService';
+// Removed: import { logTeamActivityInMongoDB } from './mongoTeamService'; // THIS WAS THE PROBLEM
 import { v4 as uuidv4 } from 'uuid';
 
 
@@ -41,7 +40,7 @@ export const getNextUserColor = () => {
   return color;
 };
 
-const convertTimestamps = (data: any): any => {
+export const convertTimestamps = (data: any): any => {
   if (data === null || typeof data !== 'object') {
     return data;
   }
@@ -71,7 +70,8 @@ const notificationsCollection = collection(db, 'notifications');
 const feedbackSubmissionsCollection = collection(db, 'feedbackSubmissions');
 
 
-export async function createPresentation(userId: string, title: string, teamId?: string, description: string = ''): Promise<string> {
+// Modified: Does not call logTeamActivityInMongoDB anymore. Logging is handled by the Server Action.
+export async function createPresentationFirestore(userId: string, title: string, teamId?: string, description: string = ''): Promise<string> {
   const initialSlideId = uuidv4();
   const newSlide: Omit<Slide, 'presentationId'> = {
     id: initialSlideId,
@@ -125,10 +125,11 @@ export async function createPresentation(userId: string, title: string, teamId?:
   };
   await updateDoc(docRef, { slides: [finalSlide], lastUpdatedAt: serverTimestamp() });
 
-  if (teamId) {
-    await logTeamActivityInMongoDB(teamId, userId, 'presentation_created', { presentationTitle: title }, 'presentation', docRef.id);
-  }
-  await logPresentationActivity(docRef.id, userId, 'presentation_created', { presentationTitle: title });
+  // Logging moved to Server Action
+  // if (teamId) {
+  //   await logTeamActivityInMongoDB(teamId, userId, 'presentation_created', { presentationTitle: title }, 'presentation', docRef.id);
+  // }
+  // await logPresentationActivity(docRef.id, userId, 'presentation_created', { presentationTitle: title });
   return docRef.id;
 }
 
@@ -187,7 +188,7 @@ export async function getPresentationById(presentationId: string): Promise<Prese
             slides: [],
             access: {},
             favoritedBy: {},
-            lastUpdatedAt: data.lastUpdatedAt,
+            lastUpdatedAt: convertTimestamps(data.lastUpdatedAt) as Date,
         } as Presentation;
     }
     return { id: docSnap.id, ...convertTimestamps(data), favoritedBy: data.favoritedBy || {} } as Presentation;
@@ -265,32 +266,38 @@ export async function updatePresentation(presentationId: string, data: Partial<P
           }))
         }));
       } else if (typedKey === 'favoritedBy') {
+          // FavoritedBy is handled by its own function for now, to ensure atomicity
       } else if (typedKey !== 'id' && typedKey !== 'lastUpdatedAt' && typedKey !== 'createdAt') {
         updatePayload[typedKey] = data[typedKey];
       }
     }
   }
-  if (Object.keys(updatePayload).length > 1) {
+  if (Object.keys(updatePayload).length > 1) { // ensure there are updates beyond just lastUpdatedAt
     await updateDoc(docRef, updatePayload);
   }
 }
 
-export async function deletePresentation(presentationId: string, teamId?: string, actorId?: string): Promise<void> {
+// Modified: Does not call logTeamActivityInMongoDB anymore. Logging is handled by the Server Action.
+export async function deletePresentationFirestore(presentationId: string, actorId?: string): Promise<Presentation | null> {
   const docRef = doc(db, 'presentations', presentationId);
-  const pres = await getPresentationByIdAdmin(presentationId);
+  const pres = await getPresentationByIdAdmin(presentationId); // Fetch before update
+  if (!pres) return null;
+
   await updateDoc(docRef, {
     deleted: true,
     deletedAt: serverTimestamp(),
     lastUpdatedAt: serverTimestamp()
   });
 
-  if (actorId && pres) {
-    const activityDetails = { presentationTitle: pres.title };
-    await logPresentationActivity(presentationId, actorId, 'presentation_deleted', activityDetails);
-    if (teamId) {
-      await logTeamActivityInMongoDB(teamId, actorId, 'presentation_deleted', activityDetails, 'presentation', presentationId);
-    }
-  }
+  // Logging moved to Server Action
+  // if (actorId && pres) {
+  //   const activityDetails = { presentationTitle: pres.title };
+  //   await logPresentationActivity(presentationId, actorId, 'presentation_deleted', activityDetails);
+  //   if (pres.teamId) { // Check if teamId exists on the fetched presentation
+  //     await logTeamActivityInMongoDB(pres.teamId, actorId, 'presentation_deleted', activityDetails, 'presentation', presentationId);
+  //   }
+  // }
+  return { ...pres, deleted: true, deletedAt: new Date() }; // Return updated state conceptually
 }
 
 export async function restorePresentation(presentationId: string, actorId: string): Promise<void> {
@@ -305,23 +312,19 @@ export async function restorePresentation(presentationId: string, actorId: strin
   const pres = await getPresentationByIdAdmin(presentationId);
   if (pres) {
       await logPresentationActivity(presentationId, actorId, 'presentation_restored', { presentationTitle: pres.title });
-      if (pres.teamId) {
-          await logTeamActivityInMongoDB(pres.teamId, actorId, 'presentation_restored', { presentationTitle: pres.title }, 'presentation', presentationId);
-      }
+      // Team logging for restore can be added to a server action if needed
   }
 }
 
 export async function permanentlyDeletePresentation(presentationId: string, actorId?: string): Promise<void> {
   const docRef = doc(db, 'presentations', presentationId);
-  const pres = await getPresentationByIdAdmin(presentationId);
+  const pres = await getPresentationByIdAdmin(presentationId); // Fetch before delete for logging
   await deleteDoc(docRef);
 
   if (actorId && pres) {
     const activityDetails = { presentationTitle: pres.title };
     await logPresentationActivity(presentationId, actorId, 'presentation_permanently_deleted', activityDetails);
-    if (pres.teamId) {
-      await logTeamActivityInMongoDB(pres.teamId, actorId, 'presentation_permanently_deleted', activityDetails, 'presentation', presentationId);
-    }
+    // Team logging for permanent delete can be added to a server action if needed
   }
 }
 
@@ -347,14 +350,7 @@ export async function updatePresentationModerationStatus(
     newStatus: status,
     moderationNotes: notes
   });
-  if (pres.teamId) {
-     await logTeamActivityInMongoDB(pres.teamId, actorId, 'presentation_status_changed', {
-        presentationTitle: pres.title,
-        oldStatus: oldStatus,
-        newStatus: status,
-        moderationNotes: notes
-    }, 'presentation', presentationId);
-  }
+    // Team logging can be added to a server action if needed
 }
 
 
@@ -430,48 +426,72 @@ export async function deleteSlideFromPresentation(presentationId: string, slideI
   });
 }
 
-export async function duplicateSlideInPresentation(presentationId: string, slideIdToDuplicate: string): Promise<{ newSlideId: string, updatedSlides: Slide[] } | null> {
-  const presRef = doc(db, 'presentations', presentationId);
-  return await runTransaction(db, async (transaction) => {
-    const presDoc = await transaction.get(presRef);
-    if (!presDoc.exists()) throw new Error("Presentation not found");
+// Modified: Does not call logTeamActivityInMongoDB anymore. Logging is handled by the Server Action.
+export async function duplicatePresentationFirestore(originalPresentationId: string, newOwnerId: string): Promise<string> {
+  const originalPresRef = doc(db, 'presentations', originalPresentationId);
+  const originalPresSnap = await getDoc(originalPresRef);
 
-    const presentationData = presDoc.data() as Presentation;
-    if (presentationData.deleted || presentationData.moderationStatus === 'taken_down') throw new Error("Cannot modify this presentation.");
-    let slides = presentationData.slides || [];
-    const originalSlideIndex = slides.findIndex(s => s.id === slideIdToDuplicate);
+  if (!originalPresSnap.exists()) {
+    throw new Error("Original presentation not found.");
+  }
 
-    if (originalSlideIndex === -1) {
-      console.warn(`Slide ${slideIdToDuplicate} not found in presentation ${presentationId} for duplication.`);
-      return null;
-    }
+  const originalData = originalPresSnap.data() as Presentation;
 
-    const originalSlide = slides[originalSlideIndex];
-    const newSlideId = uuidv4();
-    const duplicatedElements = originalSlide.elements.map(el => ({
-      ...JSON.parse(JSON.stringify(el)),
+  const newSlides = originalData.slides.map(slide => ({
+    ...slide,
+    id: uuidv4(),
+    elements: slide.elements.map(el => ({
+      ...el,
       id: uuidv4(),
       lockedBy: null,
       lockTimestamp: null,
-    }));
+    })),
+    comments: [],
+    backgroundGradient: slide.backgroundGradient || null,
+  }));
 
-    const duplicatedSlide: Slide = {
-      ...JSON.parse(JSON.stringify(originalSlide)),
-      id: newSlideId,
-      slideNumber: 0,
-      elements: duplicatedElements,
-      comments: [],
-      thumbnailUrl: originalSlide.thumbnailUrl ? `${originalSlide.thumbnailUrl.split('?')[0]}?text=Copy` : `https://placehold.co/160x90.png?text=Copy`,
-      backgroundGradient: originalSlide.backgroundGradient || null,
-    };
+  const newPresentationData: Omit<Presentation, 'id' | 'activeCollaborators'> = {
+    title: `Copy of ${originalData.title}`,
+    description: originalData.description,
+    creatorId: newOwnerId,
+    // teamId: newOwnerTeamId || undefined, // teamId will be set by the server action if applicable
+    access: { [newOwnerId]: 'owner' },
+    settings: {
+      isPublic: false,
+      passwordProtected: false,
+      commentsAllowed: true,
+    },
+    branding: originalData.branding,
+    thumbnailUrl: originalData.thumbnailUrl || `https://placehold.co/320x180.png?text=Copy`,
+    version: 1,
+    slides: renumberSlides(newSlides),
+    createdAt: serverTimestamp() as Timestamp,
+    lastUpdatedAt: serverTimestamp() as Timestamp,
+    deleted: false,
+    deletedAt: null,
+    moderationStatus: 'active',
+    favoritedBy: {},
+  };
 
-    slides.splice(originalSlideIndex + 1, 0, duplicatedSlide);
-    const updatedSlides = renumberSlides(slides);
+  const newPresRef = await addDoc(presentationsCollection, newPresentationData);
 
-    transaction.update(presRef, { slides: updatedSlides, lastUpdatedAt: serverTimestamp() });
-    return { newSlideId, updatedSlides };
-  });
+  // Logging moved to Server Action
+  // await logPresentationActivity(newPresRef.id, newOwnerId, 'presentation_created', {
+  //   presentationTitle: newPresentationData.title,
+  //   source: 'duplication',
+  //   originalPresentationId
+  // });
+  // if (newOwnerTeamId) {
+  //   await logTeamActivityInMongoDB(newOwnerTeamId, newOwnerId, 'presentation_created', {
+  //     presentationTitle: newPresentationData.title,
+  //     source: 'duplication',
+  //     originalPresentationId,
+  //   }, 'presentation', newPresRef.id);
+  // }
+
+  return newPresRef.id;
 }
+
 
 export async function moveSlideInPresentation(presentationId: string, slideId: string, direction: 'up' | 'down'): Promise<Slide[] | null> {
   const presRef = doc(db, 'presentations', presentationId);
@@ -633,7 +653,7 @@ export async function addCommentToSlide(presentationId: string, slideId: string,
     const slides = (presentationData?.slides || []);
     const slideIndex = slides.findIndex(s => s.id === slideId);
     if (slideIndex > -1) {
-        const newComment: SlideComment = { ...comment, id: uuidv4(), createdAt: serverTimestamp() as Timestamp, };
+        const newComment: SlideComment = { ...comment, id: uuidv4(), createdAt: new Date(), }; // Use JS Date
         const updatedSlides = [...slides]; const targetSlide = {...updatedSlides[slideIndex]};
         targetSlide.comments = [...(targetSlide.comments || []), newComment];
         updatedSlides[slideIndex] = targetSlide;
@@ -678,7 +698,7 @@ export async function updateUserPresence(presentationId: string, userId: string,
   const dataToSet: ActiveCollaboratorInfo = {
     ...userInfo,
     id: userId,
-    lastSeen: serverTimestamp() as Timestamp,
+    lastSeen: new Date(), // Use JS Date
     cursorPosition: null,
   };
   try {
@@ -739,7 +759,7 @@ export async function acquireLock(presentationId: string, slideId: string, eleme
             return { ...s, elements: s.elements.map(el => {
                 if (el.id === elementId) {
                   targetElementExists = true;
-                  if (el.lockedBy && el.lockedBy !== userId && el.lockTimestamp && ((el.lockTimestamp as Timestamp).toMillis() + LOCK_DURATION_MS > Date.now())) {
+                  if (el.lockedBy && el.lockedBy !== userId && el.lockTimestamp && ((convertTimestamps(el.lockTimestamp) as Date).getTime() + LOCK_DURATION_MS > Date.now())) {
                     alreadyLockedByOther = true;
                     return el;
                   }
@@ -802,7 +822,7 @@ export async function releaseExpiredLocks(presentationId: string): Promise<void>
         const updatedSlides = presentation.slides.map(s => {
           let slideModified = false;
           const elements = s.elements.map(el => {
-            if (el.lockedBy && el.lockTimestamp && ((el.lockTimestamp as Timestamp).toMillis() + LOCK_DURATION_MS < now)) {
+            if (el.lockedBy && el.lockTimestamp && ((convertTimestamps(el.lockTimestamp) as Date).getTime() + LOCK_DURATION_MS < now)) {
               slideModified = true;
               locksReleasedCount++;
               return { ...el, lockedBy: null, lockTimestamp: null };
@@ -824,9 +844,9 @@ export async function releaseExpiredLocks(presentationId: string): Promise<void>
 export async function logPresentationActivity(
   presentationId: string, actorId: string, actionType: PresentationActivityType, details?: PresentationActivity['details']
 ): Promise<string> {
-  let actorNameResolved = 'System/Guest';
+  let actorNameResolved = 'System/Guest'; // Implement fetching actor name if needed
   const activityData: Omit<PresentationActivity, 'id'> = {
-    presentationId, actorId, actorName: actorNameResolved, actionType, details: details || {}, createdAt: serverTimestamp() as Timestamp,
+    presentationId, actorId, actorName: actorNameResolved, actionType, details: details || {}, createdAt: new Date(), // Use JS Date
   };
   const activityRef = await addDoc(presentationActivitiesCollection, activityData);
   return activityRef.id;
@@ -844,9 +864,7 @@ export async function createAssetMetadata(assetData: Omit<Asset, 'id' | 'created
     createdAt: serverTimestamp() as Timestamp,
     lastUpdatedAt: serverTimestamp() as Timestamp,
   });
-  if (assetData.teamId && assetData.uploaderId) {
-    await logTeamActivityInMongoDB(assetData.teamId, assetData.uploaderId, 'asset_uploaded', { fileName: assetData.fileName, assetType: assetData.assetType }, 'asset', docRef.id);
-  }
+  // Logging to MongoDB should happen in the server action that calls this.
   return docRef.id;
 }
 
@@ -856,19 +874,15 @@ export async function getTeamAssets(teamId: string): Promise<Asset[]> {
   return snapshot.docs.map(docSnap => ({ id: docSnap.id, ...convertTimestamps(docSnap.data()) } as Asset));
 }
 
-export async function deleteAsset(assetId: string, storagePath: string, teamId: string, actorId: string): Promise<void> {
+// Modified: Does not call logTeamActivityInMongoDB anymore. Logging is handled by the Server Action.
+export async function deleteAssetFromDbAndStoragePure(assetId: string, storagePath: string): Promise<void> {
   const assetDocRef = doc(db, 'assets', assetId);
-  const assetDocSnap = await getDoc(assetDocRef);
-  const assetData = assetDocSnap.data() as Asset | undefined;
-
   const fileRef = ref(fbStorage, storagePath);
   await deleteObject(fileRef);
   await deleteDoc(assetDocRef);
-
-  if (teamId && actorId && assetData) {
-    await logTeamActivityInMongoDB(teamId, actorId, 'asset_deleted', { fileName: assetData.fileName, assetType: assetData.assetType }, 'asset', assetId);
-  }
+  // Logging moved to Server Action
 }
+
 
 export async function createNotification(
   userId: string,
@@ -889,7 +903,7 @@ export async function createNotification(
     message,
     link: link || undefined,
     isRead: false,
-    createdAt: serverTimestamp() as Timestamp,
+    createdAt: new Date(), // Use JS Date
     actorId: actorId || undefined,
     actorName: actorName || undefined,
     actorProfilePictureUrl: actorProfilePictureUrl || undefined,
@@ -941,7 +955,6 @@ export async function markAllNotificationsAsRead(userId: string): Promise<void> 
   await batch.commit();
 }
 
-// Removed: export async function getUserByEmail(email: string): Promise<AppUserTypeFromFirestore | null>
 
 export async function getAllPresentationsForAdmin(includeDeleted = false): Promise<Presentation[]> {
   let q;
@@ -983,72 +996,8 @@ export async function removeTeamIdFromPresentations(teamId: string): Promise<voi
   console.log(`Removed teamId ${teamId} from ${snapshot.size} presentations in Firestore.`);
 }
 
-export async function duplicatePresentation(originalPresentationId: string, newOwnerId: string, newOwnerTeamId?: string | null): Promise<string> {
-  const originalPresRef = doc(db, 'presentations', originalPresentationId);
-  const originalPresSnap = await getDoc(originalPresRef);
-
-  if (!originalPresSnap.exists()) {
-    throw new Error("Original presentation not found.");
-  }
-
-  const originalData = originalPresSnap.data() as Presentation;
-
-  const newSlides = originalData.slides.map(slide => ({
-    ...slide,
-    id: uuidv4(),
-    elements: slide.elements.map(el => ({
-      ...el,
-      id: uuidv4(),
-      lockedBy: null,
-      lockTimestamp: null,
-    })),
-    comments: [],
-    backgroundGradient: slide.backgroundGradient || null,
-  }));
-
-  const newPresentationData: Omit<Presentation, 'id' | 'activeCollaborators'> = {
-    title: `Copy of ${originalData.title}`,
-    description: originalData.description,
-    creatorId: newOwnerId,
-    teamId: newOwnerTeamId || undefined,
-    access: { [newOwnerId]: 'owner' },
-    settings: {
-      isPublic: false,
-      passwordProtected: false,
-      commentsAllowed: true,
-    },
-    branding: originalData.branding,
-    thumbnailUrl: originalData.thumbnailUrl || `https://placehold.co/320x180.png?text=Copy`,
-    version: 1,
-    slides: renumberSlides(newSlides),
-    createdAt: serverTimestamp() as Timestamp,
-    lastUpdatedAt: serverTimestamp() as Timestamp,
-    deleted: false,
-    deletedAt: null,
-    moderationStatus: 'active',
-    favoritedBy: {},
-  };
-
-  const newPresRef = await addDoc(presentationsCollection, newPresentationData);
-
-  await logPresentationActivity(newPresRef.id, newOwnerId, 'presentation_created', {
-    presentationTitle: newPresentationData.title,
-    source: 'duplication',
-    originalPresentationId
-  });
-
-  if (newOwnerTeamId) {
-    await logTeamActivityInMongoDB(newOwnerTeamId, newOwnerId, 'presentation_created', {
-      presentationTitle: newPresentationData.title,
-      source: 'duplication',
-      originalPresentationId,
-    }, 'presentation', newPresRef.id);
-  }
-
-  return newPresRef.id;
-}
-
-export async function toggleFavoriteStatus(presentationId: string, userId: string): Promise<boolean> {
+// Modified: Does not call logTeamActivityInMongoDB anymore. Logging is handled by the Server Action.
+export async function toggleFavoriteStatusFirestore(presentationId: string, userId: string): Promise<boolean> {
   const presRef = doc(db, 'presentations', presentationId);
   let isNowFavorite = false;
 
@@ -1069,12 +1018,13 @@ export async function toggleFavoriteStatus(presentationId: string, userId: strin
     }
   });
 
-  await logPresentationActivity(
-    presentationId,
-    userId,
-    isNowFavorite ? 'presentation_favorited' : 'presentation_unfavorited',
-    { presentationTitle: (await getPresentationById(presentationId))?.title || "Unknown" }
-  );
+  // Logging moved to Server Action
+  // await logPresentationActivity(
+  //   presentationId,
+  //   userId,
+  //   isNowFavorite ? 'presentation_favorited' : 'presentation_unfavorited',
+  //   { presentationTitle: (await getPresentationById(presentationId))?.title || "Unknown" }
+  // );
 
   return isNowFavorite;
 }
@@ -1099,3 +1049,15 @@ export async function updateFeedbackStatus(feedbackId: string, status: FeedbackS
 
 
 export { uuidv4 };
+export {Timestamp as FirestoreTimestamp}; // Re-export if needed by types, but prefer JS Date internally
+
+// Renamed functions to avoid ambiguity and make it clear they are Firestore specific
+// Original names are now used for Server Actions.
+export { 
+    createPresentationFirestore as originalCreatePresentation,
+    deletePresentationFirestore as originalDeletePresentation,
+    duplicatePresentationFirestore as originalDuplicatePresentation,
+    toggleFavoriteStatusFirestore as originalToggleFavoriteStatus,
+    deleteAssetFromDbAndStoragePure as deleteAssetPure // Renamed to avoid conflict with Server Action
+};
+

@@ -16,9 +16,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import Image from 'next/image';
 import { useAuth } from '@/hooks/useAuth';
-import { getPresentationsForUser, createPresentation as apiCreatePresentation, deletePresentation as apiDeletePresentation, duplicatePresentation as apiDuplicatePresentation, toggleFavoriteStatus as apiToggleFavoriteStatus } from '@/lib/firestoreService';
+import { getPresentationsForUser } from '@/lib/firestoreService';
 import { getPendingTeamInvitationsForUserById } from '@/lib/mongoTeamService';
-import { createTeamForExistingUser } from './actions';
+import { createTeamForExistingUser, createPresentationAction, deletePresentationAction, duplicatePresentationAction, toggleFavoriteStatusAction } from './actions';
 import { useToast } from '@/hooks/use-toast';
 import {
   AlertDialog,
@@ -38,8 +38,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
-import { useForm, type SubmitHandler } from 'react-hook-form';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, useForm } from '@/components/ui/form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { formatDistanceToNowStrict } from 'date-fns';
@@ -62,7 +61,7 @@ function CreateTeamSubmitButton() {
 }
 
 export default function DashboardPage() {
-  const { currentUser, loading: authLoading, refreshCurrentUser } = useAuth(); // Added refreshCurrentUser
+  const { currentUser, loading: authLoading, refreshCurrentUser } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
 
@@ -132,9 +131,9 @@ export default function DashboardPage() {
         toast({ title: "Team Created!", description: createTeamFormState.message });
         createTeamForm.reset();
 
-        refreshCurrentUser().then(() => { // Refresh current user context
-            router.refresh(); // Then refresh server components
-            fetchData(); // Then re-fetch client-side data
+        refreshCurrentUser().then(() => { 
+            router.refresh(); 
+            fetchData(); 
         });
       } else {
         toast({ title: "Error", description: createTeamFormState.message, variant: "destructive" });
@@ -144,59 +143,48 @@ export default function DashboardPage() {
 
 
   const handleCreateNewPresentation = async () => {
-     if (!currentUser) {
-      toast({ title: "Error", description: "You must be logged in to create a presentation.", variant: "destructive" });
-      return;
-    }
-    try {
-      const teamIdForNewPres = currentUser.teamId || undefined;
-      const newPresentationId = await apiCreatePresentation(currentUser.id, "Untitled Presentation", teamIdForNewPres);
-      toast({ title: "Presentation Created", description: "Redirecting to editor..." });
-      router.push(`/editor/${newPresentationId}`);
-    } catch (error: any) {
-      console.error("Error creating presentation:", error);
-      toast({ title: "Error", description: error.message || "Could not create presentation.", variant: "destructive" });
+    const result = await createPresentationAction("Untitled Presentation", "");
+    if (result.success && result.presentationId) {
+        toast({ title: "Presentation Created", description: "Redirecting to editor..." });
+        router.push(`/editor/${result.presentationId}`);
+    } else {
+        toast({ title: "Error", description: result.message || "Could not create presentation.", variant: "destructive" });
     }
   };
 
   const handleDeletePresentation = async () => {
     if (!presentationToDelete || !currentUser) return;
-    try {
-      await apiDeletePresentation(presentationToDelete.id, presentationToDelete.teamId || undefined, currentUser.id);
-      toast({ title: "Presentation Deleted", description: `"${presentationToDelete.title}" has been removed.` });
-      fetchData();
-    } catch (error: any) {
-      toast({ title: "Error", description: error.message || "Could not delete presentation.", variant: "destructive" });
-    } finally {
-      setPresentationToDelete(null);
+    const result = await deletePresentationAction(presentationToDelete.id);
+    if (result.success) {
+        toast({ title: "Presentation Deleted", description: `"${presentationToDelete.title}" has been removed.` });
+        fetchData();
+    } else {
+        toast({ title: "Error", description: result.message || "Could not delete presentation.", variant: "destructive" });
     }
+    setPresentationToDelete(null);
   };
 
   const handleDuplicatePresentation = async (presentationId: string) => {
-     if (!currentUser) {
-      toast({ title: "Error", description: "You must be logged in.", variant: "destructive" });
-      return;
-    }
-    try {
-      const newPresentationId = await apiDuplicatePresentation(presentationId, currentUser.id, currentUser.teamId);
-      toast({ title: "Presentation Duplicated", description: "A copy has been created. Redirecting to editor..." });
-      router.push(`/editor/${newPresentationId}`);
-    } catch (error: any) {
-      toast({ title: "Error Duplicating", description: error.message || "Could not duplicate presentation.", variant: "destructive" });
+    const result = await duplicatePresentationAction(presentationId);
+    if (result.success && result.presentationId) {
+        toast({ title: "Presentation Duplicated", description: "A copy has been created. Redirecting to editor..." });
+        router.push(`/editor/${result.presentationId}`);
+    } else {
+        toast({ title: "Error Duplicating", description: result.message || "Could not duplicate presentation.", variant: "destructive" });
     }
   };
 
   const handleToggleFavorite = async (presentationId: string) => {
     if (!currentUser) return;
-    try {
-      const isNowFavorite = await apiToggleFavoriteStatus(presentationId, currentUser.id);
-      toast({
-        title: isNowFavorite ? "Favorited" : "Unfavorited",
-        description: `Presentation ${isNowFavorite ? 'added to' : 'removed from'} favorites.`,
-      });
-      fetchData();
-    } catch (error: any) {
-      toast({ title: "Error", description: error.message || "Could not update favorite status.", variant: "destructive" });
+    const result = await toggleFavoriteStatusAction(presentationId);
+     if (result.success) {
+        toast({
+            title: result.isFavorite ? "Favorited" : "Unfavorited",
+            description: `Presentation ${result.isFavorite ? 'added to' : 'removed from'} favorites.`,
+        });
+        fetchData();
+    } else {
+        toast({ title: "Error", description: result.message || "Could not update favorite status.", variant: "destructive" });
     }
   };
 
@@ -212,9 +200,9 @@ export default function DashboardPage() {
         if (result.success) {
             toast({ title: `Invitation ${action === 'accept' ? 'Accepted' : 'Declined'}`, description: result.message });
 
-            await refreshCurrentUser(); // Refresh current user context
-            router.refresh(); // Then refresh server components
-            fetchData(); // Then re-fetch client-side data
+            await refreshCurrentUser(); 
+            router.refresh(); 
+            fetchData(); 
         } else {
             toast({ title: 'Error', description: result.message, variant: 'destructive' });
         }
@@ -249,7 +237,7 @@ export default function DashboardPage() {
         const getVal = (obj: Presentation, keyPart: string) => {
             if (keyPart.startsWith('lastUpdatedAt') || keyPart.startsWith('createdAt')) {
                 const dateVal = obj[keyPart.split('_')[0] as 'lastUpdatedAt' | 'createdAt'];
-                return dateVal ? dateVal.getTime() : 0; // Assumes dateVal is JS Date or undefined/null
+                return dateVal ? dateVal.getTime() : 0; 
             }
             return obj[keyPart.split('_')[0] as 'title'] || '';
         };
@@ -264,8 +252,8 @@ export default function DashboardPage() {
 
   const recentPresentations = [...presentations]
     .sort((a,b) => {
-        const dateA = a.lastUpdatedAt ? a.lastUpdatedAt.getTime() : 0; // Assumes JS Date
-        const dateB = b.lastUpdatedAt ? b.lastUpdatedAt.getTime() : 0; // Assumes JS Date
+        const dateA = a.lastUpdatedAt ? a.lastUpdatedAt.getTime() : 0;
+        const dateB = b.lastUpdatedAt ? b.lastUpdatedAt.getTime() : 0;
         return dateB - dateA;
     })
     .slice(0,3);
@@ -296,7 +284,7 @@ export default function DashboardPage() {
     }
   };
 
-  const processCreateTeamForm: SubmitHandler<CreateTeamFormValues> = (data) => {
+  const processCreateTeamForm = (data: CreateTeamFormValues) => {
     const formData = new FormData();
     formData.append('teamName', data.teamName);
     createTeamFormAction(formData);
@@ -774,3 +762,4 @@ export default function DashboardPage() {
     </div>
   );
 }
+
