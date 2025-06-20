@@ -2,14 +2,16 @@
 "use client";
 
 import { useEffect, useState, useCallback } from 'react';
-import type { Team } from '@/types';
+import type { Team, User as AppUser } from '@/types'; // Added AppUser
 import { getAllTeamsFromMongoDB } from '@/lib/mongoTeamService'; 
+import { getUserFromMongoDB } from '@/lib/mongoUserService'; // To fetch owner details
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Loader2, Users, Trash2, Search, MoreVertical, Eye } from 'lucide-react';
+import { Loader2, Users, Trash2, Search, MoreVertical, Eye, UserCircle, ExternalLink } from 'lucide-react';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
@@ -34,14 +36,17 @@ import {
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
+interface EnrichedTeam extends Team {
+  ownerDetails?: Pick<AppUser, 'name' | 'email'> | null;
+}
 
 export default function AdminTeamsPage() {
-  const [teams, setTeams] = useState<Team[]>([]);
-  const [filteredTeams, setFilteredTeams] = useState<Team[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [teamToDelete, setTeamToDelete] = useState<Team | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [teams, setTeams = useState<EnrichedTeam[]>([]);
+  const [filteredTeams, setFilteredTeams = useState<EnrichedTeam[]>([]);
+  const [isLoading, setIsLoading = useState(true);
+  const [searchTerm, setSearchTerm = useState('');
+  const [teamToDelete, setTeamToDelete = useState<Team | null>(null);
+  const [isSubmitting, setIsSubmitting = useState(false);
 
   const { toast } = useToast();
   const { currentUser } = useAuth();
@@ -50,9 +55,15 @@ export default function AdminTeamsPage() {
   const fetchTeams = useCallback(async () => {
     setIsLoading(true);
     try {
-      const fetchedTeams = await getAllTeamsFromMongoDB();
-      setTeams(fetchedTeams);
-      setFilteredTeams(fetchedTeams);
+      const fetchedTeamsBasic = await getAllTeamsFromMongoDB();
+      // Enrich teams with owner details - can be slow for many teams
+      const enrichedTeamsPromises = fetchedTeamsBasic.map(async (team) => {
+        const owner = await getUserFromMongoDB(team.ownerId);
+        return { ...team, ownerDetails: owner ? { name: owner.name, email: owner.email } : null };
+      });
+      const enrichedTeams = await Promise.all(enrichedTeamsPromises);
+      setTeams(enrichedTeams);
+      setFilteredTeams(enrichedTeams);
     } catch (error) {
        console.error("Error fetching teams from MongoDB:", error);
        toast({ title: "Error", description: "Could not fetch teams.", variant: "destructive" });
@@ -71,7 +82,9 @@ export default function AdminTeamsPage() {
       teams.filter(team =>
         (team.name?.toLowerCase() || '').includes(lowerSearchTerm) ||
         (team.id?.toLowerCase() || '').includes(lowerSearchTerm) ||
-        (team.ownerId?.toLowerCase() || '').includes(lowerSearchTerm)
+        (team.ownerId?.toLowerCase() || '').includes(lowerSearchTerm) ||
+        (team.ownerDetails?.name?.toLowerCase() || '').includes(lowerSearchTerm) ||
+        (team.ownerDetails?.email?.toLowerCase() || '').includes(lowerSearchTerm)
       )
     );
   }, [searchTerm, teams]);
@@ -111,14 +124,14 @@ export default function AdminTeamsPage() {
     <Card>
       <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <CardTitle>All Teams ({filteredTeams.length} / {teams.length})</CardTitle>
+          <CardTitle className="flex items-center"><Users className="mr-2 h-5 w-5"/>All Teams ({filteredTeams.length} / {teams.length})</CardTitle>
           <CardDescription>Browse and manage all teams in the system.</CardDescription>
         </div>
         <div className="relative w-full sm:max-w-xs">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
                 type="search"
-                placeholder="Search teams by name, ID..."
+                placeholder="Search teams by name, ID, owner..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10"
@@ -136,7 +149,7 @@ export default function AdminTeamsPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Team Name</TableHead>
-                  <TableHead>Owner ID</TableHead>
+                  <TableHead>Owner</TableHead>
                   <TableHead>Members</TableHead>
                   <TableHead>Created</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -157,7 +170,16 @@ export default function AdminTeamsPage() {
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell className="font-mono text-xs truncate max-w-[120px]">{team.ownerId}</TableCell>
+                    <TableCell>
+                        <div className="flex flex-col">
+                           <span className="text-sm truncate max-w-[150px]" title={team.ownerDetails?.name || team.ownerId}>
+                                {team.ownerDetails?.name || 'N/A'}
+                            </span>
+                            <span className="text-xs text-muted-foreground font-mono truncate max-w-[120px]" title={team.ownerDetails?.email || team.ownerId}>
+                                {team.ownerDetails?.email || team.ownerId}
+                            </span>
+                        </div>
+                    </TableCell>
                     <TableCell>{team.members ? Object.keys(team.members).length : 0}</TableCell>
                     <TableCell className="text-xs">
                       {team.createdAt ? format(new Date(team.createdAt), 'PP') : 'N/A'}
@@ -173,17 +195,10 @@ export default function AdminTeamsPage() {
                           <DropdownMenuContent align="end">
                             <DropdownMenuLabel>Manage Team</DropdownMenuLabel>
                             <DropdownMenuItem 
-                                onClick={() => alert(`Placeholder: Admin view for team "${team.name}" would show members, specific activity logs, and allow admin-specific member management.`)}
-                                title="View detailed team information (Admin perspective)"
-                            >
-                                <Eye className="mr-2 h-4 w-4" /> View Details (Placeholder)
-                            </DropdownMenuItem>
-                            <DropdownMenuItem 
                                 onClick={() => router.push(`/dashboard/manage-team?teamId=${team.id}`)}
-                                disabled={!currentUser || !(team.members && team.members[currentUser.id] && (team.members[currentUser.id].role === 'owner' || team.members[currentUser.id].role === 'admin'))}
-                                title={!currentUser || !(team.members && team.members[currentUser.id] && (team.members[currentUser.id].role === 'owner' || team.members[currentUser.id].role === 'admin')) ? "You must be an owner/admin of this specific team to use the standard manage page" : "Manage team (as team admin/owner)"}
+                                title="View team details (standard management page)"
                             >
-                                <Users className="mr-2 h-4 w-4" /> Manage via Dashboard (if member)
+                                <ExternalLink className="mr-2 h-4 w-4" /> View Details
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem

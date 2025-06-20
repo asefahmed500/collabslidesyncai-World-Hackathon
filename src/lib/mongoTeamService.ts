@@ -552,3 +552,20 @@ export async function getPendingTeamInvitationsForUserByEmail(email: string): Pr
         return [];
     }
 }
+
+export async function getGlobalPendingInvitationsCount(): Promise<number> {
+    await dbConnect();
+    try {
+        const teams = await TeamModel.find({ 'pendingInvitations': { $exists: true, $ne: null } }).select('pendingInvitations').exec();
+        let totalCount = 0;
+        teams.forEach(team => {
+            if (team.pendingInvitations) {
+                totalCount += team.pendingInvitations.size;
+            }
+        });
+        return totalCount;
+    } catch (error) {
+        console.error('Error fetching global pending invitations count:', error);
+        return 0; // Return 0 on error or if none found
+    }
+}

@@ -10,7 +10,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Loader2, UserCircle, Edit, Trash2, ShieldCheck, ShieldOff, RefreshCcw, EyeOff, Eye, Search, MoreVertical } from 'lucide-react';
+import { Loader2, UserCircle, Edit, Trash2, ShieldCheck, ShieldOff, RefreshCcw, EyeOff, Eye, Search, MoreVertical, Briefcase } from 'lucide-react';
 import { format, formatDistanceToNowStrict } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
@@ -32,15 +32,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import Link from 'next/link';
 
 export default function AdminUsersPage() {
-  const [users, setUsers] = useState<User[]>([]);
-  const [filteredUsers, setFilteredUsers] = useState<User[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [userToModify, setUserToModify] = useState<User | null>(null);
-  const [actionType, setActionType] = useState<'delete' | 'toggleAdmin' | 'toggleStatus' | 'resetPassword' | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [users, setUsers = useState<User[]>([]);
+  const [filteredUsers, setFilteredUsers = useState<User[]>([]);
+  const [isLoading, setIsLoading = useState(true);
+  const [searchTerm, setSearchTerm = useState('');
+  const [userToModify, setUserToModify = useState<User | null>(null);
+  const [actionType, setActionType = useState<'delete' | 'toggleAdmin' | 'toggleStatus' | 'resetPassword' | null>(null);
+  const [isSubmitting, setIsSubmitting = useState(false);
 
   const { toast } = useToast();
   const { currentUser } = useAuth();
@@ -179,7 +180,7 @@ export default function AdminUsersPage() {
     <Card>
       <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <CardTitle>All Users ({filteredUsers.length} / {users.length})</CardTitle>
+          <CardTitle className="flex items-center"><Users className="mr-2 h-5 w-5"/>All Users ({filteredUsers.length} / {users.length})</CardTitle>
           <CardDescription>Browse and manage all registered users in the system.</CardDescription>
         </div>
         <div className="relative w-full sm:max-w-xs">
@@ -205,8 +206,8 @@ export default function AdminUsersPage() {
                 <TableRow>
                   <TableHead>User</TableHead>
                   <TableHead>Email</TableHead>
-                  <TableHead>Role (Team)</TableHead>
-                  <TableHead>Admin</TableHead>
+                  <TableHead>Team &amp; Role</TableHead>
+                  <TableHead>Platform Admin</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Joined</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -229,10 +230,18 @@ export default function AdminUsersPage() {
                     </TableCell>
                     <TableCell className="truncate max-w-[180px]" title={user.email || undefined}>{user.email}</TableCell>
                     <TableCell>
-                      <Badge variant={user.role === 'owner' ? 'default' : user.role === 'admin' ? 'secondary' : 'outline'} className="capitalize text-xs">
-                        {user.role || 'guest'}
-                      </Badge>
-                       {user.teamId && <p className="text-xs text-muted-foreground font-mono mt-1 truncate max-w-[100px]" title={user.teamId}>{user.teamId.substring(0,12)}...</p>}
+                      {user.teamId ? (
+                        <div className="flex flex-col">
+                            <Badge variant={user.role === 'owner' ? 'default' : user.role === 'admin' ? 'secondary' : 'outline'} className="capitalize text-xs w-fit">
+                                {user.role || 'guest'}
+                            </Badge>
+                            <Link href={`/admin/teams?searchTerm=${user.teamId}`} className="text-xs text-muted-foreground font-mono mt-1 truncate max-w-[100px] hover:underline" title={`Team ID: ${user.teamId}`}>
+                                <Briefcase className="inline h-3 w-3 mr-1"/> {user.teamId.substring(0,12)}...
+                            </Link>
+                        </div>
+                      ) : (
+                        <Badge variant="outline" className="text-xs">No Team</Badge>
+                      )}
                     </TableCell>
                     <TableCell>
                       {user.isAppAdmin ? <Badge variant="destructive" className="text-xs">Platform Admin</Badge> : <Badge variant="outline" className="text-xs">User</Badge>}
@@ -311,4 +320,3 @@ export default function AdminUsersPage() {
     </Card>
   );
 }
-
