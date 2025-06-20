@@ -38,7 +38,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, useForm } from '@/components/ui/form';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { useForm } from 'react-hook-form'; // Corrected import for useForm
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { formatDistanceToNowStrict } from 'date-fns';
@@ -237,7 +238,7 @@ export default function DashboardPage() {
         const getVal = (obj: Presentation, keyPart: string) => {
             if (keyPart.startsWith('lastUpdatedAt') || keyPart.startsWith('createdAt')) {
                 const dateVal = obj[keyPart.split('_')[0] as 'lastUpdatedAt' | 'createdAt'];
-                return dateVal ? dateVal.getTime() : 0; 
+                return dateVal ? new Date(dateVal).getTime() : 0; 
             }
             return obj[keyPart.split('_')[0] as 'title'] || '';
         };
@@ -252,8 +253,8 @@ export default function DashboardPage() {
 
   const recentPresentations = [...presentations]
     .sort((a,b) => {
-        const dateA = a.lastUpdatedAt ? a.lastUpdatedAt.getTime() : 0;
-        const dateB = b.lastUpdatedAt ? b.lastUpdatedAt.getTime() : 0;
+        const dateA = a.lastUpdatedAt ? new Date(a.lastUpdatedAt).getTime() : 0;
+        const dateB = b.lastUpdatedAt ? new Date(b.lastUpdatedAt).getTime() : 0;
         return dateB - dateA;
     })
     .slice(0,3);
@@ -621,7 +622,7 @@ export default function DashboardPage() {
                             )}
                           </div>
                           <p className="text-xs text-muted-foreground truncate">
-                            Last updated: {presentation.lastUpdatedAt ? formatDistanceToNowStrict(presentation.lastUpdatedAt, { addSuffix: true }) : 'N/A'}
+                            Last updated: {presentation.lastUpdatedAt ? formatDistanceToNowStrict(new Date(presentation.lastUpdatedAt), { addSuffix: true }) : 'N/A'}
                             {presentation.teamId && currentUser?.teamId && presentation.teamId === currentUser.teamId && <Badge variant="outline" className="ml-2 text-xs">Team</Badge>}
                           </p>
                         </div>
