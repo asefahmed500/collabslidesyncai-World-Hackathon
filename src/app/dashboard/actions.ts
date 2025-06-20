@@ -1,15 +1,15 @@
 
 'use server';
 import { auth } from '@/lib/firebaseConfig';
-import { createTeamInMongoDB, logTeamActivityInMongoDB } from '@/lib/mongoTeamService'; // Added logTeamActivityInMongoDB
+import { createTeamInMongoDB, logTeamActivityInMongoDB, getPendingTeamInvitationsForUserById } from '@/lib/mongoTeamService'; // Added getPendingTeamInvitationsForUserById
 import { updateUserTeamAndRoleInMongoDB, getUserFromMongoDB } from '@/lib/mongoUserService';
 import { 
     originalCreatePresentation, 
     originalDeletePresentation, 
     originalDuplicatePresentation, 
     originalToggleFavoriteStatus,
-    logPresentationActivity, // For Firestore activity logging
-    getPresentationById // To fetch details for logging if needed
+    logPresentationActivity, 
+    getPresentationById 
 } from '@/lib/firestoreService';
 import { revalidatePath } from 'next/cache';
 import type { Team, User as AppUser, TeamRole, Presentation } from '@/types';
@@ -123,11 +123,11 @@ export async function deletePresentationAction(presentationId: string): Promise<
     }
 
     try {
-        const presentation = await getPresentationById(presentationId); // Fetch for logging teamId if exists
+        const presentation = await getPresentationById(presentationId); 
         if (!presentation) {
             return { success: false, message: "Presentation not found or already deleted." };
         }
-        if (presentation.creatorId !== firebaseUser.uid) {
+        if (presentation.creatorId !== firebaseUser.uid && !(presentation.access && presentation.access[firebaseUser.uid] === 'owner')) {
             return { success: false, message: "You do not have permission to delete this presentation." };
         }
 
@@ -157,7 +157,7 @@ export async function duplicatePresentationAction(originalPresentationId: string
     
     try {
         const newPresentationId = await originalDuplicatePresentation(originalPresentationId, firebaseUser.uid);
-        const newPresentation = await getPresentationById(newPresentationId); // Fetch for logging
+        const newPresentation = await getPresentationById(newPresentationId); 
 
         if (newPresentation) {
             await logPresentationActivity(newPresentationId, firebaseUser.uid, 'presentation_created', {
@@ -165,16 +165,12 @@ export async function duplicatePresentationAction(originalPresentationId: string
                 source: 'duplication',
                 originalPresentationId
             });
-            if (appUser.teamId) { // If current user is in a team, associate duplicated presentation with that team by default
+            if (appUser.teamId && newPresentation.teamId) { 
                 await logTeamActivityInMongoDB(appUser.teamId, firebaseUser.uid, 'presentation_created', {
                     presentationTitle: newPresentation.title,
                     source: 'duplication',
                     originalPresentationId,
                 }, 'presentation', newPresentationId);
-                // Update the duplicated presentation with the teamId
-                await updateUserTeamAndRoleInMongoDB(newPresentationId, appUser.teamId, 'owner'); // This is for user, not pres. Need to update presentation doc.
-                // The firestoreService.duplicatePresentationFirestore should actually take newOwnerTeamId.
-                // For now, this logging is based on the current user's team.
             }
         }
         revalidatePath('/dashboard');
@@ -193,7 +189,7 @@ export async function toggleFavoriteStatusAction(presentationId: string): Promis
 
     try {
         const isNowFavorite = await originalToggleFavoriteStatus(presentationId, firebaseUser.uid);
-        const presentation = await getPresentationById(presentationId); // Fetch for logging
+        const presentation = await getPresentationById(presentationId); 
 
         await logPresentationActivity(
             presentationId,
@@ -206,5 +202,19 @@ export async function toggleFavoriteStatusAction(presentationId: string): Promis
     } catch (error: any) {
         console.error("Error in toggleFavoriteStatusAction:", error);
         return { success: false, message: error.message || "Could not update favorite status." };
+    }
+}
+
+export async function getPendingInvitationsAction(): Promise<{ success: boolean; invites: Team[]; message?: string }> {
+    const firebaseUser = auth.currentUser;
+    if (!firebaseUser) {
+        return { success: false, invites: [], message: "Authentication required." };
+    }
+    try {
+        const invites = await getPendingTeamInvitationsForUserById(firebaseUser.uid);
+        return { success: true, invites };
+    } catch (error: any) {
+        console.error("Error fetching pending invitations via server action:", error);
+        return { success: false, invites: [], message: error.message || "Could not fetch pending invitations." };
     }
 }

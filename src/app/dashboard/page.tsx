@@ -17,8 +17,8 @@ import { Badge } from '@/components/ui/badge';
 import Image from 'next/image';
 import { useAuth } from '@/hooks/useAuth';
 import { getPresentationsForUser } from '@/lib/firestoreService';
-import { getPendingTeamInvitationsForUserById } from '@/lib/mongoTeamService';
-import { createTeamForExistingUser, createPresentationAction, deletePresentationAction, duplicatePresentationAction, toggleFavoriteStatusAction } from './actions';
+// Removed direct import: import { getPendingTeamInvitationsForUserById } from '@/lib/mongoTeamService';
+import { createTeamForExistingUser, createPresentationAction, deletePresentationAction, duplicatePresentationAction, toggleFavoriteStatusAction, getPendingInvitationsAction } from './actions'; // Added getPendingInvitationsAction
 import { useToast } from '@/hooks/use-toast';
 import {
   AlertDialog,
@@ -39,7 +39,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
-import { useForm } from 'react-hook-form'; // Corrected import for useForm
+import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { formatDistanceToNowStrict } from 'date-fns';
@@ -101,8 +101,13 @@ export default function DashboardPage() {
           setTotalSlidesCreatedCount(userCreatedPresentations.reduce((sum, p) => sum + (p.slides?.length || 0), 0));
           setPendingInvitations([]);
         } else {
-          const invites = await getPendingTeamInvitationsForUserById(currentUser.id);
-          setPendingInvitations(invites);
+          const inviteResult = await getPendingInvitationsAction(); // Use server action
+          if (inviteResult.success) {
+            setPendingInvitations(inviteResult.invites);
+          } else {
+            toast({ title: "Error", description: inviteResult.message || "Could not fetch pending invitations.", variant: "destructive" });
+            setPendingInvitations([]);
+          }
           setPresentations([]);
           setPresentationsCreatedCount(0);
           setTotalSlidesCreatedCount(0);
@@ -648,7 +653,7 @@ export default function DashboardPage() {
                                     <Star className="mr-2 h-4 w-4" /> {currentUser && presentation.favoritedBy && presentation.favoritedBy[currentUser.id] ? 'Unfavorite' : 'Favorite'}
                                 </DropdownMenuItem>
                                 <DropdownMenuSeparator />
-                                 {presentation.creatorId === currentUser?.id && (
+                                 {(presentation.creatorId === currentUser?.id || (presentation.access && presentation.access[currentUser.id] === 'owner')) && (
                                     <DropdownMenuItem onClick={() => setPresentationToDelete(presentation)} className="text-destructive focus:bg-destructive/10 focus:text-destructive">
                                         <Trash2 className="mr-2 h-4 w-4" /> Delete Presentation
                                     </DropdownMenuItem>
@@ -763,4 +768,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-
