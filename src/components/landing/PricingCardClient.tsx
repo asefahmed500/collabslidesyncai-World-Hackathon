@@ -4,18 +4,20 @@
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
-import { CheckCircle } from 'lucide-react';
+import { CheckCircle, Loader2 } from 'lucide-react';
 import { cn } from "@/lib/utils";
 import { useToast } from '@/hooks/use-toast'; 
+import { useAuth } from '@/hooks/useAuth';
+import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 
-// Define the type for a single pricing plan, matching the structure in page.tsx
 interface PricingPlan {
   name: string;
   price: string;
   period: string;
   features: string[];
   cta: string;
-  href: string;
+  href: string; // This can be the internal plan identifier like "premium_monthly"
   variant: "outline" | "default";
   highlight: boolean;
 }
@@ -26,20 +28,50 @@ interface PricingCardClientProps {
 
 export function PricingCardClient({ plan }: PricingCardClientProps) {
   const { toast } = useToast(); 
+  const { currentUser } = useAuth();
+  const router = useRouter();
+  const [isRedirecting, setIsRedirecting] = useState(false);
 
-  const handleCtaClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
-    // For "Get Started" for free plan, let it navigate normally.
+  const handleCtaClick = async (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault(); 
+
     if (plan.name.toLowerCase() === "free") {
+      router.push(plan.href); // Typically /signup or /dashboard
       return; 
     }
 
-    // For "Upgrade" buttons, show a toast because Stripe isn't fully integrated.
-    e.preventDefault(); 
-    toast({
-      title: "Stripe Checkout - Coming Soon!",
-      description: `You would normally be redirected to Stripe to subscribe to the "${plan.name}" plan. This feature is currently under development.`,
-      duration: 5000,
-    });
+    if (!currentUser) {
+      toast({
+        title: "Login Required",
+        description: "Please sign up or log in to upgrade your plan.",
+        variant: "info",
+      });
+      router.push(`/login?redirect=/pricing&plan=${plan.href}`); // Redirect to login, then to pricing, then plan
+      return;
+    }
+    
+    setIsRedirecting(true);
+    try {
+      const response = await fetch('/api/stripe/checkout-sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ planId: plan.href, userId: currentUser.id }), // plan.href now acts as planId
+      });
+      const sessionData = await response.json();
+
+      if (response.ok && sessionData.success && sessionData.url) {
+        router.push(sessionData.url); // Redirect to Stripe Checkout
+      } else {
+        throw new Error(sessionData.message || "Failed to create Stripe Checkout session.");
+      }
+    } catch (error: any) {
+      toast({
+        title: "Upgrade Error",
+        description: error.message || "Could not initiate upgrade. Please try again.",
+        variant: "destructive",
+      });
+      setIsRedirecting(false);
+    }
   };
 
   return (
@@ -75,9 +107,10 @@ export function PricingCardClient({ plan }: PricingCardClientProps) {
             "w-full transition-transform hover:scale-105",
             plan.highlight && plan.name.toLowerCase() !== "free" ? "bg-primary hover:bg-primary/90" : "bg-accent hover:bg-accent/90 text-accent-foreground"
           )}
-          asChild
+          onClick={handleCtaClick}
+          disabled={isRedirecting}
         >
-          <Link href={plan.href} onClick={handleCtaClick}>{plan.cta}</Link>
+          {isRedirecting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : plan.cta}
         </Button>
       </CardFooter>
     </Card>

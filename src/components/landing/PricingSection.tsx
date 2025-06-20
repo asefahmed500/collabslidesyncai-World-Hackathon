@@ -8,7 +8,7 @@ const pricingPlans = [
     period: "/ month",
     features: ["Up to 3 presentations", "Basic AI features", "Limited collaboration", "Standard support"],
     cta: "Get Started",
-    href: "/signup",
+    href: "/signup", // Link to signup page for free plan
     variant: "outline" as "outline" | "default",
     highlight: false,
   },
@@ -18,7 +18,7 @@ const pricingPlans = [
     period: "/ month",
     features: ["Unlimited presentations", "Advanced AI features", "Full collaboration tools", "Priority support", "Custom branding options"],
     cta: "Upgrade to Monthly",
-    href: "/signup?plan=premium_monthly",
+    href: "premium_monthly", // Internal plan identifier for Stripe API
     variant: "default" as "default",
     highlight: true,
   },
@@ -28,7 +28,7 @@ const pricingPlans = [
     period: "/ year",
     features: ["All Premium Monthly features", "Save 15% with annual billing", "Early access to new features", "Dedicated account manager (future)"],
     cta: "Upgrade to Yearly",
-    href: "/signup?plan=premium_yearly",
+    href: "premium_yearly", // Internal plan identifier for Stripe API
     variant: "outline" as "outline",
     highlight: false,
   }

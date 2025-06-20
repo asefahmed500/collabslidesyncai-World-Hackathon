@@ -61,6 +61,8 @@ export default function ProfilePage() {
   const router = useRouter();
   const { toast } = useToast();
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isRedirectingToStripe, setIsRedirectingToStripe] = useState(false);
+
 
   const [profileFormState, profileFormAction] = useActionState(
     (prevState: any, formData: FormData) => updateUserProfileServer(currentUser!.id, formData),
@@ -119,18 +121,53 @@ export default function ProfilePage() {
     setIsDeleteDialogOpen(false);
   };
 
-  const handleManageSubscription = () => {
-    toast({
-        title: "Stripe Customer Portal - Coming Soon!", 
-        description: "You would be redirected to the Stripe Customer Portal to manage your billing details, view invoices, or cancel your subscription. This feature is under development."
-    });
+  const handleManageSubscription = async () => {
+    if (!currentUser || !currentUser.stripeCustomerId) {
+        toast({ title: "Info", description: "No active subscription found to manage.", variant: "info" });
+        return;
+    }
+    setIsRedirectingToStripe(true);
+    try {
+        const response = await fetch('/api/stripe/create-portal-link', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ customerId: currentUser.stripeCustomerId }),
+        });
+        const data = await response.json();
+        if (data.success && data.url) {
+            router.push(data.url);
+        } else {
+            throw new Error(data.message || "Could not create Stripe portal link.");
+        }
+    } catch (error: any) {
+        toast({ title: "Error", description: error.message, variant: "destructive" });
+        setIsRedirectingToStripe(false);
+    }
   };
 
-  const handleUpgradeClick = () => {
-    toast({
-      title: "Stripe Checkout - Coming Soon!",
-      description: "You would be redirected to Stripe to complete your upgrade. This feature is currently under development."
-    });
+  const handleUpgradeClick = async (planId: 'premium_monthly' | 'premium_yearly') => {
+    if (!currentUser) {
+      toast({ title: "Login Required", description: "Please log in to upgrade.", variant: "info" });
+      router.push('/login?redirect=/dashboard/profile');
+      return;
+    }
+    setIsRedirectingToStripe(true);
+    try {
+      const response = await fetch('/api/stripe/checkout-sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ planId, userId: currentUser.id }),
+      });
+      const sessionData = await response.json();
+      if (response.ok && sessionData.success && sessionData.url) {
+        router.push(sessionData.url); // Redirect to Stripe Checkout
+      } else {
+        throw new Error(sessionData.message || "Failed to create Stripe Checkout session.");
+      }
+    } catch (error: any) {
+      toast({ title: "Upgrade Error", description: error.message, variant: "destructive" });
+      setIsRedirectingToStripe(false);
+    }
   };
 
 
@@ -257,18 +294,19 @@ export default function ProfilePage() {
                   <>
                     <p className="text-sm">Current Plan: <Badge variant="secondary" className="capitalize bg-green-100 text-green-700 border-green-300">{currentUser.subscriptionPlan.replace('_', ' ')}</Badge></p>
                     {currentUser.subscriptionEndDate && <p className="text-xs text-muted-foreground mt-1">Renews/Expires on: {new Date(currentUser.subscriptionEndDate).toLocaleDateString()}</p>}
-                    <Button variant="outline" onClick={handleManageSubscription} className="w-full mt-3">
-                      Manage Subscription <ExternalLink className="ml-2 h-3 w-3"/>
+                    <Button variant="outline" onClick={handleManageSubscription} className="w-full mt-3" disabled={isRedirectingToStripe}>
+                      {isRedirectingToStripe ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : "Manage Subscription"} <ExternalLink className="ml-2 h-3 w-3"/>
                     </Button>
                   </>
                 ) : (
                   <>
                     <p className="text-sm text-muted-foreground">You are currently on the Free plan.</p>
                     <Button 
-                        onClick={handleUpgradeClick} 
+                        onClick={() => handleUpgradeClick('premium_monthly')} 
                         className="w-full mt-3 bg-accent hover:bg-accent/90 text-accent-foreground"
+                        disabled={isRedirectingToStripe}
                     >
-                      <Sparkles className="mr-2 h-4 w-4"/> Upgrade to Premium Plan
+                      {isRedirectingToStripe ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <><Sparkles className="mr-2 h-4 w-4"/> Upgrade to Premium Plan</>}
                     </Button>
                   </>
                 )}
