@@ -16,7 +16,7 @@ import {
   deleteUser as firebaseDeleteUser,
   reauthenticateWithCredential,
   EmailAuthProvider,
-  type User as FirebaseUserType // Keep this specific import
+  type User as FirebaseUserType 
 } from 'firebase/auth';
 import type { User as AppUser } from '@/types';
 import {
@@ -29,6 +29,7 @@ import {
 } from '@/lib/mongoUserService';
 import { createTeamInMongoDB, removeMemberFromTeamInMongoDB, logTeamActivityInMongoDB } from '@/lib/mongoTeamService';
 import { revalidatePath } from 'next/cache';
+import dbConnect from '@/lib/mongodb'; // Added for direct DB operations in server action
 
 export interface AuthResponse {
   success: boolean;
@@ -150,7 +151,7 @@ export async function signInWithEmail(prevState: any, formData: FormData): Promi
             profilePictureUrl: firebaseUser.photoURL,
             role: 'guest', 
         };
-        appUser = await createUserInMongoDB(firebaseUser, recoveryData); // This ensures Mongo user is created if somehow missed
+        appUser = await createUserInMongoDB(firebaseUser, recoveryData); 
         if (!appUser) {
           return { success: false, message: 'Login successful with Firebase, but failed to load/create user profile from database.' };
         }
@@ -167,13 +168,11 @@ export async function signInWithEmail(prevState: any, formData: FormData): Promi
   }
 }
 
-// Renamed FirebaseUserType to FirebaseUserAuthType for clarity if FirebaseUser is used elsewhere
 export async function handleSocialSignIn(firebaseUserAuthType: FirebaseUserType): Promise<AuthResponse> {
   if (!firebaseUserAuthType?.uid) {
     return { success: false, message: 'Firebase user data is missing for social sign-in.' };
   }
   try {
-    // This function is now robust for creating/updating Mongo user during social sign-in
     const appUser = await getOrCreateAppUserFromMongoDB({
         uid: firebaseUserAuthType.uid,
         displayName: firebaseUserAuthType.displayName,
@@ -303,7 +302,7 @@ export async function deleteUserAccountServer(userId: string): Promise<AuthRespo
     }
     
     if (appUser && appUser.teamId) {
-        await removeMemberFromTeamInMongoDB(appUser.teamId, userId);
+        await removeMemberFromTeamInMongoDB(appUser.teamId, userId); // Removed actorId, should be handled by service if needed
         await logTeamActivityInMongoDB(appUser.teamId, 'system', 'member_removed', { memberName: appUser.name || userId, reason: 'Account Deletion' }, 'user', userId);
     }
 
@@ -321,26 +320,25 @@ export async function deleteUserAccountServer(userId: string): Promise<AuthRespo
   }
 }
 
-// New Server Action to get or create user profile in MongoDB
 export async function getOrCreateAppUserFromMongoDB(fbUserMinimal: FirebaseUserMinimal): Promise<AppUser | null> {
   if (!fbUserMinimal?.uid) {
-    console.error("getOrCreateAppUserFromMongoDB called with invalid fbUserMinimal");
+    console.error("getOrCreateAppUserFromMongoDB called with invalid fbUserMinimal (missing UID)");
     return null;
   }
 
+  await dbConnect(); // Ensure DB connection
   let appUser = await getUserFromMongoDB(fbUserMinimal.uid);
 
   if (!appUser) {
-    console.log(`User ${fbUserMinimal.uid} not found in MongoDB by getOrCreateAppUserFromMongoDB, creating profile...`);
+    console.log(`User ${fbUserMinimal.uid} not found in MongoDB, creating profile...`);
     // Construct a FirebaseUser-like object for createUserInMongoDB
-    // This part is tricky because FirebaseUser is a complex object. We pass the minimal data.
-    const firebaseUserForCreate: Partial<FirebaseUserType> & { uid: string, providerData: any[] } = { // Ensure providerData matches expected structure
+    const firebaseUserForCreate: Partial<FirebaseUserType> & { uid: string, providerData: any[] } = {
       uid: fbUserMinimal.uid,
       displayName: fbUserMinimal.displayName,
       email: fbUserMinimal.email,
       photoURL: fbUserMinimal.photoURL,
       emailVerified: fbUserMinimal.emailVerified,
-      providerData: fbUserMinimal.providerData, // Pass providerData as is
+      providerData: fbUserMinimal.providerData,
     };
 
     const additionalData: Partial<AppUser> = {
@@ -348,23 +346,51 @@ export async function getOrCreateAppUserFromMongoDB(fbUserMinimal: FirebaseUserM
         email: fbUserMinimal.email,
         profilePictureUrl: fbUserMinimal.photoURL,
         emailVerified: fbUserMinimal.emailVerified,
-        role: 'guest', // Default for users not yet in a team or whose team status is unknown initially
+        role: 'guest', // Default for users not yet in a team (social sign-up)
         isAppAdmin: false, // Default platform role is standard user
-        teamId: null,
+        teamId: null, // Social sign-in users start without a team
     };
     
-    // Add social provider IDs if present
     const googleProvider = fbUserMinimal.providerData.find(p => p.providerId === GoogleAuthProvider.PROVIDER_ID);
-    if (googleProvider) additionalData.googleId = googleProvider.uid;
+    if (googleProvider?.uid) additionalData.googleId = googleProvider.uid;
     
     const githubProvider = fbUserMinimal.providerData.find(p => p.providerId === GithubAuthProvider.PROVIDER_ID);
-    if (githubProvider) additionalData.githubId = githubProvider.uid;
+    if (githubProvider?.uid) additionalData.githubId = githubProvider.uid;
     
-    appUser = await createUserInMongoDB(firebaseUserForCreate as FirebaseUserType, additionalData); // Cast needed due to partial FirebaseUser
+    appUser = await createUserInMongoDB(firebaseUserForCreate as FirebaseUserType, additionalData);
   } else {
-    // Optionally update lastActive or sync other fields if user exists
-    appUser = await updateUserInMongoDB(appUser.id, { lastActive: new Date() });
+    console.log(`User ${fbUserMinimal.uid} found in MongoDB. Checking for updates...`);
+    const updatesForExistingUser: Partial<AppUser> = { lastActive: new Date() };
+
+    if (fbUserMinimal.displayName && fbUserMinimal.displayName !== appUser.name) {
+        updatesForExistingUser.name = fbUserMinimal.displayName;
+    }
+    if (fbUserMinimal.email && (fbUserMinimal.email !== appUser.email || fbUserMinimal.emailVerified !== appUser.emailVerified)) {
+        updatesForExistingUser.email = fbUserMinimal.email;
+        updatesForExistingUser.emailVerified = fbUserMinimal.emailVerified; // Sync verification status
+    } else if (fbUserMinimal.emailVerified !== appUser.emailVerified) { // Sync if only verification status changed
+        updatesForExistingUser.emailVerified = fbUserMinimal.emailVerified;
+    }
+    if (fbUserMinimal.photoURL && fbUserMinimal.photoURL !== appUser.profilePictureUrl) {
+        updatesForExistingUser.profilePictureUrl = fbUserMinimal.photoURL;
+    }
+
+    const googleProvider = fbUserMinimal.providerData.find(p => p.providerId === GoogleAuthProvider.PROVIDER_ID);
+    if (googleProvider?.uid && googleProvider.uid !== appUser.googleId) {
+      updatesForExistingUser.googleId = googleProvider.uid;
+    }
+    
+    const githubProvider = fbUserMinimal.providerData.find(p => p.providerId === GithubAuthProvider.PROVIDER_ID);
+    if (githubProvider?.uid && githubProvider.uid !== appUser.githubId) {
+      updatesForExistingUser.githubId = githubProvider.uid;
+    }
+
+    if (Object.keys(updatesForExistingUser).length > 1) { 
+        console.log(`Updating existing user ${appUser.id} with data:`, updatesForExistingUser);
+        appUser = await updateUserInMongoDB(appUser.id, updatesForExistingUser);
+    } else if (updatesForExistingUser.lastActive) { 
+        appUser = await updateUserInMongoDB(appUser.id, { lastActive: updatesForExistingUser.lastActive });
+    }
   }
   return appUser;
 }
-
