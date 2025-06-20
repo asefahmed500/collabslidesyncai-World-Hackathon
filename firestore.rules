@@ -13,92 +13,127 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    // Check if user is the creator of the presentation
-    function isPresentationCreator(presentationData) {
-      return isAuthenticated() && presentationData.creatorId == request.auth.uid;
-    }
-
-    // Check if user has specific access role to the presentation
-    function hasPresentationAccess(presentationData, role) {
-      return isAuthenticated() && presentationData.access[request.auth.uid] == role;
-    }
-
-    // Check if user has at least viewer access
-    function canViewPresentation(presentationData) {
-      return isPresentationCreator(presentationData) ||
-             (presentationData.access != null && request.auth.uid in presentationData.access &&
-              (presentationData.access[request.auth.uid] == 'owner' ||
-               presentationData.access[request.auth.uid] == 'editor' ||
-               presentationData.access[request.auth.uid] == 'viewer'));
-    }
-
-    // Check if user can edit the presentation
-    function canEditPresentation(presentationData) {
-      return isPresentationCreator(presentationData) ||
-             hasPresentationAccess(presentationData, 'owner') ||
-             hasPresentationAccess(presentationData, 'editor');
-    }
-
-    // Admin check - placeholder, ideally use custom claims
-    // For simplicity now, let's assume an admin might have a specific role or be creator
-    // This should be replaced with a robust admin check in production (e.g., custom claims or admin user collection)
+    // Placeholder: Replace with custom claims for robust admin check
     function isAdmin() {
-      // Placeholder: In a real app, use custom claims `request.auth.token.isAppAdmin == true`
-      // Or check against a list of admin UIDs.
-      // For now, we'll allow creators to act as "admins" for their own content for some ops
-      // and rely on backend API routes to enforce true platform admin actions.
-      return isAuthenticated(); // Simplified for now, backend validates true admin actions
+      // Example: return request.auth.token.isAppAdmin == true;
+      // For development, you might temporarily allow a specific UID:
+      // return request.auth.uid == "YOUR_ADMIN_UID_FOR_TESTING";
+      return isAuthenticated(); // TEMPORARY: Allows any authenticated user as admin for easier dev
     }
 
+    function isPresentationCreator(presentation) {
+      return isUser(presentation.data.creatorId);
+    }
+
+    function hasPresentationAccess(presentation, role) {
+      return presentation.data.access[request.auth.uid] == role;
+    }
+    
+    function isPresentationTeamMember(presentation) {
+      // This is a simplified check. Ideally, use custom claims or read /teams/{teamId}
+      // For now, assuming team access is granted if presentation has a teamId and user is authenticated
+      // and is part of that team (which rules can't directly check across collections easily without claims).
+      // This part needs to be secured properly with custom claims or more complex rules.
+      return isAuthenticated() && presentation.data.teamId != null;
+    }
+
+    function canViewPresentation(presentation) {
+      return presentation.data.moderationStatus != 'taken_down' && (
+        presentation.data.settings.isPublic ||
+        isPresentationCreator(presentation) ||
+        hasPresentationAccess(presentation, 'owner') ||
+        hasPresentationAccess(presentation, 'editor') ||
+        hasPresentationAccess(presentation, 'viewer') ||
+        isPresentationTeamMember(presentation) || // Add team access check
+        isAdmin() // Admins can view any non-deleted presentation
+      );
+    }
+
+    function canEditPresentation(presentation) {
+       return presentation.data.moderationStatus != 'taken_down' && (
+        isPresentationCreator(presentation) ||
+        hasPresentationAccess(presentation, 'owner') ||
+        hasPresentationAccess(presentation, 'editor') ||
+        isAdmin() // Admins can edit
+      );
+    }
+
+    // Presentations
     match /presentations/{presentationId} {
-      allow read: if resource.data.deleted == false &&
-                     ( (resource.data.settings.isPublic == true && resource.data.moderationStatus != 'taken_down') ||
-                       (isAuthenticated() && canViewPresentation(resource.data) && resource.data.moderationStatus != 'taken_down') ||
-                       (isAuthenticated() && isAdmin()) // Admins can bypass taken_down for review
-                     );
+      allow read: if resource.data.deleted == false && canViewPresentation(resource);
+      
+      allow create: if isAuthenticated() && request.resource.data.creatorId == request.auth.uid;
+                     // Add validation for required fields on create
+                     // e.g. && request.resource.data.title is string
+                     // && request.resource.data.slides is list
+                     // && request.resource.data.access[request.auth.uid] == 'owner'
 
-      allow create: if isAuthenticated(); // Further validation in backend (e.g. user has a team)
+      allow update: if resource.data.deleted == false && (
+                      (canEditPresentation(resource) && request.resource.data.moderationStatus != 'taken_down') ||
+                      (isAdmin() && ( // Admins can update moderation status or taken-down content
+                        request.resource.data.moderationStatus != resource.data.moderationStatus ||
+                        request.resource.data.moderationNotes != resource.data.moderationNotes ||
+                        resource.data.moderationStatus == 'taken_down'
+                      ))
+                    );
+                    // Add more granular field validation for updates
+                    // e.g. ensure only specific roles can change specific fields.
+                    // Ensure 'creatorId' cannot be changed after creation.
+                    // Ensure 'moderationStatus' can only be changed by admins, etc.
 
-      // Update: Allow if user is creator, or has owner/editor access in the access map
-      // Specific field updates (like settings, access map itself, moderationStatus) should be validated carefully.
-      // Deeper validation of incoming data (request.resource.data) is crucial here.
-      allow update: if isAuthenticated() && canEditPresentation(resource.data) && resource.data.moderationStatus != 'taken_down'
-                    // Admins can update moderation status or if it's taken down
-                    || (isAuthenticated() && isAdmin() && (request.resource.data.moderationStatus != resource.data.moderationStatus || resource.data.moderationStatus == 'taken_down'));
-
-      // Delete (soft delete): Allow creator or those with owner access.
-      // Permanent delete should be an admin-only backend operation.
-      allow delete: if isAuthenticated() && (isPresentationCreator(resource.data) || hasPresentationAccess(resource.data, 'owner'));
+      // Soft delete: only creator or owner in access map, or admin
+      allow delete: if resource.data.deleted == false && (
+                      isPresentationCreator(resource) || 
+                      hasPresentationAccess(resource, 'owner') || 
+                      isAdmin()
+                    );
+      // True permanent delete should be handled by backend with admin privileges
     }
 
+    // Presentation Activities
     match /presentationActivities/{activityId} {
-      allow read: if isAuthenticated(); // Or more specific rules based on presentation access
-      allow create: if isAuthenticated(); // Typically created by backend functions/server actions
-      allow update, delete: if false; // Activities should be immutable
+      allow read: if isAuthenticated(); // Or more specific (e.g., involved users)
+      allow create: if isAuthenticated(); // Typically backend/server-side
+      allow update, delete: if false; // Activities are usually immutable
     }
 
+    // Assets
     match /assets/{assetId} {
-      allow create: if isAuthenticated() && request.resource.data.uploaderId == request.auth.uid && request.resource.data.teamId != null;
-      allow read: if isAuthenticated() && get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.members[request.auth.uid] != null; // Simplistic, assumes teams collection or needs custom claim for teamId
-      allow delete: if isAuthenticated() && (resource.data.uploaderId == request.auth.uid || isAdmin()); // Or team admin
+      allow create: if isAuthenticated() 
+                     && request.resource.data.uploaderId == request.auth.uid
+                     && request.resource.data.teamId is string; // Ensure teamId is provided
+                     // Add validation for file size, type, etc.
+
+      allow read: if isAuthenticated(); 
+                  // Ideally, check if user is part of resource.data.teamId
+                  // Example: get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.members[request.auth.uid] != null
+                  // This adds read cost and complexity. Custom claims are better for this.
+
+      // Allow update only for tags or description by uploader or team admin (complex)
+      allow update: if isAuthenticated() && 
+                      (isUser(resource.data.uploaderId) || isAdmin()); // Simplified: Uploader or Admin
+                      // Add field-specific write rules for what can be updated
+
+      allow delete: if isAuthenticated() && 
+                      (isUser(resource.data.uploaderId) || isAdmin()); // Simplified: Uploader or Admin
     }
 
+    // Notifications (user-specific)
     match /notifications/{notificationId} {
-      allow read, update: if isAuthenticated() && resource.data.userId == request.auth.uid; // User can read/update (mark as read) their own notifications
-      allow create: if isAuthenticated(); // Notifications are created by the system/server actions
-      allow delete: if false; // Users generally don't delete notifications this way
+      allow read, update: if isUser(resource.data.userId); // User can read/update their own notifications (e.g., mark as read)
+      allow create: if isAuthenticated(); // System/backend creates notifications
+      allow delete: if isUser(resource.data.userId); // User can delete their own notifications
     }
 
+    // Feedback Submissions
     match /feedbackSubmissions/{submissionId} {
-      allow create: if true; // Allow anyone (even unauthenticated for initial submission) or isAuthenticated()
-      allow read, update, delete: if isAuthenticated() && isAdmin(); // Only admins can manage feedback
+      allow create: if true; // Anyone can submit feedback (or isAuthenticated())
+      allow read, update, delete: if isAdmin(); // Only admins can manage feedback
     }
 
-    // If you have a 'users' collection in Firestore for user-specific app settings (not profile data which is in MongoDB)
-    // match /users/{userId} {
-    //   allow read, write: if isUser(userId);
-    // }
+    // Deny all other access by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
   }
 }
-
-    
