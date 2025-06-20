@@ -1,177 +1,171 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { headers } from 'next/headers';
-// import Stripe from 'stripe'; // Uncomment when Stripe SDK is fully integrated
-// import { updateUserInMongoDB } from '@/lib/mongoUserService'; // Uncomment when implementing DB updates
-// import dbConnect from '@/lib/mongodb'; // Uncomment when implementing DB updates
+import Stripe from 'stripe';
+import { updateUserInMongoDB } from '@/lib/mongoUserService';
+import dbConnect from '@/lib/mongodb';
+import UserModel from '@/models/User'; // Import UserModel for querying
 
-// TODO: STEP 0 - Ensure Stripe SDK is installed: npm install stripe
-// TODO: STEP 0 - Set these environment variables in your .env.local or hosting environment
-// const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-//   apiVersion: '2024-06-20', // Use your desired API version or the latest
-//   typescript: true,
-// });
-// const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET!;
+// Ensure Stripe SDK is installed: npm install stripe
+// Set these environment variables in your .env.local or hosting environment
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+  apiVersion: '2024-06-20', // Use your desired API version or the latest
+  typescript: true,
+});
+const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET!;
 
 export async function POST(request: NextRequest) {
   const body = await request.text(); // Read the raw body for signature verification
-  // const signature = headers().get('stripe-signature') as string;
+  const signature = headers().get('stripe-signature') as string;
 
-  // let event: Stripe.Event;
+  let event: Stripe.Event;
 
-  // TODO: STEP 1 - Verify Stripe Webhook Signature (CRITICAL FOR SECURITY)
-  // if (!webhookSecret) {
-  //   console.error('🔴 Stripe webhook secret is not set. Cannot verify webhook signature.');
-  //   return NextResponse.json({ error: 'Webhook secret not configured on server.' }, { status: 500 });
-  // }
-  // try {
-  //   event = stripe.webhooks.constructEvent(body, signature, webhookSecret);
-  // } catch (err: any) {
-  //   console.error(`Webhook signature verification failed: ${err.message}`);
-  //   return NextResponse.json({ error: `Webhook Error: ${err.message}` }, { status: 400 });
-  // }
-
-  // For development without live webhooks & signature verification (REMOVE FOR PRODUCTION)
-  let event;
-  try {
-    event = JSON.parse(body); // In dev, you might send JSON directly from Stripe CLI or mock
-  } catch (err:any) {
-    console.error('Error parsing webhook body (DEV MODE):', err.message);
-    return NextResponse.json({ error: 'Invalid JSON body (DEV MODE)' }, { status: 400 });
+  if (!webhookSecret) {
+    console.error('🔴 Stripe webhook secret is not set. Cannot verify webhook signature.');
+    return NextResponse.json({ error: 'Webhook secret not configured on server.' }, { status: 500 });
   }
-  // END DEV MODE SECTION
 
-  console.log('Stripe Webhook Received (SIGNATURE VERIFICATION SKIPPED IN CURRENT CODE - TODO):', event.type, event.id);
+  try {
+    event = stripe.webhooks.constructEvent(body, signature, webhookSecret);
+  } catch (err: any) {
+    console.error(`Webhook signature verification failed: ${err.message}`);
+    return NextResponse.json({ error: `Webhook Error: ${err.message}` }, { status: 400 });
+  }
 
-  // TODO: STEP 2 - Connect to Database
-  // await dbConnect();
+  console.log('Stripe Webhook Received:', event.type, event.id);
 
-  // TODO: STEP 3 - Handle specific event types
+  await dbConnect();
+
   switch (event.type) {
     case 'checkout.session.completed':
-      // const session = event.data.object as Stripe.Checkout.Session;
-      // const userIdFromMetadata = session.metadata?.userId; // If you pass userId from client
-      // const userEmail = session.customer_details?.email; // Or use email
-      // const stripeCustomerId = session.customer as string;
-      // const stripeSubscriptionId = session.subscription as string;
+      const session = event.data.object as Stripe.Checkout.Session;
+      const userIdFromMetadata = session.metadata?.userId;
+      const userEmail = session.customer_details?.email;
+      const stripeCustomerId = session.customer as string;
+      const stripeSubscriptionId = session.subscription as string;
       
-      // // Retrieve plan details (e.g., from session line items or subscription object)
-      // const planId = session.metadata?.planId || 'unknown_plan'; // Example
-      // const subscription = await stripe.subscriptions.retrieve(stripeSubscriptionId);
-      // const currentPeriodStart = new Date(subscription.current_period_start * 1000);
-      // const currentPeriodEnd = new Date(subscription.current_period_end * 1000);
+      let userToUpdate;
+      if (userIdFromMetadata) {
+        userToUpdate = await UserModel.findById(userIdFromMetadata).exec();
+      } else if (userEmail) {
+        userToUpdate = await UserModel.findOne({ email: userEmail }).exec();
+      }
 
-      // console.log(`✅ Checkout session completed for user: ${userEmail || userIdFromMetadata}, Subscription: ${stripeSubscriptionId}`);
+      if (!userToUpdate) {
+        console.error(`🔴 User not found for metadata ID: ${userIdFromMetadata} or email: ${userEmail}`);
+        break; 
+      }
       
-      // TODO: STEP 4 - Find user in your DB (e.g., by email or userIdFromMetadata)
-      // let user = await UserModel.findOne({ email: userEmail }); // or findById(userIdFromMetadata)
-      // if (!user) {
-      //   console.error(`🔴 User not found for email: ${userEmail} or ID: ${userIdFromMetadata}`);
-      //   break; // Or handle user creation if applicable
-      // }
-      // const mongoUserId = user.id; // Assuming user.id is the MongoDB _id or Firebase UID
+      try {
+        const subscription = await stripe.subscriptions.retrieve(stripeSubscriptionId);
+        const planId = session.metadata?.planId || subscription.items.data[0]?.price?.lookup_key || 'unknown_plan';
+        const currentPeriodStart = new Date(subscription.current_period_start * 1000);
+        const currentPeriodEnd = new Date(subscription.current_period_end * 1000);
 
-      // TODO: STEP 4 - Update user record in MongoDB:
-      // await updateUserInMongoDB(mongoUserId, { 
-      //   isPremium: true, 
-      //   stripeCustomerId,
-      //   stripeSubscriptionId,
-      //   subscriptionPlan: planId as any, // Cast if planId is 'premium_monthly' etc.
-      //   subscriptionStartDate: currentPeriodStart,
-      //   subscriptionEndDate: currentPeriodEnd,
-      // });
-      // console.log(`✅ User ${mongoUserId} upgraded to premium. Plan: ${planId}`);
-      // TODO: Send subscription activated email (optional)
+        await updateUserInMongoDB(userToUpdate.id, { 
+          isPremium: true, 
+          stripeCustomerId,
+          stripeSubscriptionId,
+          subscriptionPlan: planId as any, 
+          subscriptionStartDate: currentPeriodStart,
+          subscriptionEndDate: currentPeriodEnd,
+        });
+        console.log(`✅ User ${userToUpdate.id} upgraded. Plan: ${planId}, Subscription: ${stripeSubscriptionId}`);
+        // TODO: Send subscription activated email (optional)
+      } catch (subError: any) {
+        console.error(`🔴 Error processing checkout.session.completed for user ${userToUpdate.id}: ${subError.message}`);
+      }
       break;
 
     case 'invoice.payment_succeeded':
-      // const invoice = event.data.object as Stripe.Invoice;
-      // const stripeSubscriptionIdForInvoice = invoice.subscription as string;
-      // const stripeCustomerIdForInvoice = invoice.customer as string;
+      const invoice = event.data.object as Stripe.Invoice;
+      const subIdForInvoice = invoice.subscription as string;
 
-      // if (invoice.billing_reason === 'subscription_cycle' || invoice.billing_reason === 'subscription_create') {
-      //   // const subscriptionDetails = await stripe.subscriptions.retrieve(stripeSubscriptionIdForInvoice);
-      //   // const userToUpdate = await UserModel.findOne({ stripeSubscriptionId: stripeSubscriptionIdForInvoice });
-      //   // if (!userToUpdate) {
-      //   //    console.error(`🔴 User not found for subscription ID: ${stripeSubscriptionIdForInvoice} during invoice.payment_succeeded`);
-      //   //    break;
-      //   // }
-      //   // const mongoUserIdForInvoice = userToUpdate.id;
-        
-      //   // const newEndDate = new Date(subscriptionDetails.current_period_end * 1000);
-      //   // await updateUserInMongoDB(mongoUserIdForInvoice, { 
-      //   //   subscriptionEndDate: newEndDate,
-      //   //   isPremium: true, // Ensure still premium
-      //   //   // Optionally update plan if it can change mid-cycle (rare)
-      //   //   // subscriptionPlan: subscriptionDetails.items.data[0]?.price.metadata?.planId || subscriptionDetails.items.data[0]?.price.lookup_key,
-      //   // });
-      //   console.log(`✅ Invoice payment succeeded for subscription: ${stripeSubscriptionIdForInvoice}. User ${mongoUserIdForInvoice} subscription end date updated to ${newEndDate}.`);
-      // }
-      // TODO: Send payment receipt email (optional, Stripe can also do this)
+      if ((invoice.billing_reason === 'subscription_cycle' || invoice.billing_reason === 'subscription_create') && subIdForInvoice) {
+        try {
+            const subscriptionDetails = await stripe.subscriptions.retrieve(subIdForInvoice);
+            const userWithPaidInvoice = await UserModel.findOne({ stripeSubscriptionId: subIdForInvoice }).exec();
+            if (!userWithPaidInvoice) {
+               console.error(`🔴 User not found for subscription ID: ${subIdForInvoice} during invoice.payment_succeeded`);
+               break;
+            }
+            const newEndDate = new Date(subscriptionDetails.current_period_end * 1000);
+            await updateUserInMongoDB(userWithPaidInvoice.id, { 
+              subscriptionEndDate: newEndDate,
+              isPremium: true, 
+            });
+            console.log(`✅ Invoice payment succeeded for subscription: ${subIdForInvoice}. User ${userWithPaidInvoice.id} subscription end date updated to ${newEndDate.toLocaleDateString()}.`);
+            // TODO: Send payment receipt email (optional, Stripe can also do this)
+        } catch (invError: any) {
+            console.error(`🔴 Error processing invoice.payment_succeeded for subscription ${subIdForInvoice}: ${invError.message}`);
+        }
+      }
       break;
 
     case 'invoice.payment_failed':
-      // const failedInvoice = event.data.object as Stripe.Invoice;
-      // const stripeSubscriptionIdForFailed = failedInvoice.subscription as string;
-      // console.log(`⚠️ Invoice payment failed for subscription: ${stripeSubscriptionIdForFailed}`);
-      // // const userWithFailedPayment = await UserModel.findOne({ stripeSubscriptionId: stripeSubscriptionIdForFailed });
-      // // if (userWithFailedPayment) {
-      // //   const mongoUserIdFailed = userWithFailedPayment.id;
-      // //   // Handle failed payment:
-      // //   // - Notify user
-      // //   // - Optionally, update DB to reflect payment issue (e.g., a grace period status)
-      // //   // Stripe will typically retry payments. If all retries fail, a customer.subscription.updated or .deleted event will follow.
-      // //   await updateUserInMongoDB(mongoUserIdFailed, { /* some_status_indicating_payment_issue */ });
-      // //   console.log(`⚠️ User ${mongoUserIdFailed} payment failed. Notified and status updated.`);
-      // //   TODO: Send payment failed email
-      // // } else {
-      // //    console.error(`🔴 User not found for subscription ID: ${stripeSubscriptionIdForFailed} during invoice.payment_failed`);
-      // // }
+      const failedInvoice = event.data.object as Stripe.Invoice;
+      const subIdForFailed = failedInvoice.subscription as string;
+      console.log(`⚠️ Invoice payment failed for subscription: ${subIdForFailed}`);
+      
+      if (subIdForFailed) {
+        const userWithFailedPayment = await UserModel.findOne({ stripeSubscriptionId: subIdForFailed }).exec();
+        if (userWithFailedPayment) {
+          // Potentially update user status, e.g., to 'past_due' or trigger dunning.
+          // For now, just log and suggest email.
+          console.log(`⚠️ User ${userWithFailedPayment.id} payment failed. Consider notifying user.`);
+          // await updateUserInMongoDB(userWithFailedPayment.id, { subscriptionStatus: 'past_due' }); // Example: if you add such a field
+          // TODO: Send payment failed email
+        } else {
+           console.error(`🔴 User not found for subscription ID: ${subIdForFailed} during invoice.payment_failed`);
+        }
+      }
       break;
       
     case 'customer.subscription.updated':
-      // const updatedSubscription = event.data.object as Stripe.Subscription;
-      // console.log(`🔄 Subscription updated: ${updatedSubscription.id}, Status: ${updatedSubscription.status}`);
-      // const customerIdForUpdate = updatedSubscription.customer as string;
-      // // const userToUpdateSubscription = await UserModel.findOne({ stripeCustomerId: customerIdForUpdate });
-      // // if (!userToUpdateSubscription) {
-      // //   console.error(`🔴 User not found for Stripe Customer ID: ${customerIdForUpdate} during customer.subscription.updated`);
-      // //   break;
-      // // }
-      // // const mongoUserIdUpdated = userToUpdateSubscription.id;
+      const updatedSubscription = event.data.object as Stripe.Subscription;
+      console.log(`🔄 Subscription updated: ${updatedSubscription.id}, Status: ${updatedSubscription.status}`);
+      const customerIdForUpdate = updatedSubscription.customer as string;
+      
+      const userToUpdateSubscription = await UserModel.findOne({ stripeCustomerId: customerIdForUpdate }).exec();
+      if (!userToUpdateSubscription) {
+        console.error(`🔴 User not found for Stripe Customer ID: ${customerIdForUpdate} during customer.subscription.updated`);
+        break;
+      }
 
-      // // const newEndDateUpdated = updatedSubscription.current_period_end ? new Date(updatedSubscription.current_period_end * 1000) : null;
-      // // const newPlanUpdated = updatedSubscription.items.data[0]?.price.metadata?.planId || updatedSubscription.items.data[0]?.price.lookup_key;
-      // // const newIsPremiumStatus = updatedSubscription.status === 'active' || updatedSubscription.status === 'trialing';
+      const newIsPremiumStatus = updatedSubscription.status === 'active' || updatedSubscription.status === 'trialing';
+      const newPlanUpdated = updatedSubscription.items.data[0]?.price?.lookup_key || 'unknown_plan'; // Using lookup_key if set
+      const newEndDateUpdated = updatedSubscription.current_period_end ? new Date(updatedSubscription.current_period_end * 1000) : null;
 
-      // // await updateUserInMongoDB(mongoUserIdUpdated, { 
-      // //   isPremium: newIsPremiumStatus,
-      // //   subscriptionPlan: newPlanUpdated as any,
-      // //   subscriptionEndDate: newEndDateUpdated,
-      // //   stripeSubscriptionId: updatedSubscription.id, // Ensure it's up-to-date
-      // // });
-      // // console.log(`🔄 User ${mongoUserIdUpdated} subscription updated. Status: ${updatedSubscription.status}, Plan: ${newPlanUpdated}, isPremium: ${newIsPremiumStatus}`);
+      await updateUserInMongoDB(userToUpdateSubscription.id, { 
+        isPremium: newIsPremiumStatus,
+        subscriptionPlan: newPlanUpdated as any,
+        subscriptionEndDate: newEndDateUpdated,
+        stripeSubscriptionId: updatedSubscription.id, // Ensure it's up-to-date
+        // Optionally update subscriptionStartDate if it's a new subscription from an update (e.g. trial end)
+        subscriptionStartDate: updatedSubscription.start_date ? new Date(updatedSubscription.start_date * 1000) : userToUpdateSubscription.subscriptionStartDate,
+      });
+      console.log(`🔄 User ${userToUpdateSubscription.id} subscription updated. Status: ${updatedSubscription.status}, Plan: ${newPlanUpdated}, isPremium: ${newIsPremiumStatus}`);
       break;
 
-    case 'customer.subscription.deleted': // Or 'customer.subscription.updated' with status 'canceled'
-      // const deletedSubscription = event.data.object as Stripe.Subscription;
-      // console.log(`🚫 Subscription deleted/canceled: ${deletedSubscription.id}`);
-      // const customerIdForDelete = deletedSubscription.customer as string;
-      // // const userWithDeletedSubscription = await UserModel.findOne({ stripeCustomerId: customerIdForDelete });
-      // // if (!userWithDeletedSubscription) {
-      // //   console.error(`🔴 User not found for Stripe Customer ID: ${customerIdForDelete} during customer.subscription.deleted`);
-      // //   break;
-      // // }
-      // // const mongoUserIdDeleted = userWithDeletedSubscription.id;
+    case 'customer.subscription.deleted': 
+      const deletedSubscription = event.data.object as Stripe.Subscription;
+      console.log(`🚫 Subscription deleted/canceled: ${deletedSubscription.id}`);
+      const customerIdForDelete = deletedSubscription.customer as string;
+      
+      const userWithDeletedSubscription = await UserModel.findOne({ stripeCustomerId: customerIdForDelete }).exec();
+      if (!userWithDeletedSubscription) {
+        console.error(`🔴 User not found for Stripe Customer ID: ${customerIdForDelete} during customer.subscription.deleted`);
+        break;
+      }
 
-      // // await updateUserInMongoDB(mongoUserIdDeleted, { 
-      // //   isPremium: false, 
-      // //   subscriptionPlan: null,
-      // //   stripeSubscriptionId: null, // Or keep it for history but mark inactive
-      // //   subscriptionEndDate: deletedSubscription.ended_at ? new Date(deletedSubscription.ended_at * 1000) : null, // When it actually ended
-      // // });
-      // // console.log(`🚫 User ${mongoUserIdDeleted} premium access revoked due to subscription cancellation/deletion.`);
-      // // TODO: Send subscription canceled email (optional)
+      await updateUserInMongoDB(userWithDeletedSubscription.id, { 
+        isPremium: false, 
+        subscriptionPlan: null,
+        stripeSubscriptionId: null, 
+        subscriptionEndDate: deletedSubscription.ended_at ? new Date(deletedSubscription.ended_at * 1000) : new Date(), 
+      });
+      console.log(`🚫 User ${userWithDeletedSubscription.id} premium access revoked due to subscription cancellation/deletion.`);
+      // TODO: Send subscription canceled email (optional)
       break;
       
     default:
@@ -181,17 +175,3 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({ received: true, event_type: event.type });
 }
 
-// Helper function to get Stripe instance (ensure singleton)
-// let stripeInstance: Stripe | null = null;
-// const getStripeInstance = (): Stripe => {
-//   if (!stripeInstance) {
-//     if (!process.env.STRIPE_SECRET_KEY) {
-//       throw new Error("Stripe secret key is not configured.");
-//     }
-//     stripeInstance = new Stripe(process.env.STRIPE_SECRET_KEY, {
-//       apiVersion: '2024-06-20',
-//       typescript: true,
-//     });
-//   }
-//   return stripeInstance;
-// };
