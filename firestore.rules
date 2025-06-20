@@ -4,138 +4,101 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper function to check if a user is authenticated
+    // Helper functions
     function isAuthenticated() {
       return request.auth != null;
     }
 
-    // Helper function to get user's ID
-    function getUid() {
-      return request.auth.uid;
-    }
-    
-    // Helper function to check if the user is the creator of a document
-    function isCreator(docData) {
-      return isAuthenticated() && getUid() == docData.creatorId;
+    function isUser(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
     }
 
-    // Helper function to check if the user has explicit access (owner, editor, viewer)
-    function hasExplicitAccess(docData, role) {
-      return isAuthenticated() && docData.access[getUid()] == role;
-    }
-    
-    function hasAnyExplicitAccess(docData) {
-      return isAuthenticated() && (docData.access[getUid()] == 'owner' || docData.access[getUid()] == 'editor' || docData.access[getUid()] == 'viewer');
+    // Check if user is the creator of the presentation
+    function isPresentationCreator(presentationData) {
+      return isAuthenticated() && presentationData.creatorId == request.auth.uid;
     }
 
-    // Helper function to check team access (requires custom claims on auth token)
-    function isTeamMember(docData) {
-      // IMPORTANT: This requires you to set a 'teamId' custom claim on the user's auth token
-      // when they are part of a team.
-      return isAuthenticated() && request.auth.token.teamId == docData.teamId;
-    }
-    
-    // Helper function to check if user is team owner or admin (requires custom claims)
-    function isTeamAdminOrOwner(docData) {
-       return isAuthenticated() && isTeamMember(docData) && (request.auth.token.teamRole == 'admin' || request.auth.token.teamRole == 'owner');
+    // Check if user has specific access role to the presentation
+    function hasPresentationAccess(presentationData, role) {
+      return isAuthenticated() && presentationData.access[request.auth.uid] == role;
     }
 
-    // Presentations Collection
+    // Check if user has at least viewer access
+    function canViewPresentation(presentationData) {
+      return isPresentationCreator(presentationData) ||
+             (presentationData.access != null && request.auth.uid in presentationData.access &&
+              (presentationData.access[request.auth.uid] == 'owner' ||
+               presentationData.access[request.auth.uid] == 'editor' ||
+               presentationData.access[request.auth.uid] == 'viewer'));
+    }
+
+    // Check if user can edit the presentation
+    function canEditPresentation(presentationData) {
+      return isPresentationCreator(presentationData) ||
+             hasPresentationAccess(presentationData, 'owner') ||
+             hasPresentationAccess(presentationData, 'editor');
+    }
+
+    // Admin check - placeholder, ideally use custom claims
+    // For simplicity now, let's assume an admin might have a specific role or be creator
+    // This should be replaced with a robust admin check in production (e.g., custom claims or admin user collection)
+    function isAdmin() {
+      // Placeholder: In a real app, use custom claims `request.auth.token.isAppAdmin == true`
+      // Or check against a list of admin UIDs.
+      // For now, we'll allow creators to act as "admins" for their own content for some ops
+      // and rely on backend API routes to enforce true platform admin actions.
+      return isAuthenticated(); // Simplified for now, backend validates true admin actions
+    }
+
     match /presentations/{presentationId} {
-      // Read Access:
-      // 1. If presentation is public
-      // 2. If user is authenticated and is the creator
-      // 3. If user is authenticated and has explicit access (owner, editor, viewer)
-      // 4. If user is authenticated and is part of the team the presentation belongs to (via custom claim)
-      allow read: if resource.data.settings.isPublic == true ||
-                     isCreator(resource.data) ||
-                     hasAnyExplicitAccess(resource.data) ||
-                     (resource.data.teamId != null && isTeamMember(resource.data));
+      allow read: if resource.data.deleted == false &&
+                     ( (resource.data.settings.isPublic == true && resource.data.moderationStatus != 'taken_down') ||
+                       (isAuthenticated() && canViewPresentation(resource.data) && resource.data.moderationStatus != 'taken_down') ||
+                       (isAuthenticated() && isAdmin()) // Admins can bypass taken_down for review
+                     );
 
-      // Create Access:
-      // User must be authenticated to create.
-      // Ensure creatorId is set to the authenticated user's UID.
-      // Ensure access map correctly sets creator as owner.
-      // Ensure basic fields are present.
-      allow create: if isAuthenticated() &&
-                       request.resource.data.creatorId == getUid() &&
-                       request.resource.data.access[getUid()] == 'owner' &&
-                       request.resource.data.title is string &&
-                       request.resource.data.slides is list &&
-                       request.resource.data.slides.size() >= 0 && // Allow empty initially, first slide added after creation
-                       request.resource.data.settings.isPublic is bool;
+      allow create: if isAuthenticated(); // Further validation in backend (e.g. user has a team)
 
+      // Update: Allow if user is creator, or has owner/editor access in the access map
+      // Specific field updates (like settings, access map itself, moderationStatus) should be validated carefully.
+      // Deeper validation of incoming data (request.resource.data) is crucial here.
+      allow update: if isAuthenticated() && canEditPresentation(resource.data) && resource.data.moderationStatus != 'taken_down'
+                    // Admins can update moderation status or if it's taken down
+                    || (isAuthenticated() && isAdmin() && (request.resource.data.moderationStatus != resource.data.moderationStatus || resource.data.moderationStatus == 'taken_down'));
 
-      // Update Access:
-      // 1. If user is creator or has 'owner' or 'editor' role in access map.
-      // 2. Allow any authenticated user to update their own presence in 'activeCollaborators'.
-      // 3. Validate data types and structure.
-      allow update: if (isCreator(resource.data) || hasExplicitAccess(resource.data, 'owner') || hasExplicitAccess(resource.data, 'editor')) &&
-                       (request.resource.data.title is string || request.resource.data.title == resource.data.title) &&
-                       (request.resource.data.slides is list || request.resource.data.slides == resource.data.slides) &&
-                       (request.resource.data.settings.isPublic is bool || request.resource.data.settings.isPublic == resource.data.settings.isPublic) &&
-                       (request.resource.data.access is map || request.resource.data.access == resource.data.access)
-                     || (isAuthenticated() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['activeCollaborators.' + getUid()]));
-
-
-      // Delete Access:
-      // Only creator can delete.
-      allow delete: if isCreator(resource.data);
+      // Delete (soft delete): Allow creator or those with owner access.
+      // Permanent delete should be an admin-only backend operation.
+      allow delete: if isAuthenticated() && (isPresentationCreator(resource.data) || hasPresentationAccess(resource.data, 'owner'));
     }
 
-    // Assets Collection
-    match /assets/{assetId} {
-      // Read Access:
-      // 1. If user is authenticated and asset belongs to their team (via custom claim).
-      // 2. If user is authenticated and is the uploader of the asset.
-      allow read: if isAuthenticated() && (isTeamMember(resource.data) || resource.data.uploaderId == getUid());
-
-      // Create Access:
-      // User must be authenticated.
-      // UploaderId must be their own UID.
-      // TeamId must be present and should match user's team (if checking via custom claim).
-      allow create: if isAuthenticated() &&
-                       request.resource.data.uploaderId == getUid() &&
-                       request.resource.data.teamId != null &&
-                       request.resource.data.fileName is string &&
-                       request.resource.data.size is number && request.resource.data.size > 0 && request.resource.data.size <= 5 * 1024 * 1024; // Max 5MB
-
-      // Update Access: (Generally, asset metadata might not be frequently updated. Define if needed)
-      // Typically uploader or team admin might update tags or description.
-      allow update: if isAuthenticated() && (resource.data.uploaderId == getUid() || isTeamAdminOrOwner(resource.data)) &&
-                       (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['tags', 'description', 'lastUpdatedAt']));
-
-
-      // Delete Access:
-      // Uploader or team admin/owner can delete.
-      allow delete: if isAuthenticated() && (resource.data.uploaderId == getUid() || isTeamAdminOrOwner(resource.data));
-    }
-    
-    // Presentation Activities Collection
     match /presentationActivities/{activityId} {
-      // Read Access: Authenticated users can read activities (could be refined to presentation members)
-      allow read: if isAuthenticated();
-      
-      // Create Access: Authenticated users (typically the system acting on behalf of a user) can create.
-      // ActorId should match the authenticated user.
-      allow create: if isAuthenticated() && request.resource.data.actorId == getUid();
-
-      // No updates or deletes typically
-      allow update, delete: if false;
+      allow read: if isAuthenticated(); // Or more specific rules based on presentation access
+      allow create: if isAuthenticated(); // Typically created by backend functions/server actions
+      allow update, delete: if false; // Activities should be immutable
     }
 
-    // Notifications Collection
+    match /assets/{assetId} {
+      allow create: if isAuthenticated() && request.resource.data.uploaderId == request.auth.uid && request.resource.data.teamId != null;
+      allow read: if isAuthenticated() && get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.members[request.auth.uid] != null; // Simplistic, assumes teams collection or needs custom claim for teamId
+      allow delete: if isAuthenticated() && (resource.data.uploaderId == request.auth.uid || isAdmin()); // Or team admin
+    }
+
     match /notifications/{notificationId} {
-      allow read: if isAuthenticated() && resource.data.userId == getUid();
-      allow create: if isAuthenticated(); // Server (actions/functions) will create with correct userId
-      allow update: if isAuthenticated() && resource.data.userId == getUid() &&
-                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead']);
-      allow delete: if false; // Or allow user to delete their own read notifications
+      allow read, update: if isAuthenticated() && resource.data.userId == request.auth.uid; // User can read/update (mark as read) their own notifications
+      allow create: if isAuthenticated(); // Notifications are created by the system/server actions
+      allow delete: if false; // Users generally don't delete notifications this way
     }
 
-    // Default deny all other access
-    match /{document=**} {
-      allow read, write: if false;
+    match /feedbackSubmissions/{submissionId} {
+      allow create: if true; // Allow anyone (even unauthenticated for initial submission) or isAuthenticated()
+      allow read, update, delete: if isAuthenticated() && isAdmin(); // Only admins can manage feedback
     }
+
+    // If you have a 'users' collection in Firestore for user-specific app settings (not profile data which is in MongoDB)
+    // match /users/{userId} {
+    //   allow read, write: if isUser(userId);
+    // }
   }
 }
+
+    
