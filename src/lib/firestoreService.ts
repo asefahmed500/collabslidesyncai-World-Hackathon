@@ -27,7 +27,7 @@ import type { Presentation, Slide, SlideElement, SlideComment, User as AppUserTy
 import { logTeamActivityInMongoDB } from './mongoTeamService'; 
 import { getUserByEmailFromMongoDB } from './mongoUserService'; 
 import { v4 as uuidv4 } from 'uuid';
-import { sendEmail, createNewCommentEmail } from './emailService'; 
+// import { sendEmail, createNewCommentEmail } from './emailService'; // Temporarily removed
 
 const USER_COLORS = [
   '#FF6B6B', '#4ECDC4', '#45B7D1', '#FED766', '#2AB7CA',
@@ -639,8 +639,7 @@ export async function addCommentToSlide(presentationId: string, slideId: string,
         updatedSlides[slideIndex] = targetSlide;
         transaction.update(presRef, { slides: updatedSlides, lastUpdatedAt: serverTimestamp() });
         
-        // Create in-app notification for the presentation owner
-        if (presentationData.creatorId !== comment.userId) { // Don't notify user of their own comment
+        if (presentationData.creatorId !== comment.userId) { 
             await createNotification(
                 presentationData.creatorId, 
                 'comment_new',
@@ -652,7 +651,6 @@ export async function addCommentToSlide(presentationId: string, slideId: string,
                 comment.userAvatarUrl
             );
         }
-        // TODO: Notify other collaborators or @mentioned users
     } else console.warn(`Slide ${slideId} not found in presentation ${presentationId}`);
   });
 }
@@ -950,7 +948,7 @@ export async function getUserByEmail(email: string): Promise<AppUserTypeFromFire
 export async function getAllPresentationsForAdmin(includeDeleted = false): Promise<Presentation[]> {
   let q;
   if (includeDeleted) {
-    q = query(presentationsCollection, orderBy('deletedAt', 'desc'));
+    q = query(presentationsCollection, orderBy('lastUpdatedAt', 'desc')); // Simpler query for all
   } else {
     q = query(presentationsCollection, where('deleted', '==', false), orderBy('lastUpdatedAt', 'desc'));
   }
@@ -962,8 +960,8 @@ export async function getPresentationsForModerationReview(): Promise<Presentatio
   const q = query(
     presentationsCollection,
     where('moderationStatus', '==', 'under_review'),
-    where('deleted', '==', false), // Ensure not to review already soft-deleted items
-    orderBy('lastUpdatedAt', 'desc') // Review more recent ones first or by flag date
+    where('deleted', '==', false), 
+    orderBy('lastUpdatedAt', 'desc')
   );
   const snapshot = await getDocs(q);
   return snapshot.docs.map(docSnap => ({ id: docSnap.id, ...convertTimestamps(docSnap.data()) } as Presentation));
@@ -1103,6 +1101,3 @@ export async function updateFeedbackStatus(feedbackId: string, status: FeedbackS
 
 
 export { uuidv4 };
-
-
-    

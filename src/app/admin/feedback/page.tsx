@@ -9,8 +9,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Loader2, MessageSquareWarning, Bug, Lightbulb, HelpCircle, CheckCircle, Settings, RotateCcw } from 'lucide-react';
-import { format, formatDistanceToNowStrict } from 'date-fns';
+import { Loader2, MessageSquareWarning, Bug, Lightbulb, HelpCircle, RotateCcw } from 'lucide-react';
+import { formatDistanceToNowStrict } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -90,8 +90,6 @@ export default function AdminFeedbackPage() {
     try {
       await updateFeedbackStatus(feedbackId, newStatus);
       toast({ title: "Status Updated", description: `Feedback status changed to ${newStatus}.` });
-      // Optional: refetch to ensure consistency, though optimistic update handles UI
-      // fetchFeedback(); 
     } catch (error) {
       console.error("Error updating feedback status:", error);
       toast({ title: "Error", description: "Could not update status.", variant: "destructive" });
@@ -155,11 +153,11 @@ export default function AdminFeedbackPage() {
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger>
-                            {formatDistanceToNowStrict(new Date(item.createdAt), { addSuffix: true })}
+                            {item.createdAt ? formatDistanceToNowStrict(new Date(item.createdAt.toDate ? item.createdAt.toDate() : item.createdAt), { addSuffix: true }) : 'N/A'}
                           </TooltipTrigger>
                           <TooltipContent>
-                            <p>{new Date(item.createdAt).toLocaleString()}</p>
-                            {item.updatedAt && <p>Updated: {new Date(item.updatedAt).toLocaleString()}</p>}
+                            <p>{item.createdAt ? new Date(item.createdAt.toDate ? item.createdAt.toDate() : item.createdAt).toLocaleString() : 'Unknown date'}</p>
+                            {item.updatedAt && <p>Updated: {new Date(item.updatedAt.toDate ? item.updatedAt.toDate() : item.updatedAt).toLocaleString()}</p>}
                           </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
@@ -208,3 +206,4 @@ export default function AdminFeedbackPage() {
     </Card>
   );
 }
+
