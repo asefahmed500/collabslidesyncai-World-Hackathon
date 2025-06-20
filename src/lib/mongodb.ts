@@ -2,7 +2,7 @@
 import mongoose from 'mongoose';
 
 // Log at the very top of the file to ensure this runs when the module is loaded.
-console.log('Attempting to load MONGODB_URI. Value:', process.env.MONGODB_URI);
+// console.log('Attempting to load MONGODB_URI. Value:', process.env.MONGODB_URI); // Removed debug log
 
 const MONGODB_URI = process.env.MONGODB_URI;
 

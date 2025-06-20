@@ -12,7 +12,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Loader2, ShieldAlert, Users, Settings, Activity, Briefcase } from 'lucide-react';
 import type { Team, User as AppUser, TeamActivity as TeamActivityType, TeamMember } from '@/types';
-import { getTeamFromMongoDB, getTeamActivitiesFromMongoDB } from '@/lib/mongoTeamService';
+// Removed direct imports from mongoTeamService
+// import { getTeamFromMongoDB, getTeamActivitiesFromMongoDB } from '@/lib/mongoTeamService';
+import { getTeamDataAction, getTeamActivitiesAction } from './actions'; // Import Server Actions
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 
@@ -30,22 +32,15 @@ export default function ManageTeamPage() {
     if (currentUser?.teamId) {
       setIsLoadingTeam(true);
       try {
-        const teamData = await getTeamFromMongoDB(currentUser.teamId);
-        if (teamData) {
-          const memberInfo = teamData.members[currentUser.id];
+        // Use Server Action to fetch team data
+        const result = await getTeamDataAction(currentUser.teamId);
+        if (result.success && result.team) {
+          const memberInfo = result.team.members[currentUser.id];
           const canManage = memberInfo && (memberInfo.role === 'owner' || memberInfo.role === 'admin');
           setHasManagementPermission(canManage);
-          if (canManage) {
-            setTeam(teamData);
-          } else {
-            // If user is part of team but not owner/admin, allow viewing some info (e.g. activity log)
-            // but restrict access to sensitive tabs like settings/member management
-            // For now, we'll set the team data but rely on `hasManagementPermission` to control UI
-            setTeam(teamData); 
-            // toast({ title: "Limited Access", description: "You have view-only access for some team management features.", variant: "default" });
-          }
+          setTeam(result.team);
         } else {
-          toast({ title: "Error", description: "Team not found.", variant: "destructive" });
+          toast({ title: "Error", description: result.message || "Team not found.", variant: "destructive" });
           router.push('/dashboard');
         }
       } catch (error) {
@@ -68,8 +63,13 @@ export default function ManageTeamPage() {
      if (currentUser?.teamId) {
         setIsLoadingActivities(true);
         try {
-            const activities = await getTeamActivitiesFromMongoDB(currentUser.teamId);
-            setTeamActivities(activities);
+            // Use Server Action to fetch team activities
+            const result = await getTeamActivitiesAction(currentUser.teamId);
+            if (result.success) {
+                setTeamActivities(result.activities);
+            } else {
+                toast({ title: "Error", description: result.message || "Could not fetch team activities.", variant: "destructive" });
+            }
         } catch (error) {
             console.error("Error fetching team activities:", error);
             toast({ title: "Error", description: "Could not fetch team activities.", variant: "destructive" });
@@ -230,5 +230,3 @@ export default function ManageTeamPage() {
     </div>
   );
 }
-
-    
