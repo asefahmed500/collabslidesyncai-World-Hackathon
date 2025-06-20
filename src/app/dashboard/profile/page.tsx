@@ -131,7 +131,7 @@ export default function ProfilePage() {
         const response = await fetch('/api/stripe/create-portal-link', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ customerId: currentUser.stripeCustomerId }),
+            body: JSON.stringify({ customerId: currentUser.stripeCustomerId }), // Ensure body is passed if API expects it
         });
         const data = await response.json();
         if (data.success && data.url) {
@@ -141,7 +141,8 @@ export default function ProfilePage() {
         }
     } catch (error: any) {
         toast({ title: "Error", description: error.message, variant: "destructive" });
-        setIsRedirectingToStripe(false);
+    } finally {
+      setIsRedirectingToStripe(false);
     }
   };
 
@@ -166,6 +167,7 @@ export default function ProfilePage() {
       }
     } catch (error: any) {
       toast({ title: "Upgrade Error", description: error.message, variant: "destructive" });
+    } finally {
       setIsRedirectingToStripe(false);
     }
   };

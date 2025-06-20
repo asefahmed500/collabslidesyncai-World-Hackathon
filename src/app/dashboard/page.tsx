@@ -201,7 +201,7 @@ export default function DashboardPage() {
         const response = await fetch('/api/teams/invitations/respond', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ notificationId, teamId, roleForAction: role, action })
+            body: JSON.stringify({ notificationId, teamId, role, action }) // `roleForAction` should be `role` as per API
         });
         const result = await response.json();
         if (result.success) {
@@ -284,6 +284,7 @@ export default function DashboardPage() {
       }
     } catch (error: any) {
       toast({ title: "Upgrade Error", description: error.message, variant: "destructive" });
+    } finally {
       setIsRedirectingToStripe(false);
     }
   };

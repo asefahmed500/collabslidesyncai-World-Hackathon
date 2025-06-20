@@ -120,8 +120,9 @@ export async function POST(request: NextRequest) {
       if (subIdForFailed) {
         const userWithFailedPayment = await UserModel.findOne({ stripeSubscriptionId: subIdForFailed }).exec();
         if (userWithFailedPayment) {
-          await updateUserInMongoDB(userWithFailedPayment.id, { 
-          });
+          // Optional: Update user status to indicate payment issue, or rely on Stripe's dunning
+          // For now, just logging. `customer.subscription.deleted` will handle actual revocation if dunning fails.
+          // await updateUserInMongoDB(userWithFailedPayment.id, { isPremium: false }); // Example if immediate action is desired
           console.log(`⚠️ User ${userWithFailedPayment.id} payment failed. Consider notifying user. Current premium status might be maintained during dunning.`);
         } else {
            console.error(`🔴 User not found for subscription ID: ${subIdForFailed} during invoice.payment_failed`);
