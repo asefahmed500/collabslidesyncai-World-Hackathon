@@ -8,6 +8,7 @@ import { useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { useAuth } from '@/hooks/useAuth'; // Import useAuth
 
 const publicNavLinks = [
   { href: "/", label: "Home", icon: Home },
@@ -22,6 +23,7 @@ const publicNavLinks = [
 export function LandingHeader() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const pathname = usePathname();
+  const { currentUser } = useAuth(); // Get currentUser state
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -45,10 +47,15 @@ export function LandingHeader() {
         </nav>
 
         <div className="hidden md:flex items-center space-x-2">
-          {/* Login button removed from here */}
-          <Button asChild>
-            <Link href="/signup">Sign Up</Link>
-          </Button>
+          {currentUser ? (
+            <Button asChild>
+              <Link href="/dashboard">Go to Dashboard</Link>
+            </Button>
+          ) : (
+            <Button asChild>
+              <Link href="/signup">Sign Up</Link>
+            </Button>
+          )}
         </div>
 
         {/* Mobile Navigation Trigger */}
@@ -86,10 +93,15 @@ export function LandingHeader() {
                     </Button>
                   ))}
                   <hr className="my-3"/>
-                  {/* Login button removed from mobile menu */}
-                  <Button variant="default" asChild onClick={() => setIsMobileMenuOpen(false)}>
-                    <Link href="/signup">Sign Up</Link>
-                  </Button>
+                  {currentUser ? (
+                    <Button variant="default" asChild onClick={() => setIsMobileMenuOpen(false)}>
+                      <Link href="/dashboard">Go to Dashboard</Link>
+                    </Button>
+                  ) : (
+                    <Button variant="default" asChild onClick={() => setIsMobileMenuOpen(false)}>
+                      <Link href="/signup">Sign Up</Link>
+                    </Button>
+                  )}
                 </nav>
               </ScrollArea>
             </SheetContent>
