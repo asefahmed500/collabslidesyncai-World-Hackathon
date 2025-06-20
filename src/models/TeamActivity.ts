@@ -16,14 +16,15 @@ const TeamActivitySchema = new Schema<TeamActivityDocument>(
     actionType: {
       type: String,
       enum: [
-        'team_created', 'member_added', 'member_removed', 'member_role_changed',
-        'team_profile_updated', 'presentation_created', 'presentation_deleted',
-        'presentation_restored', 'presentation_permanently_deleted', 'presentation_status_changed',
-        'asset_uploaded', 'asset_deleted', 'team_deleted' // Added team_deleted
+        'team_created', 'member_invited', 'invitation_declined', 'member_added', 
+        'member_removed', 'member_role_changed', 'team_profile_updated', 
+        'presentation_created', 'presentation_deleted', 'presentation_restored', 
+        'presentation_permanently_deleted', 'presentation_status_changed',
+        'asset_uploaded', 'asset_deleted', 'team_deleted'
       ],
       required: true,
     },
-    targetType: { type: String, enum: ['user', 'presentation', 'team_profile', 'asset'] },
+    targetType: { type: String, enum: ['user', 'presentation', 'team_profile', 'asset', 'invitation'] },
     targetId: { type: String, index: true, sparse: true }, // Can be User UID, Presentation ID (Firestore), Asset ID (Firestore)
     targetName: { type: String }, // Denormalized name of the target
     details: { type: Schema.Types.Mixed, default: () => ({}) },
@@ -60,4 +61,5 @@ if (mongoose.models.TeamActivity) {
 }
 
 export default TeamActivityModel;
+
 

@@ -649,34 +649,6 @@ export async function addCommentToSlide(presentationId: string, slideId: string,
           comment.userName,
           comment.userAvatarUrl
         );
-
-        // TODO: Email notification for new comments should be handled server-side (e.g., via a Firebase Function triggered by comment creation or a server action).
-        // The following client-side MongoDB lookup and email sending is problematic and has been removed to fix client build issues.
-        /*
-        if (presentationData.creatorId !== comment.userId) {
-          const ownerProfile = await getUserProfileFromMongoDB(presentationData.creatorId); // Problematic client-side call
-          if (ownerProfile && ownerProfile.email) {
-            const presentationLink = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:9002'}/editor/${presentationId}?slide=${slideId}`;
-            const emailContent = createNewCommentEmail(
-              ownerProfile.name || ownerProfile.email,
-              comment.userName,
-              presentationData.title,
-              targetSlide.slideNumber || slideIndex + 1,
-              comment.text,
-              presentationLink
-            );
-            try {
-              await sendEmail({ // Email sending should be server-side
-                to: ownerProfile.email,
-                subject: emailContent.subject,
-                htmlBody: emailContent.htmlBody,
-              });
-            } catch(emailError) {
-              console.warn("Failed to send new comment email (placeholder service):", emailError);
-            }
-          }
-        }
-        */
     } else console.warn(`Slide ${slideId} not found in presentation ${presentationId}`);
   });
 }

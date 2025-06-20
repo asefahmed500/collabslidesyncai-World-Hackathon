@@ -52,3 +52,4 @@ export async function DELETE(request: NextRequest, { params }: { params: { teamI
     return NextResponse.json({ success: false, message: error.message || 'Failed to delete team due to an unexpected error.' }, { status: 500 });
   }
 }
+
